@@ -1,7 +1,6 @@
 #ifndef NANOLIBC_H
 #define NANOLIBC_H
 
-#define NOMINMAX
 #include <windows.h>
 
 #ifndef AT_LEAST
