@@ -8,6 +8,8 @@
 
 #include "hooks.h"
 
+#include <algorithm>
+
 static void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h);
 static BOOL CALLBACK EnumMonitorsProc(HMONITOR, HDC, LPRECT , LPARAM );
 static LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -461,8 +463,8 @@ static xpure int IsPtDragOut(const POINT *pt, const POINT *ptt)
 }
 
 // Specific includes
-#include "snap.c"
-#include "zones.c"
+#include "snap.cc"
+#include "zones.cc"
 
 /////////////////////////////////////////////////////////////////////////////
 // Wether a window is present or not in a blacklist
@@ -1974,10 +1976,10 @@ static void RestoreOldWin(const POINT pt, unsigned was_snapped, RECT *ownd)
         wnd.bottom = state.origin.mon.bottom + state.mdipt.y;
 
     // Set offset
-    state.offset.x = state.origin.width  * min(pt.x-wnd.left, wnd.right-wnd.left)
-                   / max(wnd.right-wnd.left,1);
-    state.offset.y = state.origin.height * min(pt.y-wnd.top, wnd.bottom-wnd.top)
-                   / max(wnd.bottom-wnd.top,1);
+    state.offset.x = state.origin.width  * std::min(pt.x-wnd.left, wnd.right-wnd.left)
+                   / std::max(wnd.right-wnd.left,static_cast<LONG>(1));
+    state.offset.y = state.origin.height * std::min(pt.y-wnd.top, wnd.bottom-wnd.top)
+                   / std::max(wnd.bottom-wnd.top,static_cast<LONG>(1));
 
     if (rdata_flag&ROLLED) {
         if (state.origin.maximized || was_snapped) {
@@ -3248,22 +3250,22 @@ static HRESULT GetCurrentVolumeMute(UINT *curentVol, UINT *maxVol, BOOL *muted)
 
         // Get audio endpoint
         myCoInitialize(NULL); // Needed for IAudioEndpointVolume
-        hr = myCoCreateInstance(&my_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL
-                              , &my_IID_IMMDeviceEnumerator, (void**)&pDevEnum);
+        hr = myCoCreateInstance(my_CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL
+                              , my_IID_IMMDeviceEnumerator, (void**)&pDevEnum);
         if (hr != S_OK) goto fail;
 
-        hr = pDevEnum->lpVtbl->GetDefaultAudioEndpoint(pDevEnum, eRender, eMultimedia, &pDev);
-        pDevEnum->lpVtbl->Release(pDevEnum);
+        hr = pDevEnum->GetDefaultAudioEndpoint(eRender, eMultimedia, &pDev);
+        pDevEnum->Release();
         if (hr != S_OK) goto fail;
 
-        hr = pDev->lpVtbl->Activate(pDev, &my_IID_IAudioEndpointVolume, CLSCTX_ALL, NULL, (void**)&pAudioEndp);
-        pDev->lpVtbl->Release(pDev);
+        hr = pDev->Activate(my_IID_IAudioEndpointVolume, CLSCTX_ALL, NULL, (void**)&pAudioEndp);
+        pDev->Release();
         if (hr != S_OK) goto fail;
 
-        hr = pAudioEndp->lpVtbl->GetVolumeStepInfo(pAudioEndp, curentVol, maxVol)
-           | pAudioEndp->lpVtbl->GetMute(pAudioEndp, muted);
+        hr = pAudioEndp->GetVolumeStepInfo(curentVol, maxVol)
+           | pAudioEndp->GetMute(muted);
 
-        pAudioEndp->lpVtbl->Release(pAudioEndp);
+        pAudioEndp->Release();
 
         LOG("%d==GetVolumeStepInfo() -> %u (0 - %u) Muted=%d ", hr, curentVol, maxVol, muted);
 
@@ -3492,7 +3494,7 @@ static void ActionBrightness(const POINT pt, const short delta)
             LOG("GetMonitorBrightness()=%d", ok);
             LOG("Brightness of %ls: min=%lu, cur=%lu, max=%lu" , pm->szPhysicalMonitorDescription, min, cur, max);
             if (ok) {
-                int step = max(1, (max-min)/20);
+                int step = std::max<int>(1, (max-min)/20);
                 int newbr = cur + (delta>0? step: -step);
                 newbr = CLAMP(min, newbr, max);
                 ok = mySetMonitorBrightness(pm->hPhysicalMonitor, newbr);
@@ -3644,25 +3646,25 @@ static int ActionZoom(HWND hwnd, short delta, short center)
     GetMinMaxInfo(hwnd, &mmi.Min, &mmi.Max); // for CLAMPH/W functions
 
     if (state.resize.x == RZ_LEFT) {
-        right = max(T, (rc.right-rc.left)/div);
+        right = std::max<int>(T, (rc.right-rc.left)/div);
         state.resize.x = RZ_RIGHT;
     } else if (state.resize.x == RZ_RIGHT) {
-        left  = max(T, (rc.right-rc.left)/div);
+        left  = std::max<int>(T, (rc.right-rc.left)/div);
         state.resize.x = RZ_LEFT;
     } else if (state.resize.x == RZ_XCENTER && CT) {
-        left  = max(T, (state.prevpt.x-rc.left)  /div);
-        right = max(T, (rc.right-state.prevpt.x) /div);
+        left  = std::max<int>(T, (state.prevpt.x-rc.left)  /div);
+        right = std::max<int>(T, (rc.right-state.prevpt.x) /div);
     }
 
     if (state.resize.y == RZ_TOP) {
-        bottom = max(T, (rc.bottom-rc.top)/div);
+        bottom = std::max<int>(T, (rc.bottom-rc.top)/div);
         state.resize.y = RZ_BOTTOM;
     } else if (state.resize.y == RZ_BOTTOM) {
-        top    = max(T, (rc.bottom-rc.top)/div);
+        top    = std::max<int>(T, (rc.bottom-rc.top)/div);
         state.resize.y = RZ_TOP;
     } else if (state.resize.y == RZ_YCENTER && CT) {
-        top   = max(T, (state.prevpt.y-rc.top)   /div);
-        bottom= max(T, (rc.bottom-state.prevpt.y)/div);
+        top   = std::max<int>(T, (state.prevpt.y-rc.top)   /div);
+        bottom= std::max<int>(T, (rc.bottom-state.prevpt.y)/div);
     }
     if (delta < 0) {
         // Zoom out
@@ -3684,8 +3686,8 @@ static int ActionZoom(HWND hwnd, short delta, short center)
     state.snap = conf.AutoSnap; // Only use autosnap setting.
 
     ResizeSnap(&x, &y, &width, &height
-              , min( max(left, right)-1, conf.SnapThreshold )  // initial x threshold
-              , min( max(top, bottom)-1, conf.SnapThreshold ) );// initial y threshold
+              , std::min<UCHAR>( std::max(left, right)-1, conf.SnapThreshold )  // initial x threshold
+              , std::min<UCHAR>( std::max(top, bottom)-1, conf.SnapThreshold ) );// initial y threshold
     // Make sure that the windows does not move
     // in case it is resized from bottom/right
     if (state.resize.x == RZ_LEFT) x = x+width - CLAMPWL(width, &mmi);
@@ -3827,10 +3829,10 @@ static void NextBorders(RECT *pos, const RECT *cur, const RECT *def)
         if (!PtInRect(def, tpt) )
             continue;
 
-        if (flg&(SNZONE|SNLEFT)   && rc->right < cur->left) pos->left   = max(pos->left, rc->right);
-        if (flg&(SNZONE|SNTOP)    && rc->bottom < cur->top) pos->top    = max(pos->top, rc->bottom);
-        if (flg&(SNZONE|SNRIGHT)  && rc->left > cur->right) pos->right  = min(pos->right, rc->left);
-        if (flg&(SNZONE|SNBOTTOM) && rc->top > cur->bottom) pos->bottom = min(pos->bottom, rc->top);
+        if (flg&(SNZONE|SNLEFT)   && rc->right < cur->left) pos->left   = std::max(pos->left, rc->right);
+        if (flg&(SNZONE|SNTOP)    && rc->bottom < cur->top) pos->top    = std::max(pos->top, rc->bottom);
+        if (flg&(SNZONE|SNRIGHT)  && rc->left > cur->right) pos->right  = std::min(pos->right, rc->left);
+        if (flg&(SNZONE|SNBOTTOM) && rc->top > cur->bottom) pos->bottom = std::min(pos->bottom, rc->top);
     }
 }
 #define SNTO_CNSNAP 0
@@ -4072,7 +4074,7 @@ static void CenterWindow(HWND hwnd, unsigned flags, int full_monitor)
 //#define EVENT_HOOK
 // TODO: Event Hook
 #ifdef EVENT_HOOK
-#include "thunks.c"
+#include "thunks.cc"
 
 static HWND GetPinWindow(HWND owner);
 static BOOL CALLBACK PostPinWindowsProcMessage(HWND hwnd, LPARAM lp);
@@ -4490,7 +4492,7 @@ static void StepWindow(HWND hwnd, action_t action)
     int x=rc.left, y=rc.top;
     int width = rc.right - rc.left;
     int height = rc.bottom - rc.top;
-    UCHAR threshold = min(abs(step)-1, conf.SnapThreshold);
+    UCHAR threshold = std::min<UCHAR>(abs(step)-1, conf.SnapThreshold);
 
     if (direction==0) {
         x += step; // x-axis
@@ -4575,7 +4577,7 @@ static void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags)
     if(hwnds.num == 0) return;
 
     state.sclickhwnd = state.hwnd;
-    hwnds.num = min(hwnds.num, 36); // Max 36 stacked windows
+    hwnds.num = std::min<size_t>(hwnds.num, 36); // Max 36 stacked windows
 
     HMENU menu = CreatePopupMenu();
     state.unikeymenu = menu;
@@ -4587,7 +4589,7 @@ static void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags)
         int textlen = GetWindowTextLength(hwnds.it[i]);
         // Limit the size to the asked width
         if (conf.MaxMenuWidth)
-            textlen = min(textlen, conf.MaxMenuWidth);
+            textlen = std::min<int>(textlen, conf.MaxMenuWidth);
 
         // 5 + textlen + 1 * null
         // Allocate some memory
@@ -4756,7 +4758,7 @@ static BOOL CALLBACK FindTiledWindowEnumProc(HWND hwnd, LPARAM lp)
         }
     } else {
         // Square mode (not all space is covered)
-        long beamW = min(tw->oheight, tw->owidth);
+        long beamW = std::min(tw->oheight, tw->owidth);
         switch (tw->direction) {
         case 0: // LEFT
             if (dx < 0 && ady < beamW
@@ -4876,11 +4878,11 @@ static void SClickActions(HWND hwnd, action_t action)
     case AC_EXTENDSNAP:  SnapToCorner(hwnd, AUTORESIZE, !state.shift); break;
     case AC_EXTENDTNEDGE:
         if (!action.fl) SnapToCorner(hwnd, AUTORESIZE, state.shift?SNTO_MOVETO|SNTO_NEXTBD:SNTO_EXTEND|SNTO_NEXTBD);
-        else            SnapToCorner(hwnd, rxy_map[min(action.fl-1, 3)], SNTO_EXTEND|SNTO_NEXTBD);
+        else            SnapToCorner(hwnd, rxy_map[std::min(action.fl-1, 3)], SNTO_EXTEND|SNTO_NEXTBD);
         break;
     case AC_MOVETNEDGE:
         if(!action.fl) SnapToCorner(hwnd, AUTORESIZE, state.shift?SNTO_EXTEND|SNTO_NEXTBD:SNTO_MOVETO|SNTO_NEXTBD);
-        else           SnapToCorner(hwnd, rxy_map[min(action.fl-1, 3)], SNTO_MOVETO|SNTO_NEXTBD);
+        else           SnapToCorner(hwnd, rxy_map[std::min(action.fl-1, 3)], SNTO_MOVETO|SNTO_NEXTBD);
         break;
     case AC_MENU:        ActionMenu(hwnd); break;
     case AC_NSTACKED:    ActionAltTab(state.prevpt, +120,  state.shift, EnumStackedWindowsProc); break;
@@ -4983,7 +4985,7 @@ static DWORD WINAPI SendAltCtrlAlt(LPVOID p)
 static int xpure DoubleClamp(int ptx, int left, int right, int rwidth)
 { // Same logic applies to y axis
     int posx;
-    int cwidth = min(rwidth, right-left);
+    int cwidth = std::min(rwidth, right-left);
     if (right-ptx < cwidth/2)
         posx = right - rwidth;
     else if (ptx-left < cwidth/2)
@@ -5702,7 +5704,7 @@ static VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent, DWOR
         static POINT oldpt;
         static int has_moved_to_fixed_pt;
         if (state.moving)
-            state.Speed=max(abs(oldpt.x-state.prevpt.x), abs(oldpt.y-state.prevpt.y));
+            state.Speed=std::max(abs(oldpt.x-state.prevpt.x), abs(oldpt.y-state.prevpt.y));
         else state.Speed=0;
         oldpt = state.prevpt;
         if (state.moving == 1 && state.Speed == 0 && !has_moved_to_fixed_pt) {
@@ -5826,7 +5828,7 @@ static LPARAM MeasureMenuItem(HWND hwnd, WPARAM wParam, LPARAM lParam, UINT dpi,
     lpmi->itemWidth = sz.cx + xicosz + 4*xmargin;
 
     // Text height/Icon height + margin
-    lpmi->itemHeight = max(sz.cy, yicosz) + ymargin;
+    lpmi->itemHeight = std::max<UINT>(sz.cy, yicosz) + ymargin;
 
     SelectObject(dc, oldfont); // restore old font
     ReleaseDC(hwnd, dc);
@@ -5994,7 +5996,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         } else if (HIWORD(wParam) && IsWindow(state.sclickhwnd) ) {
             // ACTION MENU LOWORD(wParam) has to be zero to differenctiae with unikey menu
             LOG("Action Menu WM_COMMAND, wp=%X, lp=%X", (UINT)wParam, (UINT)lParam);
-            action_t action = { HIWORD(wParam), 0, 0 }; // TOTO: FIXME!!!!!!!
+            action_t action = { static_cast<BYTE>(HIWORD(wParam)), 0, 0 }; // TOTO: FIXME!!!!!!!
             if (action.ac) {
                 state.prevpt = state.clickpt;
                 if(action.ac == AC_ORICLICK) {
@@ -6625,20 +6627,20 @@ __declspec(dllexport) WNDPROC WINAPI Load(HWND mainhwnd, const TCHAR *inipath)
     readalluchars(&conf.AutoFocus, inisection, General_uchars, ARR_SZ(General_uchars));
 
     // [General] consistency checks
-    conf.CenterFraction=min(conf.CenterFraction, 100);
+    conf.CenterFraction=std::min<UCHAR>(conf.CenterFraction, 100);
     if(conf.SidesFraction == 255) conf.SidesFraction = conf.CenterFraction;
-    conf.AHoff        = min(conf.AHoff,          100);
-    conf.AVoff        = min(conf.AVoff,          100);
-    conf.AeroSpeedTau = max(1, conf.AeroSpeedTau);
-    conf.MinAlpha     = max(1, conf.MinAlpha);
+    conf.AHoff        = std::min<UCHAR>(conf.AHoff,          100);
+    conf.AVoff        = std::min<UCHAR>(conf.AVoff,          100);
+    conf.AeroSpeedTau = std::max<UCHAR>(1, conf.AeroSpeedTau);
+    conf.MinAlpha     = std::max<UCHAR>(1, conf.MinAlpha);
     state.snap = conf.AutoSnap;
 
     // [Advanced]
     GetPrivateProfileSection(TEXT("Advanced"), inisection, inisectionlen, inipath);
     readalluchars(&conf.ResizeAll, inisection, Advanced_uchars, ARR_SZ(Advanced_uchars));
 
-    conf.ZoomFrac      = max(2, conf.ZoomFrac);
-    conf.ZoomFracShift = max(2, conf.ZoomFracShift);
+    conf.ZoomFrac      = std::max<UCHAR>(2, conf.ZoomFrac);
+    conf.ZoomFracShift = std::max<UCHAR>(2, conf.ZoomFracShift);
     conf.BLCapButtons  = GetSectionOptionInt(inisection, "BLCapButtons", 3);
     conf.BLUpperBorder = GetSectionOptionInt(inisection, "BLUpperBorder", 3);
     conf.AeroMaxSpeed  = GetSectionOptionInt(inisection, "AeroMaxSpeed", MAX_SNAP_SPEED);
@@ -6648,8 +6650,8 @@ __declspec(dllexport) WNDPROC WINAPI Load(HWND mainhwnd, const TCHAR *inipath)
 
     GetPrivateProfileSection(TEXT("Performance"), inisection, inisectionlen, inipath);
     readalluchars(&conf.FullWin, inisection, Performance_uchars, ARR_SZ(Performance_uchars));
-    conf.MoveRate     = max(1, conf.MoveRate);
-    conf.ResizeRate   = max(1, conf.ResizeRate);
+    conf.MoveRate     = std::max<UCHAR>(1, conf.MoveRate);
+    conf.ResizeRate   = std::max<UCHAR>(1, conf.ResizeRate);
 
     // [Performance]
     if (conf.RezTimer == 2 || conf.RezTimer == 4) {

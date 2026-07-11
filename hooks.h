@@ -5,6 +5,7 @@
 //#define _UNICODE
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
+#define NOMINMAX
 #include <windows.h>
 #include "unfuck.h"
 
@@ -278,7 +279,7 @@ static pure action_t MapActionW(const TCHAR *txt)
         TCHAR c = txt[4];
         UCHAR num = c<='9' ? c - '0' : c-'A'+10;
         action.ac = AC_SHRT;
-        action.fl = min(num, 35); // Safety clamp
+        action.fl = std::min(num, static_cast<UCHAR>(35)); // Safety clamp
         return action;
     }
 

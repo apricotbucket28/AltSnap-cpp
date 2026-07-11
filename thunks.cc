@@ -1,4 +1,5 @@
 
+#define NOMINMAX
 #include <windows.h>
 
 enum {

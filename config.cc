@@ -9,6 +9,8 @@
 #include <commctrl.h>
 #include "resource.h"
 
+#include <algorithm>
+
 #ifndef TTM_SETMAXTIPWIDTH
 #define TTM_SETMAXTIPWIDTH (WM_USER+24)
 #endif
@@ -443,8 +445,8 @@ typedef struct optlst {
     short idc;
     UCHAR type;
     UCHAR bitN;
-    TCHAR *section;
-    char *name;
+    const TCHAR *section;
+    const char *name;
     void *def;
 } optlst_t;
 static void ReadDialogOptions(HWND hwnd,const optlst_t *ol, size_t size)
@@ -772,7 +774,7 @@ static void CheckConfigHotKeys(const struct hk_struct *hotkeys, HWND hwnd, const
 
 
 typedef struct tagActiondl {
-    TCHAR *action;
+    const TCHAR *action;
     short l10nidx;
     BYTE param1_type;
     BYTE param2_type;
@@ -1641,11 +1643,11 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg, WPARAM wPar
 {
     #pragma GCC diagnostic ignored "-Wint-conversion"
     static const optlst_t optlst[] = {
-        { IDC_PROCESSBLACKLIST, T_STR, 0, TEXT("Blacklist"), "Processes", TEXT("") },
-        { IDC_BLACKLIST,        T_STR, 0, TEXT("Blacklist"), "Windows", TEXT("") },
-        { IDC_SCROLLLIST,       T_STR, 0, TEXT("Blacklist"), "Scroll", TEXT("") },
-        { IDC_MDIS,             T_STR, 0, TEXT("Blacklist"), "MDIs", TEXT("") },
-        { IDC_PAUSEBL,          T_STR, 0, TEXT("Blacklist"), "Pause", TEXT("") },
+        { IDC_PROCESSBLACKLIST, T_STR, 0, TEXT("Blacklist"), "Processes", (void*)TEXT("") },
+        { IDC_BLACKLIST,        T_STR, 0, TEXT("Blacklist"), "Windows", (void*)TEXT("") },
+        { IDC_SCROLLLIST,       T_STR, 0, TEXT("Blacklist"), "Scroll", (void*)TEXT("") },
+        { IDC_MDIS,             T_STR, 0, TEXT("Blacklist"), "MDIs", (void*)TEXT("") },
+        { IDC_PAUSEBL,          T_STR, 0, TEXT("Blacklist"), "Pause", (void*)TEXT("") },
     };
     #pragma GCC diagnostic pop
 
@@ -2049,8 +2051,8 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         // Side lines
         const int swidth = width*sidefrac/100;
         const int sheight = height*sidefrac/100;
-        const int kwidth = max(cwidth, swidth);
-        const int kheight = max(cheight, sheight);
+        const int kwidth = std::max(cwidth, swidth);
+        const int kheight = std::max(cheight, sheight);
         static const DWORD ptsslens[8] = { 2,2,2,2,2,2,2,2 };
         POINT ptss[16]={// Left
                         { 0,                (height-sheight)/2 },
@@ -2137,7 +2139,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             const TCHAR (*lastkey)[MAXLL] = lks->lastkey;
             for (size_t i=0; i < MAXLINES; i++) {
                 UCHAR didx = (idx+i)%MAXLINES;
-                RECT trc = {lineheight/2, crc.bottom-lineheight*(MAXLINES-i), crc.right, crc.bottom};
+                RECT trc = {lineheight/2, static_cast<LONG>(crc.bottom-lineheight*(MAXLINES-i)), crc.right, crc.bottom};
                 DrawText(hdc, lastkey[didx], lstrlen(lastkey[didx]), &trc, DT_NOCLIP|DT_TABSTOP);
             }
         }

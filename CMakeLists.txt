@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(AltSnap C)
+project(AltSnap CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 23)
+# set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
   message(FATAL_ERROR "AltSnap targets Windows only (build natively with MinGW-w64, "
@@ -14,17 +16,17 @@ endif()
 
 # Standalone LLVM installs (e.g. C:\Program Files\LLVM) default to the MSVC
 # ABI/target triple on Windows, which defines _MSC_VER for Windows-SDK
-# compatibility. hooks.c has real `#if defined(_MSC_VER)` branches meant
+# compatibility. hooks.cc has real `#if defined(_MSC_VER)` branches meant
 # ONLY for cl.exe/clang-cl (they use __FUNCDNAME__ and a linker pragma that
 # plain clang.exe does not implement) - a MSVC-ABI clang trips that branch
 # without being able to satisfy it, and fails deep in the build with a
 # confusing pragma error. Catch it here instead, with an actionable message.
-include(CheckCSourceCompiles)
-check_c_source_compiles("
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
 #if defined(_MSC_VER)
 #error MSVC-ABI-compiler-detected
 #endif
-int main(void){return 0;}
+int main(){return 0;}
 " ALTSNAP_COMPILER_IS_NOT_MSVC_ABI)
 if(NOT ALTSNAP_COMPILER_IS_NOT_MSVC_ABI)
   message(FATAL_ERROR
@@ -37,7 +39,7 @@ if(NOT ALTSNAP_COMPILER_IS_NOT_MSVC_ABI)
         "shell, or use MSYS2's plain mingw-w64 GCC instead.")
 endif()
 
-if(NOT CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang)$")
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
   message(WARNING "Original build used GCC/MinGW-w64. Untested with ${CMAKE_C_COMPILER_ID}.")
 endif()
 
@@ -47,8 +49,8 @@ endif()
 # llvm-mingw's clang normally pairs with llvm-rc instead, which mimics
 # MSVC's rc.exe: it produces a .res file that lld links directly,
 # with no separate compile-to-object step.
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-  get_filename_component(_altsnap_clang_bin ${CMAKE_C_COMPILER} DIRECTORY)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  get_filename_component(_altsnap_clang_bin ${CMAKE_CXX_COMPILER} DIRECTORY)
   find_program(ALTSNAP_RC_COMPILER
         NAMES llvm-rc llvm-rc.exe
         HINTS ${_altsnap_clang_bin}
@@ -103,7 +105,7 @@ set(ALTSNAP_WARNINGS
     -Wempty-body -Wignored-qualifiers -Wuninitialized -Wtype-limits -Woverride-init
     -Wno-multichar -Wno-attributes
     -Wnull-dereference -Wno-unused-function -Wshadow
-    -pedantic -Wc++-compat
+    -pedantic
 )
 
 # GCC-only: clang either doesn't implement these or spells them differently
@@ -121,15 +123,15 @@ set(ALTSNAP_LINK_FLAGS
 
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
-    hooks.c
+    hooks.cc
     hooks.h
 )
 altsnap_add_rc(hooks hooks.rc)
 # Included via #include, not compiled separately (unity build) -
 # listed here only so they show up in IDEs and are tracked as deps.
-set_source_files_properties(zones.c snap.c unfuck.h nanolibc.h
+set_source_files_properties(zones.cc snap.cc unfuck.h nanolibc.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
-target_sources(hooks PRIVATE zones.c snap.c unfuck.h nanolibc.h)
+target_sources(hooks PRIVATE zones.cc snap.cc unfuck.h nanolibc.h)
 
 set_target_properties(hooks PROPERTIES
     PREFIX ""
@@ -149,7 +151,7 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm)
 # windres inputs. Only altsnap.rc gets compiled; the rest are tracked
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
-    altsnap.c
+    altsnap.cc
     hooks.h
     languages.h
 )
@@ -164,11 +166,11 @@ altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/media/tray-enabled.ico
 )
 set_source_files_properties(
-    tray.c config.c languages.c unfuck.h nanolibc.h
+    tray.cc config.cc languages.cc unfuck.h nanolibc.h
     window.rc AltSnap.exe.manifest resource.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
 target_sources(AltSnap PRIVATE
-    tray.c config.c languages.c unfuck.h nanolibc.h
+    tray.cc config.cc languages.cc unfuck.h nanolibc.h
     window.rc AltSnap.exe.manifest resource.h)
 
 set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")

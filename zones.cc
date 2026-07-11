@@ -393,10 +393,10 @@ static void UnionMultiRect(RECT *urc, const RECT *rcs, unsigned N)
     CopyRect(urc, &rcs[0]);
     while (--N) {
         rcs++;
-        urc->left    = min(urc->left,   rcs->left);
-        urc->top     = min(urc->top,    rcs->top);
-        urc->right   = max(urc->right,  rcs->right);
-        urc->bottom  = max(urc->bottom, rcs->bottom);
+        urc->left    = std::min(urc->left,   rcs->left);
+        urc->top     = std::min(urc->top,    rcs->top);
+        urc->right   = std::max(urc->right,  rcs->right);
+        urc->bottom  = std::max(urc->bottom, rcs->bottom);
     }
 }
 static pure DWORD GetLayoutRez(int laynum)

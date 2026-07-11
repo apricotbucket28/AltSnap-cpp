@@ -1,6 +1,7 @@
 #ifndef NANOLIBC_H
 #define NANOLIBC_H
 
+#define NOMINMAX
 #include <windows.h>
 
 #ifndef AT_LEAST
@@ -63,7 +64,7 @@ static void str2tchar_s(TCHAR* w, size_t N, const char* s) {
 }
 
 static void mem00(void* dst, size_t count) {
-  register char* a = (char*)dst;
+  char* a = (char*)dst;
   while (count--) *a++ = 0;
 }
 

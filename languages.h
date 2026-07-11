@@ -11,6 +11,7 @@
 #define ALTSNAP_STRINGS_H
 
 #include <stddef.h>
+#define NOMINMAX
 #include <windows.h>
 #include "resource.h"
 

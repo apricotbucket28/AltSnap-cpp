@@ -8,6 +8,8 @@
 #ifndef _UNFUCK_NT_
 #define _UNFUCK_NT_
 
+#include <algorithm>
+#define NOMINMAX
 #include <windows.h>
 #include <oleacc.h>
 #include <stdio.h>
@@ -303,17 +305,6 @@ static void LOGfunk( const char *fmt, ... )
 #undef assert
 #define assert(x)
 #endif
-
-#if !defined(__STDC_VERSION__) || __STDC_VERSION__ <= 202300L
-#ifndef static_assert
-#   if defined(__STDC_VERSION__)  && __STDC_VERSION__ >= 201112L
-       /* C11 cool _Static_assert */
-#      define static_assert _Static_assert
-#   else
-#      define static_assert(x, y) do{ enum assert_static__ { assert_static___ = 1/(x) }; }while(0)
-#   endif
-#endif /* static_assert */
-#endif /* [C89 - C23[ */
 
 /* Stuff missing in MinGW */
 #ifndef WM_MOUSEHWHEEL
@@ -1724,10 +1715,10 @@ static pure unsigned AreRectsTouching2T(const RECT *a, const RECT *b, const int 
 #endif
 static void CropRect(RECT *__restrict__ wnd, const RECT *crop)
 {
-    wnd->left   = max(wnd->left,   crop->left);
-    wnd->top    = max(wnd->top,    crop->top);
-    wnd->right  = min(wnd->right,  crop->right);
-    wnd->bottom = min(wnd->bottom, crop->bottom);
+    wnd->left   = std::max(wnd->left,   crop->left);
+    wnd->top    = std::max(wnd->top,    crop->top);
+    wnd->right  = std::min(wnd->right,  crop->right);
+    wnd->bottom = std::min(wnd->bottom, crop->bottom);
 }
 
 static void CenterRectInRect(RECT *__restrict__ wnd, const RECT *mon)
@@ -1747,10 +1738,10 @@ static void ClampPointInRect(const RECT *rc, POINT *__restrict__ pt)
 }
 static void RectFromPts(RECT *rc, const POINT a, const POINT b)
 {
-    rc->left = min(a.x, b.x);
-    rc->top = min(a.y, b.y);
-    rc->right = max(a.x, b.x);
-    rc->bottom= max(a.y, b.y);
+    rc->left = std::min(a.x, b.x);
+    rc->top = std::min(a.y, b.y);
+    rc->right = std::max(a.x, b.x);
+    rc->bottom= std::max(a.y, b.y);
 }
 
 /* DownlevelLCIDToLocaleName in NLSDL.DLL */
@@ -1881,7 +1872,7 @@ static void* ListAppend(void *list_p, void *elem, size_t elemsize)
     size_t cap = list->cap;
 
     if (list->count >= cap) {
-        cap = max(cap * 2, 8);
+        cap = std::max<size_t>(cap * 2, 8);
         void *nptr = realloc(list->buf, cap * elemsize);
         if (!nptr) return NULL;
         /*LOGA("ListAppend Reallocated = %u elems / %u bytes", (unsigned)cap, (unsigned)(cap * elemsize)); */
