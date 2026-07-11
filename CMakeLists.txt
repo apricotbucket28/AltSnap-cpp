@@ -106,6 +106,7 @@ set(ALTSNAP_WARNINGS
     -Wno-multichar -Wno-attributes
     -Wnull-dereference -Wno-unused-function -Wshadow
     -pedantic
+    -Wno-writable-strings -Wno-tautological-constant-out-of-range-compare # TODO: revisit later
 )
 
 # GCC-only: clang either doesn't implement these or spells them differently

@@ -23,10 +23,10 @@
 
 struct langinfoitem {
   TCHAR code[8];
-  TCHAR *lang_english;
-  TCHAR *lang;
-  TCHAR *author;
-  TCHAR *fn;
+  const TCHAR *lang_english;
+  const TCHAR *lang;
+  const TCHAR *author;
+  const TCHAR *fn;
 };
 
 #define LANGUAGE_MAP \

@@ -779,7 +779,7 @@ typedef struct tagActiondl {
     BYTE param1_type;
     BYTE param2_type;
 } actiondl_t;
-static void FillActionDropListS(HWND hwnd, int idc, TCHAR *inioption, const actiondl_t *actions)
+static void FillActionDropListS(HWND hwnd, int idc, const TCHAR *inioption, const actiondl_t *actions)
 {
     HWND control = GetDlgItem(hwnd, idc);
     TCHAR txt[64];
@@ -827,7 +827,7 @@ static int GetActionStringFromDropList(HWND hwnd, int idc, const actiondl_t *act
     }
     return -1;
 }
-static void WriteActionDropListS(HWND hwnd, int idc, TCHAR *inioption, const actiondl_t *actions)
+static void WriteActionDropListS(HWND hwnd, int idc, const TCHAR *inioption, const actiondl_t *actions)
 {
     TCHAR txt[128]; txt[0] = TEXT('\0');
     GetActionStringFromDropList(hwnd, idc, actions, txt, ARR_SZ(txt));
@@ -840,7 +840,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam, 
     // Mouse actions
     static const struct {
         int control; // Same control
-        TCHAR *option[5]; // Prim/alt/TTB/WM/WR
+        const TCHAR *option[5]; // Prim/alt/TTB/WM/WR
     } mouse_buttons[] = {
         { IDC_LMB,     {TEXT("LMB"), TEXT("LMBB"), TEXT("LMBT"), TEXT("LMBM"), TEXT("LMBR")} },
         { IDC_MMB,     {TEXT("MMB"), TEXT("MMBB"), TEXT("MMBT"), TEXT("MMBM"), TEXT("MMBR")} },
@@ -850,7 +850,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam, 
     };
     static const struct {
         int control; // Same control
-        TCHAR *option[5]; // Prim/alt/TTB/WM/WR
+        const TCHAR *option[5]; // Prim/alt/TTB/WM/WR
     } mouse_buttonsUP[] = {
         { IDC_MOVEUP,  {TEXT("MoveUp"), TEXT("MoveUpB"), TEXT("MoveUpT"), TEXT("MoveUp"), TEXT("MoveUp")} },
         { IDC_RESIZEUP,{TEXT("ResizeUp"), TEXT("ResizeUpB"), TEXT("ResizeUpT"), TEXT("ResizeUp"), TEXT("ResizeUp")} },
@@ -919,7 +919,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam, 
     // Scroll
     static const struct {
         int control; // Same control
-        TCHAR *option[5]; // Prim/alt/TTB/WM/WR
+        const TCHAR *option[5]; // Prim/alt/TTB/WM/WR
     } mouse_wheels[] = {
         { IDC_SCROLL,  {TEXT("Scroll"),  TEXT("ScrollB"),  TEXT("ScrollT"), TEXT("ScrollM"), TEXT("ScrollR")}  },
         { IDC_HSCROLL, {TEXT("HScroll"), TEXT("HScrollB"), TEXT("HScrollT"), TEXT("HScrollM"), TEXT("HScrollR") } }
