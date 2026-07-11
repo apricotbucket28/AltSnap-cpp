@@ -614,7 +614,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params, int i
     LOG("GOOD NORMAL EXIT");
     FreeAllLangRelated();
 
-    CHECK_MEMORY_LEAK_DB();
-
     return msg.wParam;
 }

@@ -6259,8 +6259,6 @@ __declspec(dllexport) void WINAPI Unload()
     // Wait for worker thread to have a clean closing...
     WaitForSingleObject(g_WorkerThreadHANDLE, 5000);
     CloseHandle(g_WorkerThreadHANDLE);
-
-    CHECK_MEMORY_LEAK_DB();
 }
 /////////////////////////////////////////////////////////////////////////////
 // blacklist is coma separated and title and class are | separated.

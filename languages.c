@@ -273,10 +273,10 @@ void FreeAllLangRelated()
 {
     if (langinfo.it) {
         for (size_t i=1; i < langinfo.num; i++) {
-            lstrfree(langinfo.it[i].lang_english);
-            lstrfree(langinfo.it[i].lang);
-            lstrfree(langinfo.it[i].author);
-            lstrfree(langinfo.it[i].fn);
+            free(langinfo.it[i].lang_english);
+            free(langinfo.it[i].lang);
+            free(langinfo.it[i].author);
+            free(langinfo.it[i].fn);
         }
         ListFree(&langinfo);
         langinfo.it = NULL;
