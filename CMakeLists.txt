@@ -87,25 +87,13 @@ function(altsnap_add_rc target rcfile)
   endif()
 endfunction()
 
-# --- Flags shared by both targets, mirroring MakefileX64 ---------------
-# NOTE: kept verbatim from the old build for now. Re-evaluate once the
-# custom entry points / -nostdlib setup is removed in the next step
-# (some of these, e.g. -fno-stack-protector, exist for size and should
-# probably be reversed once safety is the actual goal).
 set(ALTSNAP_C_FLAGS
-    -Os
-    -fno-stack-check
-    -fno-stack-protector
     -fno-ident
-    -fomit-frame-pointer
-    -fmerge-all-constants
     -mno-stack-arg-probe
-    -momit-leaf-frame-pointer
     -march=x86-64
     -mtune=generic
     -fshort-enums
     -fno-exceptions
-    -fno-asynchronous-unwind-tables
     -D__USE_MINGW_ANSI_STDIO=0
     -Wp,-D_FORTIFY_SOURCE=2
 )
@@ -119,18 +107,15 @@ set(ALTSNAP_WARNINGS
 )
 
 # GCC-only: clang either doesn't implement these or spells them differently
-# (e.g. -fno-dwarf2-cfi-asm, -Wclobbered, -Wlogical-op, -Wduplicated-cond/
-# -branches, -Wstack-usage don't exist in clang; -fgcse-sm/-las/-fno-plt are
-# silently ignored by clang anyway).
+# (e.g. -Wclobbered, -Wlogical-op, -Wduplicated-cond/
+# -branches, -Wstack-usage don't exist in clang).
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  list(APPEND ALTSNAP_C_FLAGS -fgcse-sm -fgcse-las -fno-plt -fno-dwarf2-cfi-asm)
   list(APPEND ALTSNAP_WARNINGS -Wclobbered -Wlogical-op -Wduplicated-cond
         -Wduplicated-branches -Wstack-usage=4096)
 endif()
 
 set(ALTSNAP_LINK_FLAGS
-    -s
-    -Wl,-dynamicbase,-nxcompat,--no-seh
+    -Wl,-dynamicbase,-nxcompat
     -Wl,--disable-runtime-pseudo-reloc,--enable-auto-import,--disable-stdcall-fixup
 )
 
@@ -190,7 +175,7 @@ set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")
 target_compile_options(AltSnap PRIVATE ${ALTSNAP_C_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(AltSnap PRIVATE
     -mwindows
-    -Wl,--tsaware,--disable-reloc-section
+    -Wl,--tsaware
     ${ALTSNAP_LINK_FLAGS}
 )
 target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm)
