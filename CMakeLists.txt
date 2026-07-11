@@ -129,7 +129,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
 endif()
 
 set(ALTSNAP_LINK_FLAGS
-    -nostdlib
     -s
     -Wl,-dynamicbase,-nxcompat,--no-seh
     -Wl,--disable-runtime-pseudo-reloc,--enable-auto-import,--disable-stdcall-fixup
@@ -155,8 +154,6 @@ set_target_properties(hooks PROPERTIES
 target_compile_options(hooks PRIVATE ${ALTSNAP_C_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(hooks PRIVATE
     -mdll
-    -Wl,--entry,DllMain
-    -Wl,--kill-at
     ${ALTSNAP_LINK_FLAGS}
 )
 target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm)
@@ -193,7 +190,6 @@ set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")
 target_compile_options(AltSnap PRIVATE ${ALTSNAP_C_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(AltSnap PRIVATE
     -mwindows
-    -Wl,--entry,unfuckWinMain
     -Wl,--tsaware,--disable-reloc-section
     ${ALTSNAP_LINK_FLAGS}
 )

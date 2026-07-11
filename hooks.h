@@ -8,12 +8,6 @@
 #include <windows.h>
 #include "unfuck.h"
 
-#ifdef UNICODE
-#  define tWinMain wWinMain
-#else
-#  define tWinMain WinMain
-#endif
-
 #if defined(__MINGW32__) && ( !defined(__MINGW64_VERSION_MAJOR) || __MINGW64_VERSION_MAJOR < 2 )
 // Old version of MINGW64 header or MINGW32 only!
 // Unable to use endpointvolume.h !

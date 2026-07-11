@@ -416,7 +416,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 /////////////////////////////////////////////////////////////////////////////
-int WINAPI tWinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, TCHAR *params, int iCmdShow)
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params, int iCmdShow)
 {
     g_hinst = hInst;
 
@@ -617,38 +617,4 @@ int WINAPI tWinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, TCHAR *params, int
     CHECK_MEMORY_LEAK_DB();
 
     return msg.wParam;
-}
-static pure const TCHAR *ParamsFromCmdline(const TCHAR *cmdl)
-{
-    /* in case it starts with " we need to go to the next " */
-    if (cmdl[0] == TEXT('"')) {
-        do {
-            cmdl++;
-        } while(*cmdl && *cmdl != TEXT('"'));
-    } else {
-        while(*cmdl && *cmdl != TEXT(' ') && *cmdl != TEXT('\t')) {
-            cmdl++;
-        }
-    }
-    cmdl += !!*cmdl; // Skip the " or the ' '
-    while(*cmdl == TEXT(' ') || *cmdl == TEXT('\t')) cmdl++;
-    return cmdl;
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// Use -nostdlib and -e_unfuckMain@0 to use this main, -eunfuckMain for x64.
-#ifdef _MSC_VER
-#pragma comment(linker, "/entry:\"unfuckWinMain\"")
-#endif
-void noreturn WINAPI unfuckWinMain(void)
-{
-    HINSTANCE hInst;
-    HINSTANCE hPrevInstance = NULL;
-    const TCHAR *szCmdLine;
-    int iCmdShow = 0;
-
-    hInst = GetModuleHandle(NULL);
-    szCmdLine = ParamsFromCmdline(GetCommandLine());
-
-    ExitProcess(tWinMain(hInst, hPrevInstance, (TCHAR *)szCmdLine, iCmdShow));
 }
