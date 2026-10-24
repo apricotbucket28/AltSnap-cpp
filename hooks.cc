@@ -4645,7 +4645,7 @@ static void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags) {
   HMENU menu = CreatePopupMenu();
   state.unikeymenu = menu;
   size_t i;
-  TCHAR* const failed_string = TEXT("---");
+  TCHAR* const failed_string = (TCHAR*)TEXT("---");
 
   struct menuitemdata data[36];  // Always fits into the stack
   for (i = 0; i < hwnds.num; i++) {

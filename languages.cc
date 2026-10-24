@@ -116,7 +116,7 @@ static void LoadTranslationOrTT(const TCHAR* __restrict__ ini,
 
     TCHAR buf[128];
     TCHAR** deststr = &((TCHAR**)l10n_ini)[i * 2 + offset];
-    if (deststr == &l10n_ini->AboutVersion) {
+    if (deststr == (TCHAR**)&l10n_ini->AboutVersion) {
       // Append version number to version....
       lstrcpy_s(buf, ARR_SZ(buf), txt);
       lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
@@ -165,9 +165,9 @@ void ListAllTranslations() {
       (struct langinfoitem*)ListAppend(&langinfo, NULL, sizeof(*lnfo));
   if (!lnfo) return;
   lstrcpy_s(lnfo->code, ARR_SZ(lnfo->code), en_US.Code);
-  lnfo->lang_english = en_US.LangEnglish;
-  lnfo->lang = en_US.Lang;
-  lnfo->author = en_US.Author;
+  lnfo->lang_english = (TCHAR*)en_US.LangEnglish;
+  lnfo->lang = (TCHAR*)en_US.Lang;
+  lnfo->author = (TCHAR*)en_US.Author;
   lnfo->fn = NULL;
 
   GetModuleFileName(NULL, szDir, ARR_SZ(szDir));

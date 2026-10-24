@@ -461,7 +461,7 @@ typedef struct optlst {
   UCHAR bitN;
   const TCHAR* section;
   const char* name;
-  void* def;
+  const void* def;
 } optlst_t;
 static void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
   for (size_t i = 0; i < size; i++) {
@@ -2275,7 +2275,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                    DT_NOCLIP | DT_TABSTOP);
         }
       }
-      TCHAR* str = l10n->MiscZoneTestWinHelp;
+      const TCHAR* str = l10n->MiscZoneTestWinHelp;
       if (UseZones & 1) {
         RECT trc2 = {lineheight / 2, lineheight / 2, crc.right, splitheight};
         DrawText(hdc, str, lstrlen(str), &trc2, DT_NOCLIP | DT_TABSTOP);

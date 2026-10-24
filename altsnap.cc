@@ -173,7 +173,7 @@ void ShowSClickMenu(HWND hwnd, LPARAM param) {
   const struct {
     UCHAR action;
     WORD mf;
-    TCHAR* str;
+    const TCHAR* str;
   } mnlst[] = {
       /* hide, action,      MF_FLAG/CHECKED,    menu string */
       {AC_ALWAYSONTOP, CHK(LP_TOPMOST), l10n->InputActionAlwaysOnTop},
@@ -250,7 +250,7 @@ static void GetKaretPos(POINT* pt) {
 static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
   UCHAR vkey = LOBYTE(LOWORD(param));
   UCHAR capital = HIBYTE(LOWORD(param));
-  TCHAR* const* const ukmap = &l10n->a;  // EXTRAKEYS_MAP;
+  TCHAR const* const* const ukmap = &l10n->a;  // EXTRAKEYS_MAP;
   HMENU menu = CreatePopupMenu();
   if (!menu) return;
 
