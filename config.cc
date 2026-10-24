@@ -150,9 +150,10 @@ static void OpenConfig(int startpage) {
   PROPSHEETHEADER psh;
   mem00(&psh, sizeof(psh));
   psh.dwSize = sizeof(psh);
-  psh.dwFlags = VISTA ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
-                            PSH_NOCONTEXTHELP
-                      : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
+  psh.dwFlags = WinVer >= VISTA
+                    ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
+                          PSH_NOCONTEXTHELP
+                    : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
   psh.hwndParent = NULL;
   psh.hInstance = g_hinst;
   psh.hIcon = icons[1];  // LoadIcon(g_hinst, iconstr[1]);
@@ -586,7 +587,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
         }
       }
     }
-    EnableDlgItem(hwnd, IDC_ELEVATE, VISTA && !elevated);
+    EnableDlgItem(hwnd, IDC_ELEVATE, WinVer >= VISTA && !elevated);
     //    } else if (msg == WM_HELP) {
     //        ShowContextHelp(strlst, ARR_SZ(strlst), hwnd, (LPHELPINFO)lParam);
   } else if (msg == WM_COMMAND) {
@@ -604,7 +605,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
 
     if (id == IDC_AUTOSTART) {
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, val);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val && VISTA);
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val && WinVer >= VISTA);
       if (!val) {
         CheckDlgButton(hwnd, IDC_AUTOSTART_HIDE, BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE, BST_UNCHECKED);
@@ -633,8 +634,8 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
       CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE,
                      eelevated ? BST_CHECKED : BST_UNCHECKED);
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, autostart);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart && VISTA);
-      if (WIN10)
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart && WinVer >= VISTA);
+      if (WinVer >= WIN10)
         EnableDlgItem(hwnd, IDC_INACTIVESCROLL, IsChecked(IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // all bool options (checkboxes).
@@ -1477,7 +1478,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
     // Always enabled in 64 bit mode.
     EnableDlgItem(hwnd, IDC_AGGRESSIVEPAUSE,
                   HaveProc("NTDLL.DLL", "NtResumeProcess"));
-    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WIN2K);
+    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WinVer >= WIN2K);
 #endif
 
   } else if (msg == WM_COMMAND) {
