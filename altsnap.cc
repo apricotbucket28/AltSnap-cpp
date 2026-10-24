@@ -322,14 +322,14 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     // Reload hooks
     UpdateSettings();
   } else if (msg == WM_ADDTRAY) {
-    hide = 0;
+    tray_hidden = 0;
     UpdateTray();
   } else if (msg == WM_UPDATETRAY) {
     UpdateTray();
   } else if (msg == WM_HIDETRAY) {
-    hide = 1;
+    tray_hidden = 1;
     RemoveTray();
-  } else if (msg == WM_OPENCONFIG && (lParam || !hide)) {
+  } else if (msg == WM_OPENCONFIG && (lParam || !tray_hidden)) {
     OpenConfig(wParam);
   } else if (msg == WM_CLOSECONFIG) {
     CloseConfig();
@@ -342,7 +342,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (wmId == CMD_TOGGLE) {
       ToggleState();
     } else if (wmId == CMD_HIDE) {
-      hide = 1;
+      tray_hidden = 1;
       RemoveTray();
     } else if (wmId == CMD_ELEVATE) {
       ElevateNow(0);
@@ -480,7 +480,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
     return 0;
   }
 
-  hide = !!lstrstr(params, TEXT("-h"));
+  tray_hidden = !!lstrstr(params, TEXT("-h"));
   int quiet = !!lstrstr(params, TEXT("-q"));
   int elevate = !!lstrstr(params, TEXT("-e"));
   int multi = !!lstrstr(params, TEXT("-m"));
@@ -506,7 +506,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
 #endif  // NO_VISTA
   LOG("Command line parameters read, hide=%d, quiet=%d, elevate=%d, multi=%d, "
       "config=%d",
-      hide, quiet, elevate, multi, config);
+      tray_hidden, quiet, elevate, multi, config);
 
   // Look for previous instance
   if (!multi && !GetPrivateProfileInt(TEXT("Advanced"),
@@ -537,10 +537,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
       }
       // Update old instance if no action to be made.
       LOG("Previous instance found and no -multi mode");
-      if (hide) PostMessage(previnst, WM_CLOSECONFIG, 0, 0);
+      if (tray_hidden) PostMessage(previnst, WM_CLOSECONFIG, 0, 0);
       if (config) PostMessage(previnst, WM_OPENCONFIG, 0, 0);
       if (rlini) PostMessage(previnst, WM_UPDATESETTINGS, 0, 0);
-      PostMessage(previnst, hide ? WM_HIDETRAY : WM_ADDTRAY, 0, 0);
+      PostMessage(previnst, tray_hidden ? WM_HIDETRAY : WM_ADDTRAY, 0, 0);
       LOG("Updated old instance and NORMAL EXIT");
       return 0;
     }
@@ -559,8 +559,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
       TCHAR path[MAX_PATH];
       GetModuleFileName(NULL, path, ARR_SZ(path));
       HINSTANCE ret =
-          ShellExecute(NULL, TEXT("runas"), path, (hide ? TEXT("-h") : NULL),
-                       NULL, SW_SHOWNORMAL);
+          ShellExecute(NULL, TEXT("runas"), path,
+                       (tray_hidden ? TEXT("-h") : NULL), NULL, SW_SHOWNORMAL);
       if ((DorQWORD)ret > 32) {
         LOG("Elevation Faild => Not cool NORMAL EXIT");
         return 0;
@@ -599,8 +599,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   HookSystem();
 
   // Add tray if hook failed, even though -hide was supplied
-  if (hide && !keyhook) {
-    hide = 0;
+  if (tray_hidden && !keyhook) {
+    tray_hidden = 0;
     UpdateTray();
   }
   // Open config if -config was supplied

@@ -156,7 +156,7 @@ static void OpenConfig(int startpage) {
                     : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
   psh.hwndParent = NULL;
   psh.hInstance = g_hinst;
-  psh.hIcon = icons[1];  // LoadIcon(g_hinst, iconstr[1]);
+  psh.hIcon = g_icons[1];  // LoadIcon(g_hinst, iconstr[1]);
   psh.pszCaption = TEXT(APP_NAMEA);
   psh.nPages = ARR_SZ(psp);
   psh.ppsp = psp;
@@ -2329,7 +2329,7 @@ static HWND NewTestWindow() {
                      sizeof(LONG_PTR)  // To store old GWL_STYLE
                      ,
                      g_hinst,
-                     icons[1]  // LoadIcon(g_hinst, iconstr[1])
+                     g_icons[1]  // LoadIcon(g_hinst, iconstr[1])
                      ,
                      LoadCursor(NULL, IDC_ARROW),
                      NULL  //(HBRUSH)(COLOR_BACKGROUND+1)
