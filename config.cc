@@ -609,12 +609,10 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     CB_ResetContent(control);
     EnableWindow(control, TRUE);
 
-    if (langinfo.it) {
-      for (size_t i = 0; i < langinfo.num; i++) {
-        CB_AddString(control, langinfo.it[i].lang);
-        if (!lstrcmpi(l10n->Code, langinfo.it[i].code)) {
-          CB_SetCurSel(control, i);
-        }
+    for (size_t i = 0; i < langinfo.num; i++) {
+      CB_AddString(control, langinfo.it[i].lang);
+      if (!lstrcmpi(l10n->Code, langinfo.it[i].code)) {
+        CB_SetCurSel(control, i);
       }
     }
     EnableDlgItem(hwnd, IDC_ELEVATE, WinVer >= VISTA && !elevated);
@@ -1938,9 +1936,14 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   } else if (msg == WM_NOTIFY) {
     LPNMHDR pnmh = (LPNMHDR)lParam;
     if (pnmh->code == PSN_SETACTIVE) {
+      TCHAR buf[128];
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
-      SetDlgItemText(hwnd, IDC_VERSION, l10n->AboutVersion);
+      // Append version number to version....
+      lstrcpy_s(buf, ARR_SZ(buf), l10n->AboutVersion);
+      lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
+      SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
+
       SetDlgItemText(hwnd, IDC_URL,
                      TEXT("https://github.com/RamonUnch/AltSnap"));
       SetDlgItemText(hwnd, IDC_AUTHOR, l10n->AboutAuthor);
@@ -1950,14 +1953,12 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
       TCHAR txt[1024];
       txt[0] = TEXT('\0');
-      if (langinfo.it) {
-        for (size_t i = 0; i < langinfo.num; i++) {
-          lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].lang_english);
-          lstrcat_s(txt, ARR_SZ(txt), TEXT(": "));
-          lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].author);
-          if (i + 1 != langinfo.num) {
-            lstrcat_s(txt, ARR_SZ(txt), TEXT("\r\n"));
-          }
+      for (size_t i = 0; i < langinfo.num; i++) {
+        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].lang_english);
+        lstrcat_s(txt, ARR_SZ(txt), TEXT(": "));
+        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].author);
+        if (i + 1 != langinfo.num) {
+          lstrcat_s(txt, ARR_SZ(txt), TEXT("\r\n"));
         }
       }
       SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);

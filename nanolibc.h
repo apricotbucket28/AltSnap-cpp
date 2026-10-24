@@ -263,9 +263,8 @@ static const TCHAR* LPTR2Hex(TCHAR str[AT_LEAST LPTR_HDIGITS + 1], UINT_PTR n) {
 
   for (i = LPTR_HDIGITS - 1;; --i) {
     TCHAR rem = n & 15; /* MD 16 */
-    str[i] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
-    /*str[i++] = rem + '0' + (rem > 9) * ('A' - '0' - 10); */ /* branchless
-                                                                 version */
+    // str[i] = (rem > 9)? (rem-10) + 'A' : rem + '0';
+    str[i] = "0123456789ABCDEF"[rem];
 
     n >>= 4; /* Divide by 16. */
     if (n == 0) break;
@@ -342,14 +341,14 @@ static nonnull1(1) int pure lstrcmpi_samestart(const TCHAR* __restrict__ a,
   return (*a != *b) && (*b != '\0');
 }
 
-static nonnull2(1, 3) char* lstrcpy_sA(char* __restrict__ dest, const size_t N,
-                                       const char* __restrict__ src) {
+static nonnull2(1, 3) size_t lstrcpy_sA(char* __restrict__ dest, const size_t N,
+                                        const char* __restrict__ src) {
   char* orig = dest;
   const char* dmax = dest + N - 1; /* keep space for a terminating NULL */
   for (; dest < dmax && (*dest = *src);
        ++src, ++dest); /* then append from src */
   *dest = '\0';        /* ensure result is NULL terminated */
-  return orig;
+  return dest - orig;
 }
 
 static allnonnull pure const char* lstrstrA(const char* haystack,

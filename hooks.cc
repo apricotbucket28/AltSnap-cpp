@@ -17,8 +17,8 @@ static LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam);
 static VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                                      DWORD dwTime);
-LRESULT CALLBACK HotKeysWinProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                LPARAM lParam);
+LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
+                              LPARAM lParam);
 
 // Timer messages
 #define PIN_TIMER (1)
@@ -1069,11 +1069,11 @@ void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
     unsigned sflag = 0;
 
     // Get snapwnd
-    if (monitors.it && i < monitors.num) {
+    if (i < monitors.num) {
       snapwnd = monitors.it[i];
       snapinside = 1;
       i++;
-    } else if (wnds.it && j < wnds.num) {
+    } else if (j < wnds.num) {
       snapwnd = wnds.it[j].rc;
       sflag = wnds.it[j].flag;
       snapinside = (state.snap != 2);
@@ -1190,11 +1190,11 @@ static void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight,
     UCHAR snapinside;
 
     // Get snapwnd
-    if (monitors.it && i < monitors.num) {
+    if (i < monitors.num) {
       CopyRect(&snapwnd, &monitors.it[i]);
       snapinside = 1;
       i++;
-    } else if (wnds.it && j < wnds.num) {
+    } else if (j < wnds.num) {
       CopyRect(&snapwnd, &wnds.it[j].rc);
       snapinside = (state.snap != 2);
       j++;
@@ -2736,10 +2736,12 @@ static HWND MDIorNOT(HWND hwnd, HWND* mdiclient_);
 ///////////////////////////////////////////////////////////////////////////
 // Keep this one minimalist, it is always on.
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-  if (nCode != HC_ACTION || state.ignorekey)
-    return CallNextHookEx(NULL, nCode, wParam, lParam);
-
   PKBDLLHOOKSTRUCT kbh = ((PKBDLLHOOKSTRUCT)lParam);
+
+  if (nCode != HC_ACTION) return CallNextHookEx(NULL, nCode, wParam, lParam);
+  // g_lastKeyboardTick = kbh->time;
+  if (state.ignorekey) return CallNextHookEx(NULL, nCode, wParam, lParam);
+
   unsigned char vkey = kbh->vkCode;
   //    DWORD scode = kbh->scanCode;
   int xxbtidx;
@@ -6305,8 +6307,8 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-LRESULT CALLBACK HotKeysWinProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                LPARAM lParam) {
+LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
+                              LPARAM lParam) {
   if (msg == WM_HOTKEY) {
     int ptwindow = 0;
     action_t action = k_action_none;
@@ -7000,7 +7002,7 @@ extern "C"
                    STACK_SIZE_PARAM_IS_A_RESERVATION, &g_WorkerThreadID);
   // SetThreadPriority(g_WorkerThreadHANDLE, THREAD_PRIORITY_BELOW_NORMAL);
 
-  return HotKeysWinProc;
+  return HooksWinProc;
 }
 /////////////////////////////////////////////////////////////////////////////
 // Do not forget the -e_DllMain@12 for gcc... -eDllMain for x86_64

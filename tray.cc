@@ -163,10 +163,9 @@ static void WriteCurrentLayoutNumber() {
 static TCHAR* RectToStr(const RECT* rc,
                         TCHAR rectstr[AT_LEAST INT_DIGITS * 4 + 4 + 1]) {
   TCHAR txt[INT_DIGITS + 1];
-  int i;
   const long* RC = (const long*)rc;
   rectstr[0] = '\0';
-  for (i = 0; i < 4; i++) {
+  for (size_t i = 0; i < 4; i++) {
     lstrcat_s(rectstr, 64, Int2lStr(txt, (int)RC[i]));
     lstrcat_s(rectstr, 64, TEXT(","));
   }
@@ -232,13 +231,10 @@ static void catFullLayoutName(TCHAR* txt, size_t len, int laynum) {
   TCHAR n1[UINT_DIGITS + 1];
   lstrcat_s(txt, len, l10n->MenuSnapLayout);
   lstrcat_s(txt, len, Uint2lStr(n1, laynum + 1));
-  if (G_HotKeyProc) {
+  if (G_HooksWinProc) {
     DWORD rez = 0;
-    if ((rez = G_HotKeyProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0))) {
-      // TCHAR n2[UINT_DIGITS+1];
+    if ((rez = G_HooksWinProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0))) {
       // Add (width:height) to label the layout.
-      // lstrcatM_s(txt, len ,TEXT("  ("), Uint2lStr(n1,
-      // LOWORD(rez)),TEXT(":"),Uint2lStr(n2, HIWORD(rez)), TEXT(")"), NULL);
       lstrcat_s(txt, len, TEXT("  ("));
       lstrcat_s(txt, len, Uint2lStr(n1, LOWORD(rez)));
       lstrcat_s(txt, len, TEXT(":"));
