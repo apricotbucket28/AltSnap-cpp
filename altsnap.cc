@@ -20,8 +20,8 @@ static WNDPROC G_HotKeyProc = NULL;
 HINSTANCE hinstDLL = NULL;
 HHOOK keyhook = NULL;
 static DWORD ACMenuItems = -1;
-static char elevated = 0;
-static char ScrollLockState = 0;
+static unsigned char elevated = 0;
+static unsigned char ScrollLockState = 0;
 static char SnapGap = 0;
 static BYTE WinVer = 0;
 
@@ -626,5 +626,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   LOG("GOOD NORMAL EXIT");
   FreeAllLangRelated();
 
-  return msg.wParam;
+  return (int)msg.wParam;
 }
