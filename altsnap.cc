@@ -18,7 +18,6 @@ static WNDPROC G_HotKeyProc = NULL;
 
 // Cool stuff
 HINSTANCE hinstDLL = NULL;
-HHOOK keyhook = NULL;
 static DWORD ACMenuItems = -1;
 static unsigned char elevated = 0;
 static unsigned char ScrollLockState = 0;
@@ -29,7 +28,7 @@ static BYTE WinVer = 0;
 #define VISTA 6
 #define WIN10 10
 
-#define ENABLED() (!!keyhook)
+#define ENABLED() (!!G_HotKeyProc)
 #define GetWindowRectL(hwnd, rect) GetWindowRectLL(hwnd, rect, SnapGap)
 static void UpdateSettings();
 
@@ -59,7 +58,7 @@ static void FreeHooksDLL() {
 }
 /////////////////////////////////////////////////////////////////////////////
 static int HookSystem() {
-  if (keyhook) return 1;  // System already hooked
+  if (G_HotKeyProc) return 1;  // System already hooked
   LOG("Going to Hook the system...");
 
   if (!hinstDLL) {
@@ -77,24 +76,6 @@ static int HookSystem() {
 
   LOG("HOOKS.DLL Loaded");
 
-  // Load keyboard hook
-  HOOKPROC procaddr;
-  if (!keyhook) {
-    // Get address to keyboard hook (beware name mangling)
-    procaddr = (HOOKPROC)GetProcAddress(hinstDLL, LOW_LEVEL_KB_PROC);
-    if (procaddr == NULL) {
-      LOG("Could not find " LOW_LEVEL_KB_PROC " entry point in HOOKS.DLL");
-      return 1;
-    }
-    // Set up the keyboard hook
-    keyhook = SetWindowsHookEx(WH_KEYBOARD_LL, procaddr, hinstDLL, 0);
-    if (keyhook == NULL) {
-      LOG("Keyboard HOOK could not be set");
-      return 1;
-    }
-  }
-  LOG("Keyboard HOOK set");
-
   // Reading some config options...
   UseZones = GetPrivateProfileInt(TEXT("Zones"), TEXT("UseZones"), 0, inipath);
   SnapGap = CLAMP(
@@ -108,24 +89,18 @@ static int HookSystem() {
 /////////////////////////////////////////////////////////////////////////////
 static int showerror = 1;
 static int UnhookSystem() {
+  if (G_HotKeyProc == NULL) return 0;
   LOG("Going to UnHook the system...");
-  if (!keyhook) {  // System not hooked
-    return 1;
-  } else if (!UnhookWindowsHookEx(keyhook) && showerror) {
-    MessageBox(NULL, l10n->MiscUnhookError, TEXT(APP_NAMEA),
-               MB_ICONINFORMATION | MB_OK | MB_TOPMOST | MB_SETFOREGROUND);
-  }
-  keyhook = NULL;
 
   // Tell dll file that we are unloading
   void(WINAPI * Unload)() =
       (void(WINAPI*)())GetProcAddress(hinstDLL, UNLOAD_PROC);
   if (Unload) {
     Unload();
-    // Zero out the message hwnd from DLL.
-    G_HotKeyProc = NULL;
   }
   // FreeHooksDLL();
+  // Zero out the message hwnd from DLL.
+  G_HotKeyProc = NULL;
 
   // Success
   UpdateTray();
@@ -599,7 +574,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   HookSystem();
 
   // Add tray if hook failed, even though -hide was supplied
-  if (tray_hidden && !keyhook) {
+  if (tray_hidden && !G_HotKeyProc) {
     tray_hidden = 0;
     UpdateTray();
   }

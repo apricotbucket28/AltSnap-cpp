@@ -141,6 +141,7 @@ static int UpdateTray() {
 }
 /////////////////////////////////////////////////////////////////////////////
 static int RemoveTray() {
+  LOG("RemoveTray() tray_added=%d", (int)tray_added);
   if (!tray_added) return 1;
 
   if (!Shell_NotifyIcon(NIM_DELETE, (PNOTIFYICONDATA)&tray)) return 1;
