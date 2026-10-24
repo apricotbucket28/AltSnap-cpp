@@ -28,7 +28,6 @@ LRESULT CALLBACK HotKeysWinProc(HWND hwnd, UINT msg, WPARAM wParam,
 // #define ALTUP_TIMER     (5)
 #define HIDELAYOUT_TIMER (6)
 #define POOL_TIMER (7)
-#define KBHOOK_TIMER (8)
 
 #define WM_DOWORK (WM_APP + 6)
 #define WM_DOMOUSEMOVE (WM_APP + 7)
@@ -2735,9 +2734,6 @@ static void TogglesAlwaysOnTop(HWND hwnd);
 static HWND MDIorNOT(HWND hwnd, HWND* mdiclient_);
 ///////////////////////////////////////////////////////////////////////////
 // Keep this one minimalist, it is always on.
-// Tick of the last keyboard event we received, used by KBHOOK_TIMER to
-// detect that Windows silently removed our keyboard hook.
-static DWORD g_kbLastTick, g_kbPrevCheck;
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -2747,7 +2743,6 @@ extern "C"
 #if defined(_MSC_VER) && _MSC_VER > 1300
 #pragma comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)
 #endif
-  g_kbLastTick = GetTickCount();  // We are alive.
 
   if (nCode != HC_ACTION || state.ignorekey)
     return CallNextHookEx(NULL, nCode, wParam, lParam);
@@ -5893,21 +5888,6 @@ static VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
       }
     } break;
 #endif
-    case KBHOOK_TIMER: {
-      // The keyboard hook (owned by the exe) can also be silently removed
-      // by Windows (>= Win7 and LowLevelHooksTimeout), typically after
-      // sleep or lock. Windows does not tell us, so we infer it: if the
-      // user produced input since our last check but the keyboard hook
-      // saw nothing since then, ask the exe to re-install it.
-      LASTINPUTINFO lii;
-      lii.cbSize = sizeof(lii);
-      if (GetLastInputInfo(&lii) &&
-          (LONG)(lii.dwTime - g_kbPrevCheck) > 0       // Input since last check
-          && (LONG)(lii.dwTime - g_kbLastTick) > 0) {  // that the hook missed
-        PostMessage(g_mainhwnd, WM_REHOOKKB, 0, 0);
-      }
-      g_kbPrevCheck = dwTime;
-    } break;
     case SPEED_TIMER: {
       static POINT oldpt;
       static int has_moved_to_fixed_pt;
@@ -5999,7 +5979,6 @@ static VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
 }
 static void KillAllTimers() {
   KillTimer(g_mainhwnd, REHOOK_TIMER);
-  KillTimer(g_mainhwnd, KBHOOK_TIMER);
   KillTimer(g_mainhwnd, SPEED_TIMER);
   KillTimer(g_mainhwnd, GRAB_TIMER);
 #ifdef NO_HOOK_LL
@@ -6997,10 +6976,6 @@ extern "C"
 
   // read and register all shortcuts related options.
   registerAllHotkeys(inipath);
-
-  // Watchdog for the keyboard hook installed by the exe right after Load.
-  g_kbLastTick = g_kbPrevCheck = GetTickCount();
-  SetTimer(g_mainhwnd, KBHOOK_TIMER, 5000, (TIMERPROC)TimerWindowProc);
 
   // Hook mouse if a permanent hook is needed
   if (conf.keepMousehook) {
