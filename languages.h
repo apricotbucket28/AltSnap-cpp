@@ -20,7 +20,7 @@
   (short)(offsetof(struct strings, entryname) / sizeof(TCHAR**))
 
 // Resolve entry name from index.
-#define L10NSTR(i) (((const TCHAR* const* const)l10n)[i])
+#define L10NSTR(i) (((const TCHAR* const*)l10n)[i])
 
 struct langinfoitem {
   TCHAR code[8];
