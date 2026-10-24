@@ -3,15 +3,17 @@
 
 // #define UNICODE
 // #define _UNICODE
+#ifndef _WIN32_WINN
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
-
+#endif
 #include <windows.h>
 
 #include "unfuck.h"
 
-#if defined(__MINGW32__) && \
-    (!defined(__MINGW64_VERSION_MAJOR) || __MINGW64_VERSION_MAJOR < 2)
+#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600 || \
+    defined(__MINGW32__) &&                            \
+        (!defined(__MINGW64_VERSION_MAJOR) || __MINGW64_VERSION_MAJOR < 2)
 // Old version of MINGW64 header or MINGW32 only!
 // Unable to use endpointvolume.h !
 #define NO_OLEAPI

@@ -3243,10 +3243,10 @@ static const GUID my_IID_IAudioEndpointVolume = {
     0x841E,
     0x4546,
     {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
-#define _WIN32_WINNT 0x0600
+/*requires _WIN32_WINNT 0x0600 */
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
-#undef _WIN32_WINNT
+
 /* OLE32.DLL */
 static HRESULT(WINAPI* myCoInitialize)(LPVOID pvReserved);
 static VOID(WINAPI* myCoUninitialize)();
