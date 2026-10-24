@@ -53,6 +53,9 @@ enum DWMWINDOWATTRIBUTE {
   DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
   /* Windows 11 Build 22621 + */
   DWMWA_SYSTEMBACKDROP_TYPE,
+  /* Windows 11 Build 26100 + */
+  DWMWA_REDIRECTIONBITMAP_ALPHA,
+  DWMWA_BORDER_MARGINS,
   DWMWA_LAST,
 };
 
@@ -246,7 +249,7 @@ typedef struct tagMONITORINFO {
 #endif /* SM_XVIRTUALSCREEN */
 
 /* GUITHREADINFO stuff */
-#ifndef GUI_CARETBLINKING
+#if !defined(GUI_CARETBLINKING) && WINVER < 0x0500
 #define GUI_CARETBLINKING 0x01
 #define GUI_INMOVESIZE 0x02
 #define GUI_INMENUMODE 0x04
@@ -906,7 +909,7 @@ static BOOL SystemParametersInfoForDpiL(UINT uiAction, UINT uiParam,
   return SystemParametersInfo(uiAction, uiParam, pvParam, fWinIni);
 }
 #define SystemParametersInfoForDpi SystemParametersInfoForDpiL
-#if defined(WINVER) && WINVER >= 0x0500
+#if defined(WINVER) && WINVER >= 0x0500 && defined(WINEVENT_OUTOFCONTEXT)
 static HWINEVENTHOOK SetWinEventHookL(DWORD eventMin, DWORD eventMax,
                                       HMODULE hmodWinEventProc,
                                       WINEVENTPROC pfnWinEventProc,
