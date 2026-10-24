@@ -292,10 +292,10 @@ struct langinfoitem {
   LNGVALUE(AboutTranslationCredit, TEXT("Translation credit"), NULL)           \
   /* Misc */                                                                   \
   LNGVALUE(MiscUnhookError,                                                    \
-           TEXT("There was an error disabling AltDrag. This was most likely "  \
-                "caused by Windows having already disabled AltDrag's "         \
+           TEXT("There was an error disabling AltSnap. This was most likely "  \
+                "caused by Windows having already disabled AltSnap's "         \
                 "hooks.\n\nIf this is the first time this has happened, you "  \
-                "can safely ignore it and continue using AltDrag.\n\nIf this " \
+                "can safely ignore it and continue using AltSnap.\n\nIf this " \
                 "is happening repeatedly, you can read on the website how to " \
                 "prevent this from happening again (look for 'AltDrag "        \
                 "mysteriously stops working' in the documentation)."),         \
