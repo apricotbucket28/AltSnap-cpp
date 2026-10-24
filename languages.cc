@@ -110,13 +110,13 @@ static void LoadTranslationOrTT(const TCHAR* __restrict__ ini,
   for (size_t i = 0; i < ARR_SZ(l10n_inimapping); i++) {
     // Get pointer to default English string to be used if ini entry doesn't
     // exist
-    const TCHAR* const def_val = ((TCHAR**)&en_US)[i * 2 + offset];
+    const TCHAR* const def_val = ((const TCHAR* const*)&en_US)[i * 2 + offset];
     const TCHAR* txt = ini_map[i] ? ini_map[i] : def_val;
     if (!txt) continue;  // default value may be NULL...
 
     TCHAR buf[128];
     TCHAR** deststr = &((TCHAR**)l10n_ini)[i * 2 + offset];
-    if (deststr == &l10n_ini->AboutVersion) {
+    if (deststr == (TCHAR**)&l10n_ini->AboutVersion) {
       // Append version number to version....
       lstrcpy_s(buf, ARR_SZ(buf), txt);
       lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
@@ -135,7 +135,7 @@ static void LoadTranslationOrTT(const TCHAR* __restrict__ ini,
 
 static void LoadTranslation(const TCHAR* __restrict__ ini) {
   if (!ini) {
-    l10n = (struct strings*)&en_US;
+    l10n = (struct strings const*)&en_US;
     return;
   } else if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(ini)) {
     return;
@@ -165,22 +165,23 @@ void ListAllTranslations() {
       (struct langinfoitem*)ListAppend(&langinfo, NULL, sizeof(*lnfo));
   if (!lnfo) return;
   lstrcpy_s(lnfo->code, ARR_SZ(lnfo->code), en_US.Code);
-  lnfo->lang_english = en_US.LangEnglish;
-  lnfo->lang = en_US.Lang;
-  lnfo->author = en_US.Author;
+  lnfo->lang_english = (TCHAR*)en_US.LangEnglish;
+  lnfo->lang = (TCHAR*)en_US.Lang;
+  lnfo->author = (TCHAR*)en_US.Author;
   lnfo->fn = NULL;
 
   GetModuleFileName(NULL, szDir, ARR_SZ(szDir));
   PathRemoveFileSpecL(szDir);
   lstrcat_s(szDir, ARR_SZ(szDir), TEXT("\\Lang\\*.ini"));
-  lstrcpy_s(fpath, ARR_SZ(fpath), szDir);
+  lstrcpy_s(fpath, MAX_PATH, szDir);
   TCHAR* end = fpath;  // not the star!
   end += lstrlen(fpath) - 5;
   hFind = FindFirstFile(szDir, &ffd);
 
   if (hFind != INVALID_HANDLE_VALUE) {
     do {
-      lstrcpy(end, ffd.cFileName);  // add filenale at the end of the path
+      lstrcpy_s(end, MAX_PATH,
+                ffd.cFileName);  // add filenale at the end of the path
       lnfo = (struct langinfoitem*)ListAppend(&langinfo, NULL, sizeof(*lnfo));
       if (!lnfo) break;
 
@@ -221,7 +222,7 @@ static void Generate_en_US_base_txt() {
 
   DWORD dummy = 0;
   TCHAR key[100], val[1000];
-  const TCHAR** const def_strings = ((const TCHAR**)&en_US);
+  TCHAR const* const* const def_strings = ((TCHAR const* const*)&en_US);
   WriteFile(h, "\xFF\xFE", 2, &dummy, NULL);  // UTF-16 LE BOM
   WriteFile(h, TEXT("; Base AltSnap Translation\r\n[Translation]\r\n"),
             43 * sizeof(TCHAR), &dummy, NULL);

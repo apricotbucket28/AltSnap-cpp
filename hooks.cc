@@ -10,14 +10,15 @@
 
 #include <algorithm>
 
+static void SClickActions(HWND hwnd, action_t action);
 static void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h);
 static BOOL CALLBACK EnumMonitorsProc(HMONITOR, HDC, LPRECT, LPARAM);
 static LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam);
 static VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                                      DWORD dwTime);
-LRESULT CALLBACK HotKeysWinProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                LPARAM lParam);
+LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
+                              LPARAM lParam);
 
 // Timer messages
 #define PIN_TIMER (1)
@@ -441,11 +442,12 @@ static const char* BlackListStrings[] = {
     "Windows",   "Snaplist", "MDIs",      "Pause",     "MMBLower",  "Scroll",
     "IScroll",   "AResize",  "SSizeMove", "NCHittest", "Bottommost"};
 // Cursor data
-HWND g_mainhwnd = NULL;
+static HWND g_mainhwnd = NULL;
 
 // Hook data
-HINSTANCE hinstDLL = NULL;
-HHOOK mousehook = NULL;
+static HINSTANCE hinstDLL = NULL;
+static HHOOK mousehook = NULL;
+static HHOOK g_keyhook = NULL;
 
 #define FixDWMRect(hwnd, rect) FixDWMRectLL(hwnd, rect, conf.SnapGap)
 #undef GetWindowRectL
@@ -1067,11 +1069,11 @@ void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
     unsigned sflag = 0;
 
     // Get snapwnd
-    if (monitors.it && i < monitors.num) {
+    if (i < monitors.num) {
       snapwnd = monitors.it[i];
       snapinside = 1;
       i++;
-    } else if (wnds.it && j < wnds.num) {
+    } else if (j < wnds.num) {
       snapwnd = wnds.it[j].rc;
       sflag = wnds.it[j].flag;
       snapinside = (state.snap != 2);
@@ -1188,11 +1190,11 @@ static void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight,
     UCHAR snapinside;
 
     // Get snapwnd
-    if (monitors.it && i < monitors.num) {
+    if (i < monitors.num) {
       CopyRect(&snapwnd, &monitors.it[i]);
       snapinside = 1;
       i++;
-    } else if (wnds.it && j < wnds.num) {
+    } else if (j < wnds.num) {
       CopyRect(&snapwnd, &wnds.it[j].rc);
       snapinside = (state.snap != 2);
       j++;
@@ -1425,6 +1427,19 @@ static void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
 /* Send WM_SIZING before SetWindowPos so that apps like terminal
  * emulators can snap to their character-cell grid.  */
 static BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
+  /* Apply the blacklist (also applies to WM_*SIZEMOVE) */
+  if (blacklisted(hwnd, &BlkLst.SSizeMove)) return FALSE;
+
+  /* WM_SIZING may enforce minimum width/height */
+  if (conf.IgnoreMinMaxInfo != 0) {
+    rgMMI_t mmi;
+    GetMinMaxInfoF(hwnd, &mmi.Min, &mmi.Max, 0);  // for CLAMPHL/WL functions
+
+    if (CLAMPWL(lw->width, &mmi) != lw->width ||
+        CLAMPHL(lw->height, &mmi) != lw->height)
+      return FALSE;
+  }
+
   static const unsigned char map[3][3] = {
       //             LEFT              RIGHT             XCENTER
       /* TOP */ {WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WMSZ_TOP},
@@ -2733,20 +2748,13 @@ static void TogglesAlwaysOnTop(HWND hwnd);
 static HWND MDIorNOT(HWND hwnd, HWND* mdiclient_);
 ///////////////////////////////////////////////////////////////////////////
 // Keep this one minimalist, it is always on.
-#ifdef __cplusplus
-extern "C"
-#endif
-    __declspec(dllexport) LRESULT CALLBACK LowLevelKeyboardProc(int nCode,
-                                                                WPARAM wParam,
-                                                                LPARAM lParam) {
-#if defined(_MSC_VER) && _MSC_VER > 1300
-#pragma comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)
-#endif
-
-  if (nCode != HC_ACTION || state.ignorekey)
-    return CallNextHookEx(NULL, nCode, wParam, lParam);
-
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   PKBDLLHOOKSTRUCT kbh = ((PKBDLLHOOKSTRUCT)lParam);
+
+  if (nCode != HC_ACTION) return CallNextHookEx(NULL, nCode, wParam, lParam);
+  // g_lastKeyboardTick = kbh->time;
+  if (state.ignorekey) return CallNextHookEx(NULL, nCode, wParam, lParam);
+
   unsigned char vkey = kbh->vkCode;
   //    DWORD scode = kbh->scanCode;
   int xxbtidx;
@@ -3242,10 +3250,10 @@ static const GUID my_IID_IAudioEndpointVolume = {
     0x841E,
     0x4546,
     {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
-#define _WIN32_WINNT 0x0600
+/*requires _WIN32_WINNT 0x0600 */
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
-#undef _WIN32_WINNT
+
 /* OLE32.DLL */
 static HRESULT(WINAPI* myCoInitialize)(LPVOID pvReserved);
 static VOID(WINAPI* myCoUninitialize)();
@@ -3456,6 +3464,7 @@ static void ActionMaxRestMin(HWND hwnd, int delta) {
 // Adjust brightness
 static void ActionBrightness(const POINT pt, const short delta) {
 // Works oly for Desktop monitors.
+#define NO_BRIGHTNESS
 #ifndef NO_BRIGHTNESS
   typedef struct _PHYSICAL_MONITOR {
     HANDLE hPhysicalMonitor;
@@ -3752,13 +3761,21 @@ static int ActionMove(POINT pt, int button) {
   if (IsDoubleClick(button)) {
     SetOriginFromRestoreData(state.hwnd, k_action_move);
     LastWin.hwnd = NULL;
-    if (state.shift) {
-      RollWindow(state.hwnd, 0);  // Roll/Unroll Window...
-    } else if (IsCtrlDown()) {
-      MinimizeWindow(state.hwnd);
-    } else if (state.resizable) {
-      // Toggle Maximize window
-      ToggleMaxRestore(state.hwnd);
+
+    action_t acdbclick = GetActionMR(button);
+    if (acdbclick.ac > AC_RESIZE) {
+      // Use the Mouve button + While Moving action as doubleclick action.
+      SClickActions(state.hwnd, acdbclick);
+    } else {
+      // Defult action for double move click
+      if (state.shift) {
+        RollWindow(state.hwnd, 0);  // Roll/Unroll Window...
+      } else if (IsCtrlDown()) {
+        MinimizeWindow(state.hwnd);
+      } else if (state.resizable) {
+        // Toggle Maximize window
+        ToggleMaxRestore(state.hwnd);
+      }
     }
     state.action = k_action_none;  // Stop move action
     state.clicktime = 0;           // Reset double-click time
@@ -4015,12 +4032,18 @@ static int ActionResize(POINT pt, const RECT* wnd, int button) {
   }
   // Aero-move this window if this is a double-click
   if (IsDoubleClick(button)) {
-    state.action = k_action_none;
-    ;  // Stop resize action
-    SnapToCorner(state.hwnd, AUTORESIZE,
-                 !state.shift ^ !(conf.AeroTopMaximizes & 2));
-    state.blockmouseup = 1;  // Block mouse up (context menu would pop)
-    state.clicktime = 0;     // Reset double-click time
+    action_t acdbclick = GetActionMR(button);
+    if (acdbclick.ac > AC_RESIZE) {
+      // Use the Mouve button + While Moving action as doubleclick action.
+      SClickActions(state.hwnd, acdbclick);
+    } else {
+      // Use SnapToCorner by default (legacy)
+      SnapToCorner(state.hwnd, AUTORESIZE,
+                   !state.shift ^ !(conf.AeroTopMaximizes & 2));
+    }
+    state.action = k_action_none;  // Stop resize action
+    state.blockmouseup = 1;        // Block mouse up (context menu would pop)
+    state.clicktime = 0;           // Reset double-click time
     // Prevent mousedown from propagating
     return 1;
   }
@@ -4343,6 +4366,8 @@ static LRESULT CALLBACK PinWindowProc(HWND hwnd, UINT msg, WPARAM wp,
 }
 static HWND CreatePinWindow(const HWND owner) {
   WNDCLASS wnd;
+  DWORD ex_flags;
+  HWND ret;
   if (!GetClassInfo(hinstDLL, TEXT(APP_NAMEA) TEXT("-Pin"), &wnd)) {
     // Register the class if no already created.
     mem00(&wnd, sizeof(wnd));
@@ -4360,11 +4385,18 @@ static HWND CreatePinWindow(const HWND owner) {
     wnd.lpszClassName = TEXT(APP_NAMEA) TEXT("-Pin");
     RegisterClass(&wnd);
   }
-  HWND ret = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-                            TEXT(APP_NAMEA) TEXT("-Pin"), NULL,
-                            WS_POPUP | WS_BORDER /* Start invisible */
-                            ,
-                            0, 0, 0, 0, owner, NULL, hinstDLL, NULL);
+
+  ex_flags = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
+TryAGAIN:
+  ret = CreateWindowEx(ex_flags, TEXT(APP_NAMEA) TEXT("-Pin"), NULL,
+                       WS_POPUP | WS_BORDER /* Start invisible */
+                       ,
+                       0, 0, 0, 0, owner, NULL, hinstDLL, NULL);
+  if (!ret && ex_flags & WS_EX_NOACTIVATE) {
+    // Some Windows versions cannot handle the WS_EX_NOACTIVATE flag...
+    ex_flags &= ~WS_EX_NOACTIVATE;
+    goto TryAGAIN;
+  }
   // Show pin window without activating it to avoid focus loss.
   ShowWindow(ret, SW_SHOWNA);
   return ret;
@@ -4568,7 +4600,7 @@ static WORD Accel2Int(UCHAR c) {
     if (conf.MenuAccelMap[i] == c) return (WORD)i;
   return (WORD)0xFFFF;
 }
-#include <oleacc.h>
+// #include <oleacc.h>
 struct menuitemdata {
 #ifdef _UNICODE
   MSAAMENUINFO msaa;
@@ -4620,7 +4652,7 @@ static void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags) {
   HMENU menu = CreatePopupMenu();
   state.unikeymenu = menu;
   size_t i;
-  TCHAR* const failed_string = TEXT("---");
+  TCHAR* const failed_string = (TCHAR*)TEXT("---");
 
   struct menuitemdata data[36];  // Always fits into the stack
   for (i = 0; i < hwnds.num; i++) {
@@ -6288,8 +6320,8 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-LRESULT CALLBACK HotKeysWinProc(HWND hwnd, UINT msg, WPARAM wParam,
-                                LPARAM lParam) {
+LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
+                              LPARAM lParam) {
   if (msg == WM_HOTKEY) {
     int ptwindow = 0;
     action_t action = k_action_none;
@@ -6391,6 +6423,15 @@ extern "C"
 #if defined(_MSC_VER) && _MSC_VER > 1300
 #pragma comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)
 #endif
+  // UnKook keyboard.
+  if (g_keyhook) {
+    BOOL ret = UnhookWindowsHookEx(g_keyhook);
+    LOG("UnhookWindowsHookEx(%llx) -> %d",
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_keyhook)),
+        static_cast<int>(ret));
+  }
+  g_keyhook = NULL;
+
   // Quit Worker Thread...
   PostThreadMessage(g_WorkerThreadID, WM_DOWORK, 0, 0);
 
@@ -6778,6 +6819,8 @@ extern "C"
 #if defined(_MSC_VER) && _MSC_VER > 1300
 #pragma comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)
 #endif
+  assert(g_keyhook == NULL);  // We cannot Load twice again...
+
   // Reset stuff...
   mem00(&state, sizeof(state));
   mem00(&LastWin, sizeof(LastWin));
@@ -6959,13 +7002,20 @@ extern "C"
              (TIMERPROC)TimerWindowProc);  // Start rehook timer
   }
 
+  // Set up the keyboard hook
+  g_keyhook =
+      SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, hinstDLL, 0);
+  if (g_keyhook == NULL) {
+    LOG("ERROR: Keyboard HOOK could not be set");
+  }
+
   // Create worker thread.
   g_WorkerThreadHANDLE =
       CreateThread(NULL, STACK, WorkerThread, NULL,
                    STACK_SIZE_PARAM_IS_A_RESERVATION, &g_WorkerThreadID);
   // SetThreadPriority(g_WorkerThreadHANDLE, THREAD_PRIORITY_BELOW_NORMAL);
 
-  return HotKeysWinProc;
+  return HooksWinProc;
 }
 /////////////////////////////////////////////////////////////////////////////
 // Do not forget the -e_DllMain@12 for gcc... -eDllMain for x86_64

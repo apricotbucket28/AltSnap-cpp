@@ -53,6 +53,9 @@ enum DWMWINDOWATTRIBUTE {
   DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
   /* Windows 11 Build 22621 + */
   DWMWA_SYSTEMBACKDROP_TYPE,
+  /* Windows 11 Build 26100 + */
+  DWMWA_REDIRECTIONBITMAP_ALPHA,
+  DWMWA_BORDER_MARGINS,
   DWMWA_LAST,
 };
 
@@ -246,7 +249,7 @@ typedef struct tagMONITORINFO {
 #endif /* SM_XVIRTUALSCREEN */
 
 /* GUITHREADINFO stuff */
-#ifndef GUI_CARETBLINKING
+#if !defined(GUI_CARETBLINKING) && WINVER < 0x0500
 #define GUI_CARETBLINKING 0x01
 #define GUI_INMOVESIZE 0x02
 #define GUI_INMENUMODE 0x04
@@ -271,30 +274,30 @@ typedef struct tagGUITHREADINFO {
  * fclose(LOG); SetLastError(0); }*/
 #define LOGA LOGfunk
 /* Cool warpper for wvsprintf */
-static void LOGfunk(const char* fmt, ...) {
-  DWORD lerr = GetLastError();
-  va_list arglist;
-  char str[512];
+static void LOGSimple(const char* str, size_t len) {
+  DWORD dummy = 0;
   HANDLE h;
+  h = CreateFileA("ad.log", FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+                  OPEN_ALWAYS,
+                  FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+  if (h == INVALID_HANDLE_VALUE) return;
+  WriteFile(h, str, len, &dummy, NULL);
+  CloseHandle(h);
+  SetLastError(0);
+}
+static void LOGfunk(const char* fmt, ...) {
+  va_list arglist;
+  DWORD lerr = GetLastError();
+  char str[512], lerrorstr[16];
 
   va_start(arglist, fmt);
   wvsprintfA(str, fmt, arglist);
   va_end(arglist);
 
-  h = CreateFileA("ad.log", FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
-                  OPEN_ALWAYS,
-                  FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
-  if (h == INVALID_HANDLE_VALUE) return;
-  {
-    char lerrorstr[16];
-    DWORD dummy;
-    lstrcat_sA(str, ARR_SZ(str), " (");
-    lstrcat_sA(str, ARR_SZ(str), itostrA(lerr, lerrorstr, 10));
-    lstrcat_sA(str, ARR_SZ(str), ")\n");
-    WriteFile(h, str, lstrlenA(str), &dummy, NULL);
-    CloseHandle(h);
-    SetLastError(0);
-  }
+  lstrcat_sA(str, ARR_SZ(str), " (");
+  lstrcat_sA(str, ARR_SZ(str), Uint2lStrA(lerrorstr, lerr));
+  lstrcat_sA(str, ARR_SZ(str), ")\n");
+  LOGSimple(str, lstrlenA(str));
 }
 #ifdef LOG_STUFF
 #define LOG LOGfunk
@@ -906,7 +909,7 @@ static BOOL SystemParametersInfoForDpiL(UINT uiAction, UINT uiParam,
   return SystemParametersInfo(uiAction, uiParam, pvParam, fWinIni);
 }
 #define SystemParametersInfoForDpi SystemParametersInfoForDpiL
-#if defined(WINVER) && WINVER >= 0x0500
+#if defined(WINVER) && WINVER >= 0x0500 && defined(WINEVENT_OUTOFCONTEXT)
 static HWINEVENTHOOK SetWinEventHookL(DWORD eventMin, DWORD eventMax,
                                       HMODULE hmodWinEventProc,
                                       WINEVENTPROC pfnWinEventProc,
@@ -985,6 +988,33 @@ static HWND HungWindowFromGhostWindowL(HWND gost) {
   SetLastError(ERROR_CALL_NOT_IMPLEMENTED /*120*/);
   /* Failed */
   return NULL;
+}
+
+/* Needed on Windows 8+ to recive the WM_POWERBROADCAST mesage */
+static HPOWERNOTIFY WINAPI RegisterSuspendResumeNotificationL(HANDLE hRecipient,
+                                                              DWORD flag) {
+  typedef HPOWERNOTIFY(WINAPI * funk_t)(HANDLE hRecipient, DWORD flag);
+  static funk_t funk = (funk_t)1;
+  if (funk == (funk_t)1)
+    funk =
+        (funk_t)LoadDLLProc("USER32.DLL", "RegisterSuspendResumeNotification");
+
+  if (funk) return funk(hRecipient, flag);
+
+  /* Fallback */
+  return NULL;
+}
+static BOOL WINAPI UnregisterSuspendResumeNotificationL(HPOWERNOTIFY handle) {
+  typedef BOOL(WINAPI * funk_t)(HPOWERNOTIFY handle);
+  static funk_t funk = (funk_t)1;
+  if (funk == (funk_t)1)
+    funk = (funk_t)LoadDLLProc("USER32.DLL",
+                               "UnregisterSuspendResumeNotification");
+
+  if (funk) return funk(handle);
+
+  /* Fallback */
+  return FALSE;
 }
 
 static HRESULT DwmGetWindowAttributeL(HWND hwnd, DWORD a, PVOID b, DWORD c) {
@@ -1732,53 +1762,21 @@ static int LCIDToLocaleNameL(LCID Locale, LPWSTR lpName, int cchName,
 }
 #endif /* UNICODE */
 
-#if 0
-/* Get the string inside the section returned by GetPrivateProfileSection */
-static void GetSectionOptionStr(const TCHAR *section, const char * const oname, const TCHAR *def, TCHAR * __restrict__ txt, size_t txtlen)
-{
-    if (section)
-    {
-        TCHAR name[128];
-        str2tchar_s(name, ARR_SZ(name)-1, oname);
-        lstrcat_s(name, ARR_SZ(name), TEXT("=")); /* Add equal at the end of name */
-        const TCHAR *p = section;
-        while (p[0] && p[1]) { /* Double NULL treminated string */
-            if(!lstrcmpi_samestart(p, name)) {
-                /* Copy the buffer */
-                lstrcpy_s(txt, txtlen, p+lstrlen(name));
-                return; /* DONE! */
-            } else {
-                /* Go to next string... */
-                p += lstrlen(p); /* p in on the '\0' */
-                p++; /* next string start. */
-                if (!*p) break;
-            }
-        }
-    }
-    /* Default to the provided def string */
-    if (def)
-        lstrcpy_s(txt, txtlen, def);
-    else if (txtlen)
-        txt[0] = TEXT('\0');  /* Empty string */
-}
-#endif
 static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
                                          const char* const oname,
                                          const TCHAR* const def) {
   if (section) {
-    TCHAR name[128];
-    const TCHAR* p = section;
+    TCHAR name[64];
+    const TCHAR* p;
+    size_t plen;
     str2tchar_s(name, ARR_SZ(name) - 1, oname);
     lstrcat_s(name, ARR_SZ(name), TEXT("=")); /* Add equal at the end of name */
-    while (p[0] && p[1]) { /* Double NULL treminated string */
+
+    for (p = section; *p; p += plen + 1) { /* Double NULL treminated string */
       if (!lstrcmpi_samestart(p, name)) {
         return p + lstrlen(name); /* DONE! */
-      } else {
-        /* Go to next string... */
-        p += lstrlen(p); /* p in on the '\0' */
-        p++;             /* next string start. */
-        if (!*p) break;
       }
+      plen = lstrlen(p);
     }
   }
   /* Default to the provided def string */
@@ -1787,23 +1785,8 @@ static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
 /* Get the int inside the section returned by GetPrivateProfileSection */
 static int GetSectionOptionInt(const TCHAR* section, const char* const oname,
                                const int def) {
-  if (section) {
-    TCHAR name[128];
-    const TCHAR* p = section;
-    str2tchar_s(name, ARR_SZ(name) - 1, oname);
-    lstrcat_s(name, ARR_SZ(name), TEXT("=")); /* Add equal at the end of name */
-    while (p[0] && p[1]) { /* Double NULL treminated string */
-      if (!lstrcmpi_samestart(p, name)) {
-        /* DONE !*/
-        return strtoi(p + lstrlen(name));
-      } else {
-        /* Go to next string... */
-        p += lstrlen(p); /* p in on the '\0' */
-        p++;             /* next string start. */
-        if (!*p) break;
-      }
-    }
-  }
+  const TCHAR* val = GetSectionOptionCStr(section, oname, NULL);
+  if (val) return strtoi(val);
   /* Default to the provided def value */
   return def;
 }

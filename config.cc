@@ -150,12 +150,13 @@ static void OpenConfig(int startpage) {
   PROPSHEETHEADER psh;
   mem00(&psh, sizeof(psh));
   psh.dwSize = sizeof(psh);
-  psh.dwFlags = VISTA ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
-                            PSH_NOCONTEXTHELP
-                      : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
+  psh.dwFlags = WinVer >= VISTA
+                    ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
+                          PSH_NOCONTEXTHELP
+                    : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
   psh.hwndParent = NULL;
   psh.hInstance = g_hinst;
-  psh.hIcon = icons[1];  // LoadIcon(g_hinst, iconstr[1]);
+  psh.hIcon = g_icons[1];  // LoadIcon(g_hinst, iconstr[1]);
   psh.pszCaption = TEXT(APP_NAMEA);
   psh.nPages = ARR_SZ(psp);
   psh.ppsp = psp;
@@ -360,11 +361,21 @@ static int WriteOptionBoolBW(HWND hwnd, WORD id, const TCHAR* section,
 
 static void WriteOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
                             const char* name_s) {
-  TCHAR txt[1024];
   TCHAR name[64];
+  HWND item = GetDlgItem(hwnd, id);
+  int len = GetWindowTextLength(item);
   str2tchar(name, name_s);
-  GetDlgItemText(hwnd, id, txt, ARR_SZ(txt));
-  WritePrivateProfileString(section, name, txt, inipath);
+  if (len < 1024) {
+    TCHAR txt[1024];
+    *txt = TEXT('\0');
+    GetWindowText(item, txt, ARR_SZ(txt));
+    WritePrivateProfileString(section, name, txt, inipath);
+  } else {
+    TCHAR* buf = (TCHAR*)calloc((len + 1), sizeof(*buf));
+    GetWindowText(item, buf, len + 1);
+    WritePrivateProfileString(section, name, buf, inipath);
+    free(buf);
+  }
 }
 #define WriteOptionStr(id, section, name) \
   WriteOptionStrW(hwnd, id, section, name)
@@ -374,8 +385,28 @@ static void ReadOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
   TCHAR txt[1024];
   TCHAR name[64];
   str2tchar(name, name_s);
-  GetPrivateProfileString(section, name, def, txt, ARR_SZ(txt), inipath);
-  SetDlgItemText(hwnd, id, txt);
+  DWORD redlen =
+      GetPrivateProfileString(section, name, def, txt, ARR_SZ(txt), inipath);
+  if (redlen < ARR_SZ(txt) - 1) {
+    SetDlgItemText(hwnd, id, txt);
+    return;  // DONE!
+  }
+
+  // Fallback to larger heap buffer.
+  TCHAR* buf = NULL;
+  DWORD buflen = 2048;
+  do {
+    buflen *= 2;
+    TCHAR* tmp = (TCHAR*)realloc(buf, buflen * sizeof(TCHAR));
+    if (!tmp) {
+      free(buf);
+      return;
+    }
+    buf = tmp;
+    redlen = GetPrivateProfileString(section, name, def, buf, buflen, inipath);
+  } while (redlen == buflen - 1);
+  SetDlgItemText(hwnd, id, buf);
+  free(buf);
 }
 #define ReadOptionStr(id, section, name, def) \
   ReadOptionStrW(hwnd, id, section, name, def)
@@ -460,7 +491,7 @@ typedef struct optlst {
   UCHAR bitN;
   const TCHAR* section;
   const char* name;
-  void* def;
+  const void* def;
 } optlst_t;
 static void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
   for (size_t i = 0; i < size; i++) {
@@ -578,15 +609,13 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     CB_ResetContent(control);
     EnableWindow(control, TRUE);
 
-    if (langinfo.it) {
-      for (size_t i = 0; i < langinfo.num; i++) {
-        CB_AddString(control, langinfo.it[i].lang);
-        if (!lstrcmpi(l10n->Code, langinfo.it[i].code)) {
-          CB_SetCurSel(control, i);
-        }
+    for (size_t i = 0; i < langinfo.num; i++) {
+      CB_AddString(control, langinfo.it[i].lang);
+      if (!lstrcmpi(l10n->Code, langinfo.it[i].code)) {
+        CB_SetCurSel(control, i);
       }
     }
-    EnableDlgItem(hwnd, IDC_ELEVATE, VISTA && !elevated);
+    EnableDlgItem(hwnd, IDC_ELEVATE, WinVer >= VISTA && !elevated);
     //    } else if (msg == WM_HELP) {
     //        ShowContextHelp(strlst, ARR_SZ(strlst), hwnd, (LPHELPINFO)lParam);
   } else if (msg == WM_COMMAND) {
@@ -604,7 +633,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
 
     if (id == IDC_AUTOSTART) {
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, val);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val && VISTA);
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val && WinVer >= VISTA);
       if (!val) {
         CheckDlgButton(hwnd, IDC_AUTOSTART_HIDE, BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE, BST_UNCHECKED);
@@ -633,8 +662,8 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
       CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE,
                      eelevated ? BST_CHECKED : BST_UNCHECKED);
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, autostart);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart && VISTA);
-      if (WIN10)
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart && WinVer >= VISTA);
+      if (WinVer >= WIN10)
         EnableDlgItem(hwnd, IDC_INACTIVESCROLL, IsChecked(IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // all bool options (checkboxes).
@@ -1477,7 +1506,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
     // Always enabled in 64 bit mode.
     EnableDlgItem(hwnd, IDC_AGGRESSIVEPAUSE,
                   HaveProc("NTDLL.DLL", "NtResumeProcess"));
-    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WIN2K);
+    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WinVer >= WIN2K);
 #endif
 
   } else if (msg == WM_COMMAND) {
@@ -1728,7 +1757,6 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
 /////////////////////////////////////////////////////////////////////////////
 static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
                                                 WPARAM wParam, LPARAM lParam) {
-#pragma GCC diagnostic ignored "-Wint-conversion"
   static const optlst_t optlst[] = {
       {IDC_PROCESSBLACKLIST, T_STR, 0, TEXT("Blacklist"), "Processes",
        (void*)TEXT("")},
@@ -1737,7 +1765,6 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
       {IDC_MDIS, T_STR, 0, TEXT("Blacklist"), "MDIs", (void*)TEXT("")},
       {IDC_PAUSEBL, T_STR, 0, TEXT("Blacklist"), "Pause", (void*)TEXT("")},
   };
-#pragma GCC diagnostic pop
 
   static int have_to_apply = 0;
 
@@ -1909,9 +1936,14 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   } else if (msg == WM_NOTIFY) {
     LPNMHDR pnmh = (LPNMHDR)lParam;
     if (pnmh->code == PSN_SETACTIVE) {
+      TCHAR buf[128];
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
-      SetDlgItemText(hwnd, IDC_VERSION, l10n->AboutVersion);
+      // Append version number to version....
+      lstrcpy_s(buf, ARR_SZ(buf), l10n->AboutVersion);
+      lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
+      SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
+
       SetDlgItemText(hwnd, IDC_URL,
                      TEXT("https://github.com/RamonUnch/AltSnap"));
       SetDlgItemText(hwnd, IDC_AUTHOR, l10n->AboutAuthor);
@@ -1921,14 +1953,12 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
       TCHAR txt[1024];
       txt[0] = TEXT('\0');
-      if (langinfo.it) {
-        for (size_t i = 0; i < langinfo.num; i++) {
-          lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].lang_english);
-          lstrcat_s(txt, ARR_SZ(txt), TEXT(": "));
-          lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].author);
-          if (i + 1 != langinfo.num) {
-            lstrcat_s(txt, ARR_SZ(txt), TEXT("\r\n"));
-          }
+      for (size_t i = 0; i < langinfo.num; i++) {
+        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].lang_english);
+        lstrcat_s(txt, ARR_SZ(txt), TEXT(": "));
+        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].author);
+        if (i + 1 != langinfo.num) {
+          lstrcat_s(txt, ARR_SZ(txt), TEXT("\r\n"));
         }
       }
       SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);
@@ -2274,7 +2304,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                    DT_NOCLIP | DT_TABSTOP);
         }
       }
-      TCHAR* str = l10n->MiscZoneTestWinHelp;
+      const TCHAR* str = l10n->MiscZoneTestWinHelp;
       if (UseZones & 1) {
         RECT trc2 = {lineheight / 2, lineheight / 2, crc.right, splitheight};
         DrawText(hdc, str, lstrlen(str), &trc2, DT_NOCLIP | DT_TABSTOP);
@@ -2328,7 +2358,7 @@ static HWND NewTestWindow() {
                      sizeof(LONG_PTR)  // To store old GWL_STYLE
                      ,
                      g_hinst,
-                     icons[1]  // LoadIcon(g_hinst, iconstr[1])
+                     g_icons[1]  // LoadIcon(g_hinst, iconstr[1])
                      ,
                      LoadCursor(NULL, IDC_ARROW),
                      NULL  //(HBRUSH)(COLOR_BACKGROUND+1)

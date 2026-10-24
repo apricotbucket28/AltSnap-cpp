@@ -20,7 +20,7 @@
   (short)(offsetof(struct strings, entryname) / sizeof(TCHAR**))
 
 // Resolve entry name from index.
-#define L10NSTR(i) (((const TCHAR* const* const)l10n)[i])
+#define L10NSTR(i) (((const TCHAR* const*)l10n)[i])
 
 struct langinfoitem {
   TCHAR code[8];
@@ -281,7 +281,7 @@ struct langinfoitem {
            TEXT("Show an i&ndicator on always on top windows"), NULL)          \
   /* About Tab */                                                              \
   LNGVALUE(AboutBox, TEXT("About ") APP_NAME, NULL)                            \
-  LNGVALUE(AboutVersion, TEXT("Version ") TEXT(APP_VERSION), NULL)             \
+  LNGVALUE(AboutVersion, TEXT("Version"), NULL)                                \
   LNGVALUE(AboutAuthor, TEXT("Created by Stefan Sundin"), NULL)                \
   LNGVALUE(AboutAuthor2, TEXT("Maintained by Raymond Gillibert"), NULL)        \
   LNGVALUE(                                                                    \
@@ -292,10 +292,10 @@ struct langinfoitem {
   LNGVALUE(AboutTranslationCredit, TEXT("Translation credit"), NULL)           \
   /* Misc */                                                                   \
   LNGVALUE(MiscUnhookError,                                                    \
-           TEXT("There was an error disabling AltDrag. This was most likely "  \
-                "caused by Windows having already disabled AltDrag's "         \
+           TEXT("There was an error disabling AltSnap. This was most likely "  \
+                "caused by Windows having already disabled AltSnap's "         \
                 "hooks.\n\nIf this is the first time this has happened, you "  \
-                "can safely ignore it and continue using AltDrag.\n\nIf this " \
+                "can safely ignore it and continue using AltSnap.\n\nIf this " \
                 "is happening repeatedly, you can read on the website how to " \
                 "prevent this from happening again (look for 'AltDrag "        \
                 "mysteriously stops working' in the documentation)."),         \
@@ -347,7 +347,7 @@ struct langinfoitem {
   LNGVALUE(y, TEXT("ýÿ¥%ŷẏȳ|Ȳƴɏ|Ɏⓨ"), NULL)                                    \
   LNGVALUE(z, TEXT("ž%źẑżẓẕ%ƶʒƹƺǯȥ|Ȥɀ|Ɀⱬ|Ⱬⓩ"), NULL)
 
-#define LNGVALUE(x, y, z) TCHAR *x, *x##_T_T_;
+#define LNGVALUE(x, y, z) const TCHAR *x, *x##_T_T_;
 // String structure definition TCHAR *translation, *tooltip;
 struct strings {
   LANGUAGE_MAP
