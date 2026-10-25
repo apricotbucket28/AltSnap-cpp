@@ -4,39 +4,34 @@
  * General Public License Version 3 or later (Free Software Foundation)  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#include "hooks.h"
+#include "zones.h"
 
-static void MouseMove(POINT pt);
-static void ShowSnapLayoutPreview(unsigned char yep);
+#include "hooks_internal.h"
+#include "snap.h"
 
-enum { MAX_ZONES = 2048, MAX_LAYOUTS = 10 };
-enum { INVALID_ZONE_IDX = 0xffffffffU };
-
-static std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
+std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
 static DWORD Grids[MAX_LAYOUTS] = {};
 
-enum { ZONES_PREV_HIDE = 0, ZONES_PREV_SHOW = 1 };
-
-static void freezones() {
+void freezones() {
   for (auto& layout : Zones) layout = {};  // Also releases the memory.
 }
 
 static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
-                           const TCHAR* inisection) {
+                           const wchar_t* inisection) {
   if (idx > MAX_ZONES) return 0;
 
   long* ZONE = reinterpret_cast<long*>(zone);
   char zname[32];
   zname[0] = '\0';
-  TCHAR zaschii[128];
+  wchar_t zaschii[128];
 
-  LPCTSTR txt = GetSectionOptionCStr(
+  const wchar_t* txt = GetSectionOptionCStr(
       inisection, ZidxToZonestrA(laynum, idx, zname), nullptr);
   if (!txt || !txt[0]) return 0;
   // LOGA("Zone(%u, %u) = %ls", laynum, idx, txt);
   //  Copy to modifyable buffer.
   lstrcpy_s(zaschii, std::size(zaschii), txt);
-  TCHAR *oldptr, *newptr;
+  wchar_t *oldptr = nullptr, *newptr = nullptr;
   oldptr = &zaschii[0];
   for (size_t i = 0; i < 4; i++) {
     newptr = lstrchr(oldptr, ',');
@@ -49,7 +44,7 @@ static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
   }
   return 1;
 }
-static void ReadZonesFromLayout(const TCHAR* inisection, unsigned laynum) {
+static void ReadZonesFromLayout(const wchar_t* inisection, unsigned laynum) {
   Zones[laynum].clear();
   RECT tmpzone;
   while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].size(), inisection)) {
@@ -57,7 +52,7 @@ static void ReadZonesFromLayout(const TCHAR* inisection, unsigned laynum) {
   }
 }
 // Load all zones from ini file
-static void ReadZones(const TCHAR* inisection) {
+void ReadZones(const wchar_t* inisection) {
   for (size_t i = 0; i < std::size(Zones); i++)
     ReadZonesFromLayout(inisection, i);
 }
@@ -72,8 +67,8 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
   Zones[layout].reserve(monitors.size() * Nx * Ny);
 
   // Loop on all monitors
-  for (size_t m = 0; m < monitors.size(); m++) {
-    const RECT* mon = &monitors[m];
+  for (auto& monitor : monitors) {
+    const RECT* mon = &monitor;
     for (size_t i = 0; i < Nx; i++) {    // Horizontal
       for (size_t j = 0; j < Ny; j++) {  // Vertical
         RECT& elem = Zones[layout].emplace_back();
@@ -85,7 +80,7 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
     }
   }
 }
-static void ReadGrids(const TCHAR* inisection) {
+void ReadGrids(const wchar_t* inisection) {
   char gnamex[8];
   char gnamey[8];
   lstrcpy_s(gnamex, std::size(gnamex), "GridNx");
@@ -149,7 +144,7 @@ static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
   RECT* const lZones = Zones[conf.LayoutNumber].data();
   size_t numzones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
-  unsigned i, ret = 0;
+  unsigned i = 0, ret = 0;
   SetRectEmpty(urc);
   int iz = conf.InterZone;
   iz = (iz * iz) << 1;
@@ -178,7 +173,7 @@ static unsigned GetZoneContainingPoint(POINT pt, RECT* urc, int extend) {
   RECT* const lZones = Zones[conf.LayoutNumber].data();
   size_t numzones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
-  unsigned i, ret = 0;
+  unsigned i = 0, ret = 0;
   SetRectEmpty(urc);
   int iz = conf.InterZone;
   for (i = 0; i < numzones; i++) {
@@ -207,16 +202,14 @@ static unsigned GetZoneFromPoint(POINT pt, RECT* urc, int extend) {
   // Invalid Snap mode!
   return 0;
 }
-[[nodiscard]] static int IsResizable(HWND hwnd);
 
-static void ActionToggleSnapToZoneMode() {
+void ActionToggleSnapToZoneMode() {
   if (conf.UseZones & 1 && state.action.ac == AC_MOVE) {
     state.usezones = !state.usezones;
     MouseMove(state.prevpt);
   }
 }
-static void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width,
-                           int* height) {
+void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width, int* height) {
   if (!(conf.UseZones & 1) || state.mdiclient ||
       !state.resizable)  // Zones disabled
     return;
@@ -312,9 +305,7 @@ static unsigned GetNearestZoneFromPointInDirection(const RECT* rc, RECT* out,
 //    CLAMPW(fr->right-fr->left), CLAMPH(fr->bottom-fr->top));
 //}
 
-static void SetOriginFromRestoreData(HWND hnwd, action_t action);
-static HMONITOR GetMonitorInfoFromWin(HWND hwnd, MONITORINFO* mi);
-static void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
+void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
   if (!(conf.UseZones & 1) || state.mdiclient ||
       !state.resizable)  // Zones disabled
     return;
@@ -322,7 +313,7 @@ static void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
   // 1st get current window position.
   RECT rc;
   GetWindowRectL(hwnd, &rc);
-  POINT pt;
+  POINT pt = {0, 0};
 
   int offset = abs(conf.InterZone) + 16;
 
@@ -338,6 +329,8 @@ static void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
   } else if (direction == 3) {        // BOTTOM
     pt.x = (rc.right + rc.left) / 2;  // Mid Bottom segment
     pt.y = rc.bottom + offset;
+  } else {
+    return;  // Unknown direction.
   }
   if (IsZoomed(hwnd) && extend) return;
 
@@ -385,7 +378,7 @@ static void UnionMultiRect(RECT* urc, const RECT* rcs, unsigned N) {
     urc->bottom = std::max(urc->bottom, rcs->bottom);
   }
 }
-[[nodiscard]] static DWORD GetLayoutRez(int laynum) {
+[[nodiscard]] DWORD GetLayoutRez(int laynum) {
   laynum = CLAMP(0, laynum, std::size(Zones) - 1);
   if (conf.UseZones & 2) {
     // In Grid mode we return the grid dimentions!
@@ -413,7 +406,7 @@ static DWORD GetFullMonitorsRez() {
 
 // Return a layout number if its dimentions exactly fit
 // the display monitor.
-static int GetBestLayoutFromMonitors() {
+int GetBestLayoutFromMonitors() {
   if (!(conf.UseZones & 1)) return -1;
   if (conf.UseZones & 2) {
     // Grid mode! Do not change Grid, just recalculate them all...
@@ -430,7 +423,7 @@ static int GetBestLayoutFromMonitors() {
   if (!curRZ) return -1;
 
   // Check if the current Layout is good for the current monitor
-  DWORD monRZ;
+  DWORD monRZ = 0;
   if (monitors.size() <= 1) {
     RECT mrc;
     SystemParametersInfo(SPI_GETWORKAREA, 0, &mrc, 0);
@@ -455,8 +448,9 @@ static int GetBestLayoutFromMonitors() {
 }
 
 static HWND g_zphwnd = nullptr;
-COLORREF g_ZPrevBDCol = RGB(0, 0, 0);
-LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+static COLORREF g_ZPrevBDCol = RGB(0, 0, 0);
+static LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp,
+                                          LPARAM lp) {
   static HPEN pen = nullptr;
 
   switch (msg) {
@@ -479,13 +473,13 @@ LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       HPEN oldpen = static_cast<HPEN>(SelectObject(ps.hdc, pen));
       //        HFONT oldfont = (HFONT)SelectObject(ps.hdc, font);
       // PaintDesktop(ps.hdc);
-      HBRUSH oldBrush = static_cast<HBRUSH>(
+      auto oldBrush = static_cast<HBRUSH>(
           SelectObject(ps.hdc, GetStockObject(HOLLOW_BRUSH)));
-      for (size_t i = 0; i < Zones[conf.LayoutNumber].size(); i++) {
-        RECT* rc = &Zones[conf.LayoutNumber][i];
+      for (auto& i : Zones[conf.LayoutNumber]) {
+        RECT* rc = &i;
         if (!AreRectsTouchingT(rc, &ps.rcPaint, 0)) {
-          //                TCHAR buf[16]; SIZE sz;
-          //                const TCHAR *num = Int2lStr(buf, i);
+          //                wchar_t buf[16]; SIZE sz;
+          //                const wchar_t *num = Int2lStr(buf, i);
           //                int txtlen = lstrlen(num);
           //                GetTextExtentPoint32(ps.hdc, num, txtlen, &sz);
           //                int txtX = (rc->left + rc->right - sz.cx) / 2 +
@@ -518,7 +512,7 @@ LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProc(hwnd, msg, wp, lp);
 }
 
-static void ShowSnapLayoutPreview(unsigned char yep) {
+void ShowSnapLayoutPreview(unsigned char yep) {
   if (g_zphwnd) {  // Window was created
     if (!yep) {
       ShowWindow(g_zphwnd, SW_HIDE);
@@ -536,9 +530,9 @@ static void ZonesPrevResetRegion() {
   GetWindowRect(g_zphwnd, &wrc);
   ScreenToClient(g_zphwnd, &opt);
   HRGN hregion = CreateRectRgn(0, 0, 0, 0);
-  for (size_t i = 0; i < Zones[conf.LayoutNumber].size(); i++) {
+  for (auto& i : Zones[conf.LayoutNumber]) {
     RECT rc;
-    CopyRect(&rc, &Zones[conf.LayoutNumber][i]);
+    CopyRect(&rc, &i);
     OffsetRect(&rc, opt.x, opt.y);
     HRGN tmpr =
         CreateRectRgn(rc.left, rc.top, rc.right, rc.top + 4);  // top  ^^^^
@@ -560,15 +554,13 @@ static void ZonesPrevResetRegion() {
   SetWindowRgn(g_zphwnd, hregion, FALSE);
 }
 
-static unsigned readhotkeys(const TCHAR* inisection, const char* name,
-                            const TCHAR* def, UCHAR* keys, unsigned MaxKeys);
-static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
+void SnapLayoutPreviewCreateDestroy(const wchar_t* inisection) {
   if (!conf.ShowZonesPrevw) return;
   if (inisection) {
     int bgcol[2], bdcol[2];
-    readhotkeys(inisection, "ZonesPrevwBGCol", TEXT("FF FF FF"),
+    readhotkeys(inisection, "ZonesPrevwBGCol", L"FF FF FF",
                 reinterpret_cast<UCHAR*>(&bgcol[0]), 3);
-    readhotkeys(inisection, "ZonesPrevwBDCol", TEXT("00 00 00"),
+    readhotkeys(inisection, "ZonesPrevwBDCol", L"00 00 00",
                 reinterpret_cast<UCHAR*>(&bdcol[0]), 3);
     g_ZPrevBDCol = bdcol[0];
     const UCHAR opacity = conf.ZonesPrevwOpacity;
@@ -578,10 +570,10 @@ static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
         opacity == 0 ? CreateSolidBrush(bdcol[0]) : CreateSolidBrush(bgcol[0]);
     const WNDCLASS wnd = {
         0,       wproc,   0,      0,       hinstDLL,
-        nullptr, nullptr, wbrush, nullptr, APP_NAME TEXT("-ZonesPreview")};
+        nullptr, nullptr, wbrush, nullptr, APP_NAME L"-ZonesPreview"};
     RegisterClass(&wnd);
 
-    int left = 0, top = 0, width, height;
+    int left = 0, top = 0, width = 0, height = 0;
     if (GetSystemMetrics(SM_CMONITORS) >= 1) {
       left = GetSystemMetrics(SM_XVIRTUALSCREEN);
       top = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -603,11 +595,11 @@ static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
 
   } else {
     if (g_zphwnd) DestroyWindow(g_zphwnd);
-    UnregisterClass(APP_NAME TEXT("-ZonesPreview"), hinstDLL);
+    UnregisterClass(APP_NAME L"-ZonesPreview", hinstDLL);
   }
 }
 
-static void SetLayoutNumber(WPARAM number) {
+void SetLayoutNumber(WPARAM number) {
   int was_visible = IsWindowVisible(g_zphwnd);
   ShowSnapLayoutPreview(0);
   conf.LayoutNumber = CLAMP(0, number, 9);

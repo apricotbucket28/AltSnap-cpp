@@ -48,19 +48,19 @@ enum {
 };
 
 // App
-#define APP_NAME TEXT("AltSnap")
+#define APP_NAME L"AltSnap"
 #define APP_NAMEA "AltSnap"
-#define APP_PROPPT APP_NAME TEXT("-RDim")
-#define APP_PROPFL APP_NAME TEXT("-RFlag")
-#define APP_PROPOFFSET APP_NAME TEXT("-ROffset")
-#define APP_PRBDLESS APP_NAME TEXT("-RStyle")
-#define APP_ROLLED APP_NAME TEXT("-Rolled")
-#define APP_ASONOFF APP_NAME TEXT("-ASOnOff")
-#define APP_MOVEONOFF APP_NAME TEXT("-MoveOnOff")
-#define APP_PRODPI APP_NAME TEXT("-ODPI")
-#define APP_OWDMCP APP_NAME TEXT("-OWDMCP")
-#define FZ_PROPPT TEXT("FancyZones_RestoreSize")
-#define FZ_PROPZONES TEXT("FancyZones_zones")
+#define APP_PROPPT APP_NAME L"-RDim"
+#define APP_PROPFL APP_NAME L"-RFlag"
+#define APP_PROPOFFSET APP_NAME L"-ROffset"
+#define APP_PRBDLESS APP_NAME L"-RStyle"
+#define APP_ROLLED APP_NAME L"-Rolled"
+#define APP_ASONOFF APP_NAME L"-ASOnOff"
+#define APP_MOVEONOFF APP_NAME L"-MoveOnOff"
+#define APP_PRODPI APP_NAME L"-ODPI"
+#define APP_OWDMCP APP_NAME L"-OWDMCP"
+#define FZ_PROPPT L"FancyZones_RestoreSize"
+#define FZ_PROPZONES L"FancyZones_zones"
 
 // User Messages
 #define WM_TRAY (WM_USER + 2)
@@ -153,8 +153,8 @@ struct rgTagAction {
 };
 using action_t = rgTagAction;
 
-static const action_t k_action_none = {AC_NONE, 0, 0};
-static const action_t k_action_move = {AC_MOVE, 0, 0};
+inline constexpr action_t k_action_none = {AC_NONE, 0, 0};
+inline constexpr action_t k_action_move = {AC_MOVE, 0, 0};
 
 #define PACK_ACTION(x) \
   ((LPARAM)(x.ac << 24) | (LPARAM)(x.fl << 16) | (LPARAM)(x.wp << 0))
@@ -174,7 +174,7 @@ enum {
 };
 
 // Helper function to get extra action info
-[[nodiscard]] static UCHAR ActionInfo(action_t action) {
+[[nodiscard]] inline UCHAR ActionInfo(action_t action) {
   enum {
     MV = ACINFO_MOVE,
     RZ = ACINFO_RESIZE,
@@ -203,7 +203,7 @@ enum {
 
 ///////////////////////////////////////////////////////////////////////////
 // Check if key is assigned in the HKlist
-[[nodiscard]] static int IsHotkeyy(unsigned char key,
+[[nodiscard]] inline int IsHotkeyy(unsigned char key,
                                    const unsigned char* HKlist) {
   const UCHAR* pos = &HKlist[0];
   while (*pos) {
@@ -214,7 +214,7 @@ enum {
   }
   return 0;
 }
-[[nodiscard]] static int IsActionInList(const enum action ac,
+[[nodiscard]] inline int IsActionInList(const enum action ac,
                                         const enum action* aclst) {
   do {
     if (ac == *aclst) return 1;
@@ -223,17 +223,17 @@ enum {
   return 0;
 }
 // Convert zone number to ini name entry
-static TCHAR* ZidxToZonestr(int laynum, int idx, TCHAR zname[32]) {
+inline wchar_t* ZidxToZonestr(int laynum, int idx, wchar_t zname[32]) {
   if (laynum > 9) return nullptr;
-  TCHAR txt[kUintDigits + 1];
-  zname[0] = !laynum ? TEXT('\0') : TEXT('A') + laynum - 1;
+  wchar_t txt[kUintDigits + 1];
+  zname[0] = !laynum ? L'\0' : L'A' + laynum - 1;
   zname[1] = '\0';
-  lstrcat_s(zname, 32, TEXT("Zone"));
+  lstrcat_s(zname, 32, L"Zone");
   lstrcat_s(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
 
   return zname;
 }
-static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
+inline char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
   if (laynum > 9) return nullptr;
   char txt[16];
   zname[0] = !laynum ? '\0' : 'A' + laynum - 1;
@@ -244,12 +244,13 @@ static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
   return zname;
 }
 
-[[nodiscard]] static TCHAR* is_base_action(const TCHAR* a, const char* b) {
+[[nodiscard]] inline wchar_t* is_base_action(const wchar_t* a, const char* b) {
   while (*a && *a != '=' && *a != '_' && *a == *b) {
     b++;
     a++;
   }
-  return (*a == '_' || *a == '=' || *a == *b) ? const_cast<TCHAR*>(a) : nullptr;
+  return (*a == '_' || *a == '=' || *a == *b) ? const_cast<wchar_t*>(a)
+                                              : nullptr;
 }
 
 /* Map action string to actual action_t struct
@@ -257,19 +258,19 @@ static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
  * MyActionName[_XXX][_XXX_YYY]\0 ; ending with a NULL
  * MyActionName[_XXX][_XXX_YYY]=  ; Or with an equal
  */
-[[nodiscard]] static action_t MapActionW(const TCHAR* txt) {
+[[nodiscard]] inline action_t MapActionW(const wchar_t* txt) {
   action_t action = {AC_NONE};
   if (!txt || !*txt) return action;
 #define ACVALUE(a, b, c) (#b),
   static const char* action_map[] = {ACTION_MAP};
 #undef ACVALUE
-  UCHAR ac;
+  UCHAR ac = 0;
 
   // ShrtX X = 0 to Z (for backward compat...)
   // It should be done with Shrt_XX.
   if (txt[0] == 'S' && txt[1] == 'h' && txt[2] == 'r' && txt[3] == 't' &&
       '0' <= txt[4] && txt[4] <= 'Z' && (txt[5] == '\0' || txt[5] == '=')) {
-    TCHAR c = txt[4];
+    wchar_t c = txt[4];
     UCHAR num = c <= '9' ? c - '0' : c - 'A' + 10;
     action.ac = AC_SHRT;
     action.fl = std::min(num, static_cast<UCHAR>(35));  // Safety clamp
@@ -277,13 +278,13 @@ static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
   }
 
   for (ac = 0; ac < std::size(action_map); ac++) {
-    TCHAR* params;
+    wchar_t* params = nullptr;
     if ((params = is_base_action(txt, action_map[ac]))) {
       BYTE flagparam = 0;
       action.ac = ac;
-      if (*params == TEXT('_') && *++params) {
+      if (*params == L'_' && *++params) {
         // We got 1 parameter.
-        TCHAR cc = *params++;
+        wchar_t cc = *params++;
         switch (cc) {
           // Direction flags
           case 'L':
@@ -307,7 +308,7 @@ static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
           default:  // Parse an int
             --params;
             for (; cc != '=' && cc != '_' && cc; cc = *params) {
-              flagparam = flagparam * 10 + (cc - TEXT('0'));
+              flagparam = flagparam * 10 + (cc - L'0');
               ++params;
             }
         }
@@ -328,10 +329,7 @@ static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-void assertions() {
-  // static_assert(sizeof(action_t) == 4, "sizeof(action_t) should be 4!");
-  static_assert(AC_ORICLICK <= 127,
-                "Maximal action number should be 127 or less!");
-}
+static_assert(AC_ORICLICK <= 127,
+              "Maximal action number should be 127 or less!");
 
 #endif /* ALTDRAG_RPC_H */

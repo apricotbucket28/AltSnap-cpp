@@ -6,11 +6,17 @@
  * Modified By Raymond Gillibert in 2020                                 *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#include "config.h"
+
 #include <commctrl.h>
 
 #include <algorithm>
 
+#include "altsnap.h"
+#include "hooks.h"
+#include "languages.h"
 #include "resource.h"
+#include "tray.h"
 
 #ifndef TTM_SETMAXTIPWIDTH
 #define TTM_SETMAXTIPWIDTH (WM_USER + 24)
@@ -28,26 +34,26 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND, UINT, WPARAM, LPARAM);
 static INT_PTR CALLBACK AdvancedPageDialogProc(HWND, UINT, WPARAM, LPARAM);
 static LRESULT CALLBACK FindWindowProc(HWND, UINT, WPARAM, LPARAM);
 
-HWND g_cfgwnd = nullptr;
+static HWND g_cfgwnd = nullptr;
 
 /////////////////////////////////////////////////////////////////////////////
 // No error reporting since we don't want the user to be interrupted
 static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   *_on = *_hidden = *_elevated = 0;
   // Read registry
-  HKEY key;
-  TCHAR value[MAX_PATH + 20];
-  value[0] = TEXT('\0');
+  HKEY key = nullptr;
+  wchar_t value[MAX_PATH + 20];
+  value[0] = L'\0';
   DWORD len = sizeof(value);
   RegOpenKeyEx(HKEY_CURRENT_USER,
-               TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), 0,
+               L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0,
                KEY_QUERY_VALUE, &key);
-  RegQueryValueEx(key, TEXT(APP_NAMEA), nullptr, nullptr,
+  RegQueryValueEx(key, APP_NAME, nullptr, nullptr,
                   reinterpret_cast<LPBYTE>(value), &len);
   RegCloseKey(key);
 
   // Compare to what it should be
-  TCHAR compare[MAX_PATH + 20];
+  wchar_t compare[MAX_PATH + 20];
   GetModuleFileName(nullptr, &compare[1], MAX_PATH);
   compare[0] = '\"';
   unsigned ll = lstrlen(compare);
@@ -59,10 +65,10 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   }
   // Autostart is on, check arguments
   *_on = 1;
-  if (lstrstr(value, TEXT(" -hide")) != nullptr) {
+  if (lstrstr(value, L" -hide") != nullptr) {
     *_hidden = 1;
   }
-  if (lstrstr(value, TEXT(" -elevate")) != nullptr) {
+  if (lstrstr(value, L" -elevate") != nullptr) {
     *_elevated = 1;
   }
 }
@@ -70,30 +76,28 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
 /////////////////////////////////////////////////////////////////////////////
 static void SetAutostart(int on, int hhide, int eelevate) {
   // Open key
-  HKEY key;
-  int error =
-      RegCreateKeyEx(HKEY_CURRENT_USER,
-                     TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-                     0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
+  HKEY key = nullptr;
+  int error = RegCreateKeyEx(
+      HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
   if (error != ERROR_SUCCESS) return;
   if (on) {
     // Get path
-    TCHAR value[MAX_PATH + 20];
+    wchar_t value[MAX_PATH + 20];
     GetModuleFileName(nullptr, &value[1], MAX_PATH);
     value[0] = '\"';
     unsigned ll = lstrlen(value);
     value[ll] = '\"';
     value[++ll] = '\0';
     // Add -hide or -elevate flags
-    if (hhide) lstrcat_s(value, std::size(value), TEXT(" -hide"));
-    if (eelevate) lstrcat_s(value, std::size(value), TEXT(" -elevate"));
+    if (hhide) lstrcat_s(value, std::size(value), L" -hide");
+    if (eelevate) lstrcat_s(value, std::size(value), L" -elevate");
     // Set autostart
-    RegSetValueEx(key, TEXT(APP_NAMEA), 0, REG_SZ,
-                  reinterpret_cast<LPBYTE>(value),
+    RegSetValueEx(key, APP_NAME, 0, REG_SZ, reinterpret_cast<LPBYTE>(value),
                   (lstrlen(value) + 1) * sizeof(value[0]));
   } else {
     // Remove
-    RegDeleteValue(key, TEXT(APP_NAMEA));
+    RegDeleteValue(key, APP_NAME);
   }
   // Close key
   RegCloseKey(key);
@@ -101,29 +105,28 @@ static void SetAutostart(int on, int hhide, int eelevate) {
 
 /////////////////////////////////////////////////////////////////////////////
 // Only used in the case of Vista+
-static BOOL ElevateNow(int showconfig) {
-  TCHAR path[MAX_PATH];
+BOOL ElevateNow(int showconfig) {
+  wchar_t path[MAX_PATH];
   GetModuleFileName(nullptr, path, std::size(path));
-  INT_PTR ret;
+  INT_PTR ret = 0;
   if (showconfig)
-    ret = reinterpret_cast<INT_PTR>(ShellExecute(nullptr, TEXT("runas"), path,
-                                                 TEXT("-config -multi"),
-                                                 nullptr, SW_SHOWNORMAL));
+    ret = reinterpret_cast<INT_PTR>(ShellExecute(
+        nullptr, L"runas", path, L"-config -multi", nullptr, SW_SHOWNORMAL));
   else
     ret = reinterpret_cast<INT_PTR>(ShellExecute(
-        nullptr, TEXT("runas"), path, TEXT("-multi"), nullptr, SW_SHOWNORMAL));
+        nullptr, L"runas", path, L"-multi", nullptr, SW_SHOWNORMAL));
 
   if (ret > 32) {
     PostMessage(g_hwnd, WM_CLOSE, 0, 0);
   } else {
-    MessageBox(nullptr, l10n->GeneralElevationAborted, TEXT(APP_NAMEA),
+    MessageBox(nullptr, l10n->GeneralElevationAborted, APP_NAME,
                MB_ICONINFORMATION | MB_OK);
   }
   return FALSE;
 }
 /////////////////////////////////////////////////////////////////////////////
 // Entry point
-static void OpenConfig(int startpage) {
+void OpenConfig(int startpage) {
   ListAllTranslations();  // In case
   if (IsWindow(g_cfgwnd)) {
     PropSheet_SetCurSel(g_cfgwnd, 0, startpage);
@@ -154,14 +157,12 @@ static void OpenConfig(int startpage) {
   PROPSHEETHEADER psh;
   ZeroObject(psh);
   psh.dwSize = sizeof(psh);
-  psh.dwFlags = WinVer >= VISTA
-                    ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
-                          PSH_NOCONTEXTHELP
-                    : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
+  psh.dwFlags =
+      PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON | PSH_NOCONTEXTHELP;
   psh.hwndParent = nullptr;
   psh.hInstance = g_hinst;
   psh.hIcon = g_icons[1];  // LoadIcon(g_hinst, iconstr[1]);
-  psh.pszCaption = TEXT(APP_NAMEA);
+  psh.pszCaption = APP_NAME;
   psh.nPages = std::size(psp);
   psh.ppsp = psp;
   psh.pfnCallback = PropSheetProc;
@@ -172,7 +173,7 @@ static void OpenConfig(int startpage) {
   PropertySheet(&psh);
 }
 /////////////////////////////////////////////////////////////////////////////
-static void CloseConfig() {
+void CloseConfig() {
   PostMessage(g_cfgwnd, WM_CLOSE, 0, 0);
 }
 
@@ -194,7 +195,7 @@ static void UpdateStrings() {
   HWND tc =
       reinterpret_cast<HWND>(SendMessage(g_cfgwnd, PSM_GETTABCONTROL, 0, 0));
   int numrows_prev = TabCtrl_GetRowCount(tc);
-  const TCHAR* titles[6];
+  const wchar_t* titles[6];
   titles[0] = l10n->ConfigTabGeneral;
   titles[1] = l10n->ConfigTabMouse;
   titles[2] = l10n->ConfigTabKeyboard;
@@ -204,7 +205,7 @@ static void UpdateStrings() {
   for (size_t i = 0; i < std::size(titles); i++) {
     TCITEM ti;
     ti.mask = TCIF_TEXT;
-    ti.pszText = const_cast<TCHAR*>(titles[i]);
+    ti.pszText = const_cast<wchar_t*>(titles[i]);
     TabCtrl_SetItem(tc, i, &ti);
   }
 
@@ -250,7 +251,7 @@ static void MoveToCorner(HWND hwnd) {
   GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
 
   GetWindowRect(hwnd, &rc);
-  int x, y;
+  int x = 0, y = 0;
   long h = rc.bottom - rc.top;
   long w = rc.right - rc.left;
   if (pt.x < (mi.rcWork.right - mi.rcWork.left) / 2) {
@@ -289,13 +290,13 @@ static DWORD IsUACEnabled() {
   DWORD uac_enabled = 0;
   if (elevated) {
     DWORD len = sizeof(uac_enabled);
-    HKEY key;
+    HKEY key = nullptr;
     RegOpenKeyEx(
         HKEY_LOCAL_MACHINE,
-        TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"),
-        0, KEY_QUERY_VALUE, &key);
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", 0,
+        KEY_QUERY_VALUE, &key);
 
-    RegQueryValueEx(key, TEXT("EnableLUA"), nullptr, nullptr,
+    RegQueryValueEx(key, L"EnableLUA", nullptr, nullptr,
                     reinterpret_cast<LPBYTE>(&uac_enabled), &len);
     RegCloseKey(key);
   }
@@ -308,7 +309,7 @@ static DWORD IsUACEnabled() {
 
 #define CB_ResetContent(hwnd) SendMessage(hwnd, CB_RESETCONTENT, 0, 0)
 #define CB_AddString(hwnd, txt) \
-  SendMessage(hwnd, CB_ADDSTRING, 0, (LPARAM)(LPCTSTR)txt)
+  SendMessage(hwnd, CB_ADDSTRING, 0, (LPARAM)(const wchar_t*)txt)
 #define CB_DeleteString(hwnd, i) SendMessage(hwnd, CB_DELETESTRING, i, 0)
 #define CB_SetCurSel(hwnd, i) SendMessage(hwnd, CB_SETCURSEL, i, 0)
 #define CB_GetCurSel(hwnd) (int)(DWORD)SendMessage(hwnd, CB_GETCURSEL, 0, 0)
@@ -321,7 +322,7 @@ static int CB_GetCurSelDlgItem(HWND hwnd, UINT id) {
   (int)(DWORD)SendMessage(GetDlgItem(hwnd, id), WM_GETTEXT, (WPARAM)txtlen, \
                           (LPARAM)txt)
 
-static LRESULT CB_GetTextAndIdx(HWND hwnd, TCHAR* txt, size_t txtlen) {
+static LRESULT CB_GetTextAndIdx(HWND hwnd, wchar_t* txt, size_t txtlen) {
   LRESULT idx = SendMessage(hwnd, CB_GETCURSEL, 0, 0);
   if (idx < 0) {
     GetWindowText(hwnd, txt, txtlen);  // Edit mode
@@ -333,27 +334,27 @@ static LRESULT CB_GetTextAndIdx(HWND hwnd, TCHAR* txt, size_t txtlen) {
   return idx;
 }
 
-static LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd, const TCHAR* txt) {
+static LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd,
+                                                 const wchar_t* txt) {
   LRESULT new_index =
       SendMessage(hwnd, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
                   reinterpret_cast<LPARAM>(txt));
   if (new_index < 0) new_index = CB_AddString(hwnd, txt);
   return new_index;
 }
-static void WriteOptionBoolW(HWND hwnd, WORD id, const TCHAR* section,
+static void WriteOptionBoolW(HWND hwnd, WORD id, const wchar_t* section,
                              const char* name_s) {
-  TCHAR name[64];
+  wchar_t name[64];
   str2tchar(name, name_s);
   WritePrivateProfileString(
-      section, name, IsDlgButtonChecked(hwnd, id) ? TEXT("1") : TEXT("0"),
-      inipath);
+      section, name, IsDlgButtonChecked(hwnd, id) ? L"1" : L"0", inipath);
 }
 #define WriteOptionBool(id, section, name) \
   WriteOptionBoolW(hwnd, id, section, name)
-static int WriteOptionBoolBW(HWND hwnd, WORD id, const TCHAR* section,
+static int WriteOptionBoolBW(HWND hwnd, WORD id, const wchar_t* section,
                              const char* name_s, int bit) {
-  TCHAR txt[kUintDigits + 1];
-  TCHAR name[64];
+  wchar_t txt[kUintDigits + 1];
+  wchar_t name[64];
   str2tchar(name, name_s);
   int val = GetPrivateProfileInt(section, name, 0, inipath);
   if (IsDlgButtonChecked(hwnd, id))
@@ -367,31 +368,31 @@ static int WriteOptionBoolBW(HWND hwnd, WORD id, const TCHAR* section,
 #define WriteOptionBoolB(id, section, name, bit) \
   WriteOptionBoolBW(hwnd, id, section, name, bit)
 
-static void WriteOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
+static void WriteOptionStrW(HWND hwnd, WORD id, const wchar_t* section,
                             const char* name_s) {
-  TCHAR name[64];
+  wchar_t name[64];
   str2tchar(name, name_s);
   HWND item = GetDlgItem(hwnd, id);
   const int len = GetWindowTextLength(item);
-  std::basic_string<TCHAR> text(static_cast<size_t>(len) + 1, TEXT('\0'));
+  std::wstring text(static_cast<size_t>(len) + 1, L'\0');
   GetWindowText(item, text.data(), len + 1);
   WritePrivateProfileString(section, name, text.c_str(), inipath);
 }
 #define WriteOptionStr(id, section, name) \
   WriteOptionStrW(hwnd, id, section, name)
 
-static void ReadOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
-                           const char* name_s, const TCHAR* def) {
-  TCHAR name[64];
+static void ReadOptionStrW(HWND hwnd, WORD id, const wchar_t* section,
+                           const char* name_s, const wchar_t* def) {
+  wchar_t name[64];
   str2tchar(name, name_s);
   SetDlgItemText(hwnd, id, ReadIniString(section, name, def, inipath).c_str());
 }
 #define ReadOptionStr(id, section, name, def) \
   ReadOptionStrW(hwnd, id, section, name, def)
 
-static int ReadOptionIntW(HWND hwnd, WORD id, const TCHAR* section,
+static int ReadOptionIntW(HWND hwnd, WORD id, const wchar_t* section,
                           const char* name_s, int def, int mask) {
-  TCHAR name[64];
+  wchar_t name[64];
   str2tchar(name, name_s);
   int ret = GetPrivateProfileInt(section, name, def, inipath);
   CheckDlgButton(hwnd, id, (ret & mask) ? BST_CHECKED : BST_UNCHECKED);
@@ -410,7 +411,7 @@ static int ReadOptionIntW(HWND hwnd, WORD id, const TCHAR* section,
 // Returns:
 //   The handle to the tooltip.
 //
-static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
+static HWND CreateInfoTip(HWND hDlg, int toolID, const wchar_t* const pszText) {
   if (!toolID || !hDlg || !pszText || !*pszText) return nullptr;
 
   // Get the window of the tool.
@@ -432,11 +433,11 @@ static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
   toolInfo.hwnd = hDlg;
   toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
   toolInfo.uId = reinterpret_cast<UINT_PTR>(hwndTool);
-  toolInfo.lpszText = const_cast<TCHAR*>(pszText);
+  toolInfo.lpszText = const_cast<wchar_t*>(pszText);
 
-  TCHAR buf[16];
+  wchar_t buf[16];
   if (GetClassName(hwndTool, buf, std::size(buf)) > 0 &&
-      !lstrcmpi(TEXT("Static"), buf)) {
+      !lstrcmpi(L"Static", buf)) {
     // Use the RECT for STATIC controls
     toolInfo.uFlags = TTF_SUBCLASS;
     GetWindowRect(hwndTool, &toolInfo.rect);
@@ -454,7 +455,7 @@ static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
 }
 struct dialogstring {
   short idc;
-  short l10nidx; /* const TCHAR *const helpstr; */
+  short l10nidx; /* const wchar_t *const helpstr; */
 };
 using dialogstring_t = dialogstring;
 static void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
@@ -470,7 +471,7 @@ struct optlst {
   short idc;
   UCHAR type;
   UCHAR bitN;
-  const TCHAR* section;
+  const wchar_t* section;
   const char* name;
   const void* def;
 };
@@ -487,7 +488,7 @@ static void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
                      1 << ol[i].bitN);
     else
       ReadOptionStrW(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                     static_cast<const TCHAR*>(ol[i].def));
+                     static_cast<const wchar_t*>(ol[i].def));
   }
 }
 static void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
@@ -504,9 +505,9 @@ static void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
 /////////////////////////////////////////////////////////////////////////////
 // to be used with EnumDesktopWindows()
 static BOOL CALLBACK RefreshTestWin(HWND hwnd, LPARAM lp) {
-  TCHAR classn[256];
+  wchar_t classn[256];
   if (GetClassName(hwnd, classn, std::size(classn)) &&
-      !lstrcmp(TEXT(APP_NAMEA) TEXT("-Test"), classn)) {
+      !lstrcmp(APP_NAME L"-Test", classn)) {
     PostMessage(hwnd, WM_UPDCFRACTION, 0, 0);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOREPOSITION | SWP_NOSIZE);
@@ -537,18 +538,16 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   // Options to bead or written...
   static const optlst_t optlst[] = {
       // dialog id, type, bit number, section name, option name, def val.
-      {IDC_AUTOFOCUS, T_BOL, 0, TEXT("General"), "AutoFocus", V nullptr},
-      {IDC_AERO, T_BOL, 0, TEXT("General"), "Aero", V 1},
-      {IDC_SMARTAERO, T_BMK, 0, TEXT("General"), "SmartAero", V 1},
-      {IDC_SMARTERAERO, T_BMK, 1, TEXT("General"), "SmartAero", V nullptr},
-      {IDC_STICKYRESIZE, T_BOL, 0, TEXT("General"), "StickyResize", V 1},
-      {IDC_INACTIVESCROLL, T_BOL, 0, TEXT("General"), "InactiveScroll",
-       V nullptr},
-      {IDC_MDI, T_BOL, 0, TEXT("General"), "MDI", V 1},
-      {IDC_RESIZEALL, T_BOL, 0, TEXT("Advanced"), "ResizeAll", V 1},
-      {IDC_USEZONES, T_BMK, 0, TEXT("Zones"), "UseZones", V nullptr},
-      {IDC_PIERCINGCLICK, T_BOL, 0, TEXT("Advanced"), "PiercingClick",
-       V nullptr},
+      {IDC_AUTOFOCUS, T_BOL, 0, L"General", "AutoFocus", V nullptr},
+      {IDC_AERO, T_BOL, 0, L"General", "Aero", V 1},
+      {IDC_SMARTAERO, T_BMK, 0, L"General", "SmartAero", V 1},
+      {IDC_SMARTERAERO, T_BMK, 1, L"General", "SmartAero", V nullptr},
+      {IDC_STICKYRESIZE, T_BOL, 0, L"General", "StickyResize", V 1},
+      {IDC_INACTIVESCROLL, T_BOL, 0, L"General", "InactiveScroll", V nullptr},
+      {IDC_MDI, T_BOL, 0, L"General", "MDI", V 1},
+      {IDC_RESIZEALL, T_BOL, 0, L"Advanced", "ResizeAll", V 1},
+      {IDC_USEZONES, T_BMK, 0, L"Zones", "UseZones", V nullptr},
+      {IDC_PIERCINGCLICK, T_BOL, 0, L"Advanced", "PiercingClick", V nullptr},
   };
 #undef V
 
@@ -580,11 +579,10 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   static int have_to_apply = 0;
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
-    int ret;
+    int ret = 0;
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
 
-    ret =
-        GetPrivateProfileInt(TEXT("General"), TEXT("ResizeCenter"), 1, inipath);
+    ret = GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath);
     ret = ret == 1   ? IDC_RZCENTER_NORM
           : ret == 2 ? IDC_RZCENTER_MOVE
           : ret == 3 ? IDC_RZCENTER_CLOSE
@@ -601,7 +599,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
         CB_SetCurSel(control, i);
       }
     }
-    EnableDlgItem(hwnd, IDC_ELEVATE, WinVer >= VISTA && !elevated);
+    EnableDlgItem(hwnd, IDC_ELEVATE, !elevated);
     //    } else if (msg == WM_HELP) {
     //        ShowContextHelp(strlst, std::size(strlst), hwnd,
     //        (LPHELPINFO)lParam);
@@ -620,21 +618,21 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
 
     if (id == IDC_AUTOSTART) {
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, val);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val && WinVer >= VISTA);
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, val);
       if (!val) {
         CheckDlgButton(hwnd, IDC_AUTOSTART_HIDE, BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE, BST_UNCHECKED);
       }
     } else if (id == IDC_AUTOSTART_ELEVATE) {
       if (val && IsUACEnabled()) {
-        MessageBox(nullptr, l10n->GeneralAutostartElevateTip, TEXT(APP_NAMEA),
+        MessageBox(nullptr, l10n->GeneralAutostartElevateTip, APP_NAME,
                    MB_ICONINFORMATION | MB_OK);
       }
     } else if (id == IDC_ELEVATE) {
       return ElevateNow(1);
     }
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+    auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
 
     if (pnmh->code == PSN_SETACTIVE) {
       updatestrings = 1;
@@ -649,23 +647,22 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
       CheckDlgButton(hwnd, IDC_AUTOSTART_ELEVATE,
                      eelevated ? BST_CHECKED : BST_UNCHECKED);
       EnableDlgItem(hwnd, IDC_AUTOSTART_HIDE, autostart);
-      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart && WinVer >= VISTA);
-      if (WinVer >= WIN10)
-        EnableDlgItem(hwnd, IDC_INACTIVESCROLL, IsChecked(IDC_INACTIVESCROLL));
+      EnableDlgItem(hwnd, IDC_AUTOSTART_ELEVATE, autostart);
+      EnableDlgItem(hwnd, IDC_INACTIVESCROLL, IsChecked(IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // all bool options (checkboxes).
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
-      TCHAR txt[kUintDigits + 1];
+      wchar_t txt[kUintDigits + 1];
       int val = CB_GetCurSelId(IDC_AUTOSNAP);
-      WritePrivateProfileString(TEXT("General"), TEXT("AutoSnap"),
-                                Uint2lStr(txt, val), inipath);
+      WritePrivateProfileString(L"General", L"AutoSnap", Uint2lStr(txt, val),
+                                inipath);
 
       val = IsChecked(IDC_RZCENTER_NORM)    ? 1
             : IsChecked(IDC_RZCENTER_MOVE)  ? 2
             : IsChecked(IDC_RZCENTER_CLOSE) ? 3
                                             : 0;
-      WritePrivateProfileString(TEXT("General"), TEXT("ResizeCenter"),
+      WritePrivateProfileString(L"General", L"ResizeCenter",
                                 Uint2lStr(txt, val), inipath);
 
       // Load selected Language
@@ -679,14 +676,12 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
         GetCUserLanguage_xx_XX(curlang);
         if (!lstrcmpi(l10n->Code, curlang))  // Use Auto if selected language is
                                              // the current user's one.
-          WritePrivateProfileString(TEXT("General"), TEXT("Language"),
-                                    TEXT("Auto"), inipath);
+          WritePrivateProfileString(L"General", L"Language", L"Auto", inipath);
         else
-          WritePrivateProfileString(TEXT("General"), TEXT("Language"),
-                                    l10n->Code, inipath);
+          WritePrivateProfileString(L"General", L"Language", l10n->Code,
+                                    inipath);
 #else
-        WritePrivateProfileString(TEXT("General"), TEXT("Language"), l10n->Code,
-                                  inipath);
+        WritePrivateProfileString(L"General", L"Language", l10n->Code, inipath);
 #endif
         updatestrings = 1;
         UpdateStrings();
@@ -707,7 +702,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     // Update text
     UpdateDialogStrings(hwnd, strlst, std::size(strlst));
     // spetial case...
-    // CreateToolTip(IDC_AUTOFOCUS, hwnd, TEXT("String\nExample"));
+    // CreateToolTip(IDC_AUTOFOCUS, hwnd, L"String\nExample");
     SetDlgItemText(hwnd, IDC_ELEVATE,
                    elevated ? l10n->GeneralElevated : l10n->GeneralElevate);
 
@@ -718,9 +713,9 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     CB_AddString(control, l10n->GeneralAutoSnap1);
     CB_AddString(control, l10n->GeneralAutoSnap2);
     CB_AddString(control, l10n->GeneralAutoSnap3);
-    TCHAR txt[8];
-    GetPrivateProfileString(TEXT("General"), TEXT("AutoSnap"), TEXT("0"), txt,
-                            std::size(txt), inipath);
+    wchar_t txt[8];
+    GetPrivateProfileString(L"General", L"AutoSnap", L"0", txt, std::size(txt),
+                            inipath);
     CB_SetCurSel(control, strtoi(txt));
 
     // Language
@@ -730,9 +725,9 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   return FALSE;
 }
 /////////////////////////////////////////////////////////////////////////////
-[[nodiscard]] static int IsKeyInList(TCHAR* keys, unsigned vkey) {
-  unsigned temp, numread;
-  TCHAR* pos = keys;
+[[nodiscard]] static int IsKeyInList(wchar_t* keys, unsigned vkey) {
+  unsigned temp = 0, numread = 0;
+  wchar_t* pos = keys;
   while (*pos != '\0') {
     numread = 0;
     temp = lstrhex2u(pos);
@@ -745,20 +740,20 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   }
   return 0;
 }
-static void AddvKeytoList(TCHAR keys[32], unsigned vkey) {
+static void AddvKeytoList(wchar_t keys[32], unsigned vkey) {
   // Check if it is already in the list.
   if (IsKeyInList(keys, vkey)) return;
   // Add a key to the hotkeys list
   if (*keys != '\0') {
-    lstrcat_s(keys, 32, TEXT(" "));
+    lstrcat_s(keys, 32, L" ");
   }
-  TCHAR buf[kPtrHexDigits + 1];
+  wchar_t buf[kPtrHexDigits + 1];
   lstrcat_s(keys, 32, LPTR2Hex(buf, vkey));
 }
-static void RemoveKeyFromList(TCHAR keys[32], unsigned vkey) {
+static void RemoveKeyFromList(wchar_t keys[32], unsigned vkey) {
   // Remove the key from the hotclick list
-  unsigned temp, numread;
-  TCHAR* pos = keys;
+  unsigned temp = 0, numread = 0;
+  wchar_t* pos = keys;
   while (*pos != '\0') {
     numread = 0;
     temp = lstrhex2u(pos);
@@ -781,11 +776,10 @@ struct hk_struct {
   unsigned vkey;
 };
 static void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
-                        const TCHAR* const name) {
-  TCHAR keys[32];
+                        const wchar_t* const name) {
+  wchar_t keys[32];
   // Get the current config in case there are some user added keys.
-  GetPrivateProfileString(TEXT("Input"), name, TEXT(""), keys, std::size(keys),
-                          inipath);
+  GetPrivateProfileString(L"Input", name, L"", keys, std::size(keys), inipath);
   for (size_t i = 0; hotkeys[i].control; i++) {
     if (IsChecked(hotkeys[i].control)) {
       AddvKeytoList(keys, hotkeys[i].vkey);
@@ -793,17 +787,17 @@ static void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
       RemoveKeyFromList(keys, hotkeys[i].vkey);
     }
   }
-  WritePrivateProfileString(TEXT("Input"), name, keys, inipath);
+  WritePrivateProfileString(L"Input", name, keys, inipath);
 }
 /////////////////////////////////////////////////////////////////////////////
 static void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
-                               const TCHAR* hotkeystr, const TCHAR* def) {
+                               const wchar_t* hotkeystr, const wchar_t* def) {
   // Hotkeys
-  unsigned temp;
-  TCHAR txt[32];
-  GetPrivateProfileString(TEXT("Input"), hotkeystr, def, txt, std::size(txt),
+  unsigned temp = 0;
+  wchar_t txt[32];
+  GetPrivateProfileString(L"Input", hotkeystr, def, txt, std::size(txt),
                           inipath);
-  TCHAR* pos = txt;
+  wchar_t* pos = txt;
   while (*pos != '\0') {
     temp = lstrhex2u(pos);
     while (*pos && *pos != ' ') pos++;
@@ -820,25 +814,25 @@ static void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
 }
 
 struct tagActiondl {
-  const TCHAR* action;
+  const wchar_t* action;
   short l10nidx;
   BYTE param1_type;
   BYTE param2_type;
 };
 using actiondl_t = tagActiondl;
-static void FillActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
+static void FillActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
                                 const actiondl_t* actions) {
   HWND control = GetDlgItem(hwnd, idc);
-  TCHAR txt[64];
-  int sel = 0, j;
+  wchar_t txt[64];
+  int sel = 0, j = 0;
   CB_ResetContent(control);
   if (inioption) {
     sel = -1;  // Selection to be made
-    GetPrivateProfileString(TEXT("Input"), inioption, TEXT("Nothing"), txt,
+    GetPrivateProfileString(L"Input", inioption, L"Nothing", txt,
                             std::size(txt), inipath);
   }
   for (j = 0; actions[j].action; j++) {
-    TCHAR action_name[256];
+    wchar_t action_name[256];
     lstrcpy_noaccel(action_name, std::size(action_name),
                     L10NSTR(actions[j].l10nidx));
     CB_AddString(control, action_name);
@@ -856,7 +850,7 @@ static void FillActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
 }
 
 static int GetActionStringFromDropList(HWND hwnd, int idc,
-                                       const actiondl_t* actions, TCHAR* obuf,
+                                       const actiondl_t* actions, wchar_t* obuf,
                                        size_t obuflen) {
   HWND control = GetDlgItem(hwnd, idc);
   int j = SendMessage(control, CB_GETCURSEL, 0, 0);
@@ -879,12 +873,12 @@ static int GetActionStringFromDropList(HWND hwnd, int idc,
   }
   return -1;
 }
-static void WriteActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
+static void WriteActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
                                  const actiondl_t* actions) {
-  TCHAR txt[128];
-  txt[0] = TEXT('\0');
+  wchar_t txt[128];
+  txt[0] = L'\0';
   GetActionStringFromDropList(hwnd, idc, actions, txt, std::size(txt));
-  WritePrivateProfileString(TEXT("Input"), inioption, txt, inipath);
+  WritePrivateProfileString(L"Input", inioption, txt, inipath);
 }
 /////////////////////////////////////////////////////////////////////////////
 static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
@@ -892,71 +886,62 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   static int have_to_apply = 0;
   // Mouse actions
   static const struct {
-    int control;             // Same control
-    const TCHAR* option[5];  // Prim/alt/TTB/WM/WR
+    int control;               // Same control
+    const wchar_t* option[5];  // Prim/alt/TTB/WM/WR
   } mouse_buttons[] = {
-      {IDC_LMB,
-       {TEXT("LMB"), TEXT("LMBB"), TEXT("LMBT"), TEXT("LMBM"), TEXT("LMBR")}},
-      {IDC_MMB,
-       {TEXT("MMB"), TEXT("MMBB"), TEXT("MMBT"), TEXT("MMBM"), TEXT("MMBR")}},
-      {IDC_RMB,
-       {TEXT("RMB"), TEXT("RMBB"), TEXT("RMBT"), TEXT("RMBM"), TEXT("RMBR")}},
-      {IDC_MB4,
-       {TEXT("MB4"), TEXT("MB4B"), TEXT("MB4T"), TEXT("MB4M"), TEXT("MB4R")}},
-      {IDC_MB5,
-       {TEXT("MB5"), TEXT("MB5B"), TEXT("MB5T"), TEXT("MB5M"), TEXT("MB5M")}},
+      {IDC_LMB, {L"LMB", L"LMBB", L"LMBT", L"LMBM", L"LMBR"}},
+      {IDC_MMB, {L"MMB", L"MMBB", L"MMBT", L"MMBM", L"MMBR"}},
+      {IDC_RMB, {L"RMB", L"RMBB", L"RMBT", L"RMBM", L"RMBR"}},
+      {IDC_MB4, {L"MB4", L"MB4B", L"MB4T", L"MB4M", L"MB4R"}},
+      {IDC_MB5, {L"MB5", L"MB5B", L"MB5T", L"MB5M", L"MB5M"}},
   };
   static const struct {
-    int control;             // Same control
-    const TCHAR* option[5];  // Prim/alt/TTB/WM/WR
+    int control;               // Same control
+    const wchar_t* option[5];  // Prim/alt/TTB/WM/WR
   } mouse_buttonsUP[] = {
-      {IDC_MOVEUP,
-       {TEXT("MoveUp"), TEXT("MoveUpB"), TEXT("MoveUpT"), TEXT("MoveUp"),
-        TEXT("MoveUp")}},
+      {IDC_MOVEUP, {L"MoveUp", L"MoveUpB", L"MoveUpT", L"MoveUp", L"MoveUp"}},
       {IDC_RESIZEUP,
-       {TEXT("ResizeUp"), TEXT("ResizeUpB"), TEXT("ResizeUpT"),
-        TEXT("ResizeUp"), TEXT("ResizeUp")}},
+       {L"ResizeUp", L"ResizeUpB", L"ResizeUpT", L"ResizeUp", L"ResizeUp"}},
   };
 
-#define COMMON_ACTIONS                                              \
-  {TEXT("Close"), L10NIDX(InputActionClose)},                       \
-      {TEXT("Kill"), L10NIDX(InputActionKill)},                     \
-      {TEXT("Minimize"), L10NIDX(InputActionMinimize)},             \
-      {TEXT("Maximize"), L10NIDX(InputActionMaximize)},             \
-      {TEXT("Lower"), L10NIDX(InputActionLower)},                   \
-      {TEXT("Focus"), L10NIDX(InputActionFocus)},                   \
-      {TEXT("NStacked"), L10NIDX(InputActionNStacked)},             \
-      {TEXT("PStacked"), L10NIDX(InputActionPStacked)},             \
-      {TEXT("StackList"), L10NIDX(InputActionStackList)},           \
-      {TEXT("StackList2"), L10NIDX(InputActionStackList2)},         \
-      {TEXT("AltTabList"), L10NIDX(InputActionAltTabList)},         \
-      {TEXT("AltTabFullList"), L10NIDX(InputActionAltTabFullList)}, \
-      {TEXT("Roll"), L10NIDX(InputActionRoll)},                     \
-      {TEXT("AlwaysOnTop"), L10NIDX(InputActionAlwaysOnTop)},       \
-      {TEXT("Borderless"), L10NIDX(InputActionBorderless)},         \
-      {TEXT("Center"), L10NIDX(InputActionCenter)},                 \
-      {TEXT("Center2"), L10NIDX(InputActionCenter2)},               \
-      {TEXT("MaximizeHV"), L10NIDX(InputActionMaximizeHV)},         \
-      {TEXT("SideSnap"), L10NIDX(InputActionSideSnap)},             \
-      {TEXT("ExtendSnap"), L10NIDX(InputActionExtendSnap)},         \
-      {TEXT("ExtendTNEdge"), L10NIDX(InputActionExtendTNEdge)},     \
-      {TEXT("MoveTNEdge"), L10NIDX(InputActionMoveTNEdge)},         \
-      {TEXT("NLayout"), L10NIDX(InputActionNLayout)},               \
-      {TEXT("PLayout"), L10NIDX(InputActionPLayout)},               \
-      {TEXT("MinAllOther"), L10NIDX(InputActionMinAllOther)},       \
-      {TEXT("Mute"), L10NIDX(InputActionMute)},                     \
-      {TEXT("Menu"), L10NIDX(InputActionMenu)},
+#define COMMON_ACTIONS                                                        \
+  {L"Close", L10NIDX(InputActionClose)}, {L"Kill", L10NIDX(InputActionKill)}, \
+      {L"Minimize", L10NIDX(InputActionMinimize)},                            \
+      {L"Maximize", L10NIDX(InputActionMaximize)},                            \
+      {L"Lower", L10NIDX(InputActionLower)},                                  \
+      {L"Focus", L10NIDX(InputActionFocus)},                                  \
+      {L"NStacked", L10NIDX(InputActionNStacked)},                            \
+      {L"PStacked", L10NIDX(InputActionPStacked)},                            \
+      {L"StackList", L10NIDX(InputActionStackList)},                          \
+      {L"StackList2", L10NIDX(InputActionStackList2)},                        \
+      {L"AltTabList", L10NIDX(InputActionAltTabList)},                        \
+      {L"AltTabFullList", L10NIDX(InputActionAltTabFullList)},                \
+      {L"Roll", L10NIDX(InputActionRoll)},                                    \
+      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},                      \
+      {L"Borderless", L10NIDX(InputActionBorderless)},                        \
+      {L"Center", L10NIDX(InputActionCenter)},                                \
+      {L"Center2", L10NIDX(InputActionCenter2)},                              \
+      {L"MaximizeHV", L10NIDX(InputActionMaximizeHV)},                        \
+      {L"SideSnap", L10NIDX(InputActionSideSnap)},                            \
+      {L"ExtendSnap", L10NIDX(InputActionExtendSnap)},                        \
+      {L"ExtendTNEdge", L10NIDX(InputActionExtendTNEdge)},                    \
+      {L"MoveTNEdge", L10NIDX(InputActionMoveTNEdge)},                        \
+      {L"NLayout", L10NIDX(InputActionNLayout)},                              \
+      {L"PLayout", L10NIDX(InputActionPLayout)},                              \
+      {L"MinAllOther", L10NIDX(InputActionMinAllOther)},                      \
+      {L"Mute", L10NIDX(InputActionMute)},                                    \
+      {L"Menu", L10NIDX(InputActionMenu)},
 
   static const actiondl_t mouse_actions[] = {
       // Specific to the Primary/Alternate/Titlebar
       // And not available for the MoveUp/ResizeUp
-      {TEXT("Move"), L10NIDX(InputActionMove)},
-      {TEXT("Resize"), L10NIDX(InputActionResize)},
-      {TEXT("Restore"), L10NIDX(InputActionRestore)},
+      {L"Move", L10NIDX(InputActionMove)},
+      {L"Resize", L10NIDX(InputActionResize)},
+      {L"Restore", L10NIDX(InputActionRestore)},
       // Common mouse actions
       COMMON_ACTIONS
 
-      {TEXT("Nothing"), L10NIDX(InputActionNothing)},
+      {L"Nothing", L10NIDX(InputActionNothing)},
       {nullptr, 0}};
 
   // Actions on MoveUp/ResizeUP
@@ -967,40 +952,38 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   //    static const actiondl_t mouse_actionsWMR[] = {
   //        // Spetial actions first
-  //        {TEXT("ZoneSnapTogg"), L10NIDX(input_actions_zonesnaptog) },
-  //        {TEXT("SnapTogg"),     L10NIDX(input_actions_snaptogg) },
+  //        {L"ZoneSnapTogg", L10NIDX(input_actions_zonesnaptog) },
+  //        {L"SnapTogg",     L10NIDX(input_actions_snaptogg) },
   //        // Then the common mouse actions
   //        COMMON_ACTIONS
   //
-  //        {TEXT("Nothing"),     L10NIDX(input_actions_nothing) },
+  //        {L"Nothing",     L10NIDX(input_actions_nothing) },
   //        {NULL, 0}
   //    };
 
   // Scroll
   static const struct {
-    int control;             // Same control
-    const TCHAR* option[5];  // Prim/alt/TTB/WM/WR
-  } mouse_wheels[] = {{IDC_SCROLL,
-                       {TEXT("Scroll"), TEXT("ScrollB"), TEXT("ScrollT"),
-                        TEXT("ScrollM"), TEXT("ScrollR")}},
-                      {IDC_HSCROLL,
-                       {TEXT("HScroll"), TEXT("HScrollB"), TEXT("HScrollT"),
-                        TEXT("HScrollM"), TEXT("HScrollR")}}};
+    int control;               // Same control
+    const wchar_t* option[5];  // Prim/alt/TTB/WM/WR
+  } mouse_wheels[] = {
+      {IDC_SCROLL, {L"Scroll", L"ScrollB", L"ScrollT", L"ScrollM", L"ScrollR"}},
+      {IDC_HSCROLL,
+       {L"HScroll", L"HScrollB", L"HScrollT", L"HScrollM", L"HScrollR"}}};
 
   static const actiondl_t scroll_actions[] = {
-      {TEXT("AltTab"), L10NIDX(InputActionAltTab)},
-      {TEXT("Volume"), L10NIDX(InputActionVolume)},
-      {TEXT("Transparency"), L10NIDX(InputActionTransparency)},
-      {TEXT("Zoom"), L10NIDX(InputActionZoom)},
-      {TEXT("Zoom2"), L10NIDX(InputActionZoom2)},
-      {TEXT("Lower"), L10NIDX(InputActionLower)},
-      {TEXT("Roll"), L10NIDX(InputActionRoll)},
-      {TEXT("Maximize"), L10NIDX(InputActionMaximize)},
-      {TEXT("NPStacked"), L10NIDX(InputActionNStacked)},
-      {TEXT("NPStacked2"), L10NIDX(InputActionNStacked2)},
-      {TEXT("HScroll"), L10NIDX(InputActionHScroll)},
-      {TEXT("NPLayout"), L10NIDX(InputActionNPLayout)},
-      {TEXT("Nothing"), L10NIDX(InputActionNothing)},
+      {L"AltTab", L10NIDX(InputActionAltTab)},
+      {L"Volume", L10NIDX(InputActionVolume)},
+      {L"Transparency", L10NIDX(InputActionTransparency)},
+      {L"Zoom", L10NIDX(InputActionZoom)},
+      {L"Zoom2", L10NIDX(InputActionZoom2)},
+      {L"Lower", L10NIDX(InputActionLower)},
+      {L"Roll", L10NIDX(InputActionRoll)},
+      {L"Maximize", L10NIDX(InputActionMaximize)},
+      {L"NPStacked", L10NIDX(InputActionNStacked)},
+      {L"NPStacked2", L10NIDX(InputActionNStacked2)},
+      {L"HScroll", L10NIDX(InputActionHScroll)},
+      {L"NPLayout", L10NIDX(InputActionNPLayout)},
+      {L"Nothing", L10NIDX(InputActionNothing)},
       {nullptr, 0}};
 
   // Hotkeys
@@ -1008,25 +991,89 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       {IDC_MMB_HC, 0x04}, {IDC_MB4_HC, 0x05}, {IDC_MB5_HC, 0X06}, {0, 0}};
 
   static const optlst_t optlst[] = {
-      {IDC_TTBACTIONSNA, T_BMK, 0, TEXT("Input"), "TTBActions", nullptr},
-      {IDC_TTBACTIONSWA, T_BMK, 1, TEXT("Input"), "TTBActions", nullptr},
-      {IDC_LONGCLICKMOVE, T_BOL, 0, TEXT("Input"), "LongClickMove", nullptr}};
+      {IDC_TTBACTIONSNA, T_BMK, 0, L"Input", "TTBActions", nullptr},
+      {IDC_TTBACTIONSWA, T_BMK, 1, L"Input", "TTBActions", nullptr},
+      {IDC_LONGCLICKMOVE, T_BOL, 0, L"Input", "LongClickMove", nullptr}};
 
-  LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+  auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
+
+  // Body shared by several message paths (was a goto target).
+  auto fill_actions = [&]() {
+    unsigned i = 0;
+    // Mouse actions
+    int optoff = IsChecked(IDC_MBA2)     ? 1
+                 : IsChecked(IDC_INTTB)  ? 2
+                 : IsChecked(IDC_WHILEM) ? 3
+                 : IsChecked(IDC_WHILER) ? 4
+                                         : 0;
+
+    // We must disable MoveUp and ResizeUp for the
+    // While Moving/While resizing opts.
+    EnableDlgItem(hwnd, IDC_MOVEUP, optoff < 3);
+    EnableDlgItem(hwnd, IDC_RESIZEUP, optoff < 3);
+    for (i = 0; i < std::size(mouse_buttons); i++) {
+      FillActionDropListS(hwnd, mouse_buttons[i].control,
+                          mouse_buttons[i].option[optoff],
+                          optoff < 3 ? mouse_actions : mouse_actionsWMR);
+    }
+    if (optoff < 3) {
+      for (i = 0; i < std::size(mouse_buttonsUP); i++) {
+        FillActionDropListS(hwnd, mouse_buttonsUP[i].control,
+                            mouse_buttonsUP[i].option[optoff], mouse_actionsUP);
+      }
+    }
+    // Scroll actions, always the same.
+    for (i = 0; i < std::size(mouse_wheels); i++) {
+      FillActionDropListS(hwnd, mouse_wheels[i].control,
+                          mouse_wheels[i].option[optoff], scroll_actions);
+    }
+
+    // Update text
+    static const dialogstring_t strlst[] = {
+        {IDC_MOUSE_BOX, L10NIDX(InputMouseBox)},
+        {IDC_MBA1, L10NIDX(InputMouseBtAc1)},
+        {IDC_MBA2, L10NIDX(InputMouseBtAc2)},
+        {IDC_INTTB, L10NIDX(InputMouseINTTB)},
+        {IDC_WHILEM, L10NIDX(InputMouseWhileM)},
+        {IDC_WHILER, L10NIDX(InputMouseWhileR)},
+
+        {IDC_LMB_HEADER, L10NIDX(InputMouseLMB)},
+        {IDC_MMB_HEADER, L10NIDX(InputMouseMMB)},
+        {IDC_RMB_HEADER, L10NIDX(InputMouseRMB)},
+        {IDC_MB4_HEADER, L10NIDX(InputMouseMB4)},
+        {IDC_MB5_HEADER, L10NIDX(InputMouseMB5)},
+        {IDC_SCROLL_HEADER, L10NIDX(InputMouseScroll)},
+        {IDC_HSCROLL_HEADER, L10NIDX(InputMouseHScroll)},
+        {IDC_MOVEUP_HEADER, L10NIDX(InputMouseMoveUp)},
+        {IDC_RESIZEUP_HEADER, L10NIDX(InputMouseResizeUp)},
+        {IDC_TTBACTIONS_BOX, L10NIDX(InputMouseTTBActionBox)},
+        {IDC_TTBACTIONSNA, L10NIDX(InputMouseTTBActionNA)},
+        {IDC_TTBACTIONSWA, L10NIDX(InputMouseTTBActionWA)},
+
+        {IDC_HOTCLICKS_BOX, L10NIDX(InputHotclicksBox)},
+        {IDC_HOTCLICKS_MORE, L10NIDX(InputHotclicksMore)},
+        {IDC_MMB_HC, L10NIDX(InputMouseMMBHC)},
+        {IDC_MB4_HC, L10NIDX(InputMouseMB4HC)},
+        {IDC_MB5_HC, L10NIDX(InputMouseMB5HC)},
+        {IDC_LONGCLICKMOVE, L10NIDX(InputMouseLongClickMove)},
+    };
+    UpdateDialogStrings(hwnd, strlst, std::size(strlst));
+  };
 
   if (msg == WM_INITDIALOG) {
     // Hotclicks buttons
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
     CheckRadioButton(hwnd, IDC_MBA1, IDC_WHILER,
                      IDC_MBA1);  // Check the primary action
-    CheckConfigHotKeys(hotclicks, hwnd, TEXT("Hotclicks"), TEXT(""));
+    CheckConfigHotKeys(hotclicks, hwnd, L"Hotclicks", L"");
   } else if (msg == WM_COMMAND) {
     int event = HIWORD(wParam);
     int id = LOWORD(wParam);
     if (id >= IDC_MBA1 && id <= IDC_WHILER) {
       // CheckRadioButton(hwnd, IDC_MBA1, IDC_WHILER, id); // Check the selected
       // action
-      goto FILLACTIONS;
+      fill_actions();
+      return FALSE;
     }
 
     if (event == 0 || event == CBN_SELCHANGE || event == CBN_EDITCHANGE) {
@@ -1035,80 +1082,19 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     }
   } else if (msg == WM_NOTIFY) {
     if (pnmh->code == PSN_SETACTIVE) {
-      TCHAR txt[8];
-      GetPrivateProfileString(TEXT("Input"), TEXT("ModKey"), TEXT(""), txt,
-                              std::size(txt), inipath);
+      wchar_t txt[8];
+      GetPrivateProfileString(L"Input", L"ModKey", L"", txt, std::size(txt),
+                              inipath);
       EnableDlgItem(hwnd, IDC_MBA2, txt[0]);
       // Disable inside ttb
       EnableDlgItem(hwnd, IDC_INTTB,
                     IsChecked(IDC_TTBACTIONSNA) || IsChecked(IDC_TTBACTIONSWA));
 
-    FILLACTIONS: {
-      unsigned i;
-      // Mouse actions
-      int optoff = IsChecked(IDC_MBA2)     ? 1
-                   : IsChecked(IDC_INTTB)  ? 2
-                   : IsChecked(IDC_WHILEM) ? 3
-                   : IsChecked(IDC_WHILER) ? 4
-                                           : 0;
-
-      // We must disable MoveUp and ResizeUp for the
-      // While Moving/While resizing opts.
-      EnableDlgItem(hwnd, IDC_MOVEUP, optoff < 3);
-      EnableDlgItem(hwnd, IDC_RESIZEUP, optoff < 3);
-      for (i = 0; i < std::size(mouse_buttons); i++) {
-        FillActionDropListS(hwnd, mouse_buttons[i].control,
-                            mouse_buttons[i].option[optoff],
-                            optoff < 3 ? mouse_actions : mouse_actionsWMR);
-      }
-      if (optoff < 3) {
-        for (i = 0; i < std::size(mouse_buttonsUP); i++) {
-          FillActionDropListS(hwnd, mouse_buttonsUP[i].control,
-                              mouse_buttonsUP[i].option[optoff],
-                              mouse_actionsUP);
-        }
-      }
-      // Scroll actions, always the same.
-      for (i = 0; i < std::size(mouse_wheels); i++) {
-        FillActionDropListS(hwnd, mouse_wheels[i].control,
-                            mouse_wheels[i].option[optoff], scroll_actions);
-      }
-
-      // Update text
-      static const dialogstring_t strlst[] = {
-          {IDC_MOUSE_BOX, L10NIDX(InputMouseBox)},
-          {IDC_MBA1, L10NIDX(InputMouseBtAc1)},
-          {IDC_MBA2, L10NIDX(InputMouseBtAc2)},
-          {IDC_INTTB, L10NIDX(InputMouseINTTB)},
-          {IDC_WHILEM, L10NIDX(InputMouseWhileM)},
-          {IDC_WHILER, L10NIDX(InputMouseWhileR)},
-
-          {IDC_LMB_HEADER, L10NIDX(InputMouseLMB)},
-          {IDC_MMB_HEADER, L10NIDX(InputMouseMMB)},
-          {IDC_RMB_HEADER, L10NIDX(InputMouseRMB)},
-          {IDC_MB4_HEADER, L10NIDX(InputMouseMB4)},
-          {IDC_MB5_HEADER, L10NIDX(InputMouseMB5)},
-          {IDC_SCROLL_HEADER, L10NIDX(InputMouseScroll)},
-          {IDC_HSCROLL_HEADER, L10NIDX(InputMouseHScroll)},
-          {IDC_MOVEUP_HEADER, L10NIDX(InputMouseMoveUp)},
-          {IDC_RESIZEUP_HEADER, L10NIDX(InputMouseResizeUp)},
-          {IDC_TTBACTIONS_BOX, L10NIDX(InputMouseTTBActionBox)},
-          {IDC_TTBACTIONSNA, L10NIDX(InputMouseTTBActionNA)},
-          {IDC_TTBACTIONSWA, L10NIDX(InputMouseTTBActionWA)},
-
-          {IDC_HOTCLICKS_BOX, L10NIDX(InputHotclicksBox)},
-          {IDC_HOTCLICKS_MORE, L10NIDX(InputHotclicksMore)},
-          {IDC_MMB_HC, L10NIDX(InputMouseMMBHC)},
-          {IDC_MB4_HC, L10NIDX(InputMouseMB4HC)},
-          {IDC_MB5_HC, L10NIDX(InputMouseMB5HC)},
-          {IDC_LONGCLICKMOVE, L10NIDX(InputMouseLongClickMove)},
-      };
-      UpdateDialogStrings(hwnd, strlst, std::size(strlst));
-    }
+      fill_actions();
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Mouse actions, for all mouse buttons...
-      unsigned i;
+      unsigned i = 0;
       // Add 2 if in titlear add one for secondary action.
       // Mouse actions
       int optoff = IsChecked(IDC_MBA2)     ? 1
@@ -1137,7 +1123,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       // Checkboxes...
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
       // Hotclicks
-      SaveHotKeys(hotclicks, hwnd, TEXT("Hotclicks"));
+      SaveHotKeys(hotclicks, hwnd, L"Hotclicks");
       UpdateSettings();
       have_to_apply = 0;
     }
@@ -1160,7 +1146,7 @@ static LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp,
 
   switch (msg) {
       //    case WM_CREATE: {
-      //        was_enabled = ENABLED();
+      //        was_enabled = IsEnabled();
       //        if (was_enabled) UnhookSystem();
       //    } break;
     case WM_CHAR:
@@ -1171,7 +1157,7 @@ static LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp,
       break;
     case WM_KEYUP: {
       if (!IsHotkeyy(static_cast<UCHAR>(wp), vkbl)) {
-        TCHAR txt[kPtrHexDigits + 1];
+        wchar_t txt[kPtrHexDigits + 1];
         HWND phwnd = GetParent(hwnd);
         SetDlgItemText(phwnd, IDC_SHORTCUTS_VK, LPTR2Hex(txt, wp));
 
@@ -1218,7 +1204,7 @@ static LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp,
 // Dialog procedure for the Advanced Action construction from base action
 struct tagAdvancedActionParam {
   const actiondl_t* base_action_lst;
-  TCHAR outbuf[64];
+  wchar_t outbuf[64];
 };
 using advancedActionParam_t = tagAdvancedActionParam;
 
@@ -1261,7 +1247,7 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
                                               LPARAM lp) {
   switch (msg) {
     case WM_INITDIALOG: {
-      advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(lp);
+      auto* acp = reinterpret_cast<advancedActionParam_t*>(lp);
       SetWindowLongPtr(hwnd, GWLP_USERDATA, static_cast<LONG_PTR>(lp));
 
       FillActionDropListS(hwnd, IDC_ACTIONP0, nullptr, acp->base_action_lst);
@@ -1274,7 +1260,7 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
       // Copy localized OK, CANCEL button from parent
       HWND parent = GetAncestor(hwnd, GA_ROOTOWNER);
       if (parent) {
-        TCHAR txt[32];
+        wchar_t txt[32];
         if (GetDlgItemText(parent, IDOK, txt, std::size(txt)))
           SetDlgItemText(hwnd, IDOK, txt);
         if (GetDlgItemText(parent, IDCANCEL, txt, std::size(txt)))
@@ -1287,7 +1273,7 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
     case WM_COMMAND: {
       int id = LOWORD(wp);
       if (id == IDOK) {
-        advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(
+        auto* acp = reinterpret_cast<advancedActionParam_t*>(
             GetWindowLongPtr(hwnd, GWLP_USERDATA));
         if (!acp) return 0;
         ZeroObject(acp->outbuf);
@@ -1296,7 +1282,8 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
                        std::size(acp->outbuf) - 1);
         EndDialog(hwnd, IDOK);
         return TRUE;
-      } else if (id == IDCANCEL) {
+      }
+      if (id == IDCANCEL) {
         EndDialog(hwnd, IDCANCEL);
         return TRUE;
       } else {
@@ -1306,10 +1293,10 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
             (id == IDC_ACTIONP0 || id == IDC_ACTIONP1 || IDC_ACTIONP2);
 
         if (update_action_string) {
-          advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(
+          auto* acp = reinterpret_cast<advancedActionParam_t*>(
               GetWindowLongPtr(hwnd, GWLP_USERDATA));
-          TCHAR acstr[128], param1[16], param2[32];
-          acstr[0] = TEXT('\0');
+          wchar_t acstr[128], param1[16], param2[32];
+          acstr[0] = L'\0';
 
           // ACTION PARAM0: base action
           int p0idx = GetActionStringFromDropList(hwnd, IDC_ACTIONP0,
@@ -1323,21 +1310,21 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
             EnableDlgItem(hwnd, IDC_ACTIONP1, p0idx >= 0 && param1_type != 0);
             EnableDlgItem(hwnd, IDC_ACTIONP2, p0idx >= 0 && param2_type != 0);
             SetDlgItemText(hwnd, IDC_ACTIONP2,
-                           TEXT(""));  // Clear number content
+                           L"");  // Clear number content
 
             // Fill Drop List according to PARAM0 of the action.
             HWND ctrl = GetDlgItem(hwnd, IDC_ACTIONP1);
             CB_ResetContent(ctrl);
             for (size_t i = 0; i < action_fl_l10n_maps[param1_type].num; i++) {
               short l10nIdx = action_fl_l10n_maps[param1_type].l10nIdx[i];
-              const TCHAR* str = l10nIdx == 0 ? TEXT("---") : L10NSTR(l10nIdx);
+              const wchar_t* str = l10nIdx == 0 ? L"---" : L10NSTR(l10nIdx);
               CB_AddString(ctrl, str);
             }
           }
 
           // ACTION PARAM1: direction flags
-          param1[0] = TEXT('0');
-          param1[1] = TEXT('\0');
+          param1[0] = L'0';
+          param1[1] = L'\0';
           if (action_fl_param1_maps[param1_type]) {
             // This action type can have parameter1.
             int direction =
@@ -1349,7 +1336,7 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
               // Put the correct character in the action string.
               // We use a single character for each kind of param
               param1[0] = action_fl_param1_maps[param1_type][direction];
-              param1[1] = TEXT('\0');
+              param1[1] = L'\0';
             }
           }
           // ACTION PARAM2 number...
@@ -1357,12 +1344,12 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
               GetDlgItemText(hwnd, IDC_ACTIONP2, param2, std::size(param2));
 
           // Add PARAM1 if needed
-          if ((*param1 && *param1 != TEXT('0')) || (param2len && *param2)) {
-            lstrcat_s(acstr, std::size(acstr), TEXT("_"));
+          if ((*param1 && *param1 != L'0') || (param2len && *param2)) {
+            lstrcat_s(acstr, std::size(acstr), L"_");
             lstrcat_s(acstr, std::size(acstr), param1);
             // Add PARAM2 if needed
             if (param2len && *param2) {
-              lstrcat_s(acstr, std::size(acstr), TEXT("_"));
+              lstrcat_s(acstr, std::size(acstr), L"_");
               lstrcat_s(acstr, std::size(acstr), param2);
             }
           }
@@ -1400,105 +1387,120 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
                                              {IDC_RIGHTCTRL, VK_RCONTROL},
                                              {0, 0}};
   static const actiondl_t kb_actions[] = {
-      {TEXT("Move"), L10NIDX(InputActionMove)},
-      {TEXT("Resize"), L10NIDX(InputActionResize)},
-      {TEXT("Close"), L10NIDX(InputActionClose)},
-      {TEXT("Minimize"), L10NIDX(InputActionMinimize)},
-      {TEXT("Maximize"), L10NIDX(InputActionMaximize)},
-      {TEXT("Lower"), L10NIDX(InputActionLower)},
-      {TEXT("Roll"), L10NIDX(InputActionRoll)},
-      {TEXT("AlwaysOnTop"), L10NIDX(InputActionAlwaysOnTop)},
-      {TEXT("Borderless"), L10NIDX(InputActionBorderless)},
-      {TEXT("Center"), L10NIDX(InputActionCenter)},
-      {TEXT("Center2"), L10NIDX(InputActionCenter2)},
-      {TEXT("MaximizeHV"), L10NIDX(InputActionMaximizeHV)},
-      {TEXT("MinAllOther"), L10NIDX(InputActionMinAllOther)},
-      {TEXT("Menu"), L10NIDX(InputActionMenu)},
-      {TEXT("Nothing"), L10NIDX(InputActionNothing)},
+      {L"Move", L10NIDX(InputActionMove)},
+      {L"Resize", L10NIDX(InputActionResize)},
+      {L"Close", L10NIDX(InputActionClose)},
+      {L"Minimize", L10NIDX(InputActionMinimize)},
+      {L"Maximize", L10NIDX(InputActionMaximize)},
+      {L"Lower", L10NIDX(InputActionLower)},
+      {L"Roll", L10NIDX(InputActionRoll)},
+      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},
+      {L"Borderless", L10NIDX(InputActionBorderless)},
+      {L"Center", L10NIDX(InputActionCenter)},
+      {L"Center2", L10NIDX(InputActionCenter2)},
+      {L"MaximizeHV", L10NIDX(InputActionMaximizeHV)},
+      {L"MinAllOther", L10NIDX(InputActionMinAllOther)},
+      {L"Menu", L10NIDX(InputActionMenu)},
+      {L"Nothing", L10NIDX(InputActionNothing)},
       {nullptr, 0}};
   static const actiondl_t kbshortcut_actions[] = {
-      {TEXT("Kill"), L10NIDX(InputActionKill)},
-      {TEXT("Pause"), L10NIDX(InputActionPause)},
-      {TEXT("Resume"), L10NIDX(InputActionResume)},
-      {TEXT("ASOnOff"), L10NIDX(InputActionASOnOff)},
-      {TEXT("Close"), L10NIDX(InputActionClose)},
-      {TEXT("Minimize"), L10NIDX(InputActionMinimize)},
-      {TEXT("Maximize"), L10NIDX(InputActionMaximize)},
-      {TEXT("Lower"), L10NIDX(InputActionLower)},
-      {TEXT("Roll"), L10NIDX(InputActionRoll), ACPARAM_UPDOWN},
-      {TEXT("Transparency"), L10NIDX(InputActionTransparency),
+      {L"Kill", L10NIDX(InputActionKill)},
+      {L"Pause", L10NIDX(InputActionPause)},
+      {L"Resume", L10NIDX(InputActionResume)},
+      {L"ASOnOff", L10NIDX(InputActionASOnOff)},
+      {L"Close", L10NIDX(InputActionClose)},
+      {L"Minimize", L10NIDX(InputActionMinimize)},
+      {L"Maximize", L10NIDX(InputActionMaximize)},
+      {L"Lower", L10NIDX(InputActionLower)},
+      {L"Roll", L10NIDX(InputActionRoll), ACPARAM_UPDOWN},
+      {L"Transparency", L10NIDX(InputActionTransparency),
        ACPARAM_UPDOWNSETTOGGLE, ACPARAM_NUMBER},
-      {TEXT("AlwaysOnTop"), L10NIDX(InputActionAlwaysOnTop)},
-      {TEXT("Borderless"), L10NIDX(InputActionBorderless)},
-      {TEXT("Center"), L10NIDX(InputActionCenter)},
-      {TEXT("Center2"), L10NIDX(InputActionCenter2)},
-      {TEXT("Mute"), L10NIDX(InputActionMute)},
-      {TEXT("Menu"), L10NIDX(InputActionMenu)},
+      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},
+      {L"Borderless", L10NIDX(InputActionBorderless)},
+      {L"Center", L10NIDX(InputActionCenter)},
+      {L"Center2", L10NIDX(InputActionCenter2)},
+      {L"Mute", L10NIDX(InputActionMute)},
+      {L"Menu", L10NIDX(InputActionMenu)},
 
-      {TEXT("NStacked"), L10NIDX(InputActionNStacked)},
-      {TEXT("NStacked2"), L10NIDX(InputActionNStacked2)},
-      {TEXT("PStacked"), L10NIDX(InputActionPStacked)},
-      {TEXT("PStacked2"), L10NIDX(InputActionPStacked2)},
-      {TEXT("StackList"), L10NIDX(InputActionStackList)},
-      {TEXT("StackList2"), L10NIDX(InputActionStackList2)},
-      {TEXT("AltTabList"), L10NIDX(InputActionAltTabList)},
-      {TEXT("AltTabFullList"), L10NIDX(InputActionAltTabFullList)},
+      {L"NStacked", L10NIDX(InputActionNStacked)},
+      {L"NStacked2", L10NIDX(InputActionNStacked2)},
+      {L"PStacked", L10NIDX(InputActionPStacked)},
+      {L"PStacked2", L10NIDX(InputActionPStacked2)},
+      {L"StackList", L10NIDX(InputActionStackList)},
+      {L"StackList2", L10NIDX(InputActionStackList2)},
+      {L"AltTabList", L10NIDX(InputActionAltTabList)},
+      {L"AltTabFullList", L10NIDX(InputActionAltTabFullList)},
 
-      {TEXT("ExtendTNEdge"), L10NIDX(InputActionExtendTNEdge),
-       ACPARAM_DIRECTION, 0},
-      {TEXT("MoveTNEdge"), L10NIDX(InputActionMoveTNEdge), ACPARAM_DIRECTION,
-       0},
+      {L"ExtendTNEdge", L10NIDX(InputActionExtendTNEdge), ACPARAM_DIRECTION, 0},
+      {L"MoveTNEdge", L10NIDX(InputActionMoveTNEdge), ACPARAM_DIRECTION, 0},
 
-      {TEXT("MZone"), L10NIDX(InputActionMZone), ACPARAM_DIRECTION, 0},
-      {TEXT("XZone"), L10NIDX(InputActionXZone), ACPARAM_DIRECTION, 0},
+      {L"MZone", L10NIDX(InputActionMZone), ACPARAM_DIRECTION, 0},
+      {L"XZone", L10NIDX(InputActionXZone), ACPARAM_DIRECTION, 0},
 
-      {TEXT("Step"), L10NIDX(InputActionStep), ACPARAM_DIRECTION,
-       ACPARAM_NUMBER},
+      {L"Step", L10NIDX(InputActionStep), ACPARAM_DIRECTION, ACPARAM_NUMBER},
 
-      {TEXT("Focus"), L10NIDX(InputActionFocus), ACPARAM_DIRECTION, 0},
+      {L"Focus", L10NIDX(InputActionFocus), ACPARAM_DIRECTION, 0},
 
-      {TEXT("NLayout"), L10NIDX(InputActionNLayout)},
-      {TEXT("PLayout"), L10NIDX(InputActionPLayout)},
+      {L"NLayout", L10NIDX(InputActionNLayout)},
+      {L"PLayout", L10NIDX(InputActionPLayout)},
 
       {nullptr, 0}};
 
   // Hotkeys
   static const actiondl_t togglekeys[] = {
-      {TEXT(""), L10NIDX(InputActionNothing)},
-      {TEXT("A4 A5"), L10NIDX(InputHotkeysAlt)},
-      {TEXT("5B 5C"), L10NIDX(InputHotkeysWinkey)},
-      {TEXT("A2 A3"), L10NIDX(InputHotkeysCtrl)},
-      {TEXT("A0 A1"), L10NIDX(InputHotkeysShift)},
-      {TEXT("A4"), L10NIDX(InputHotkeysLeftAlt)},
-      {TEXT("A5"), L10NIDX(InputHotkeysRightAlt)},
-      {TEXT("5B"), L10NIDX(InputHotkeysLeftWinkey)},
-      {TEXT("5C"), L10NIDX(InputHotkeysRightWinkey)},
-      {TEXT("A2"), L10NIDX(InputHotkeysLeftCtrl)},
-      {TEXT("A3"), L10NIDX(InputHotkeysRightCtrl)},
-      {TEXT("A0"), L10NIDX(InputHotkeysLeftShift)},
-      {TEXT("A1"), L10NIDX(InputHotkeysRightShift)},
+      {L"", L10NIDX(InputActionNothing)},
+      {L"A4 A5", L10NIDX(InputHotkeysAlt)},
+      {L"5B 5C", L10NIDX(InputHotkeysWinkey)},
+      {L"A2 A3", L10NIDX(InputHotkeysCtrl)},
+      {L"A0 A1", L10NIDX(InputHotkeysShift)},
+      {L"A4", L10NIDX(InputHotkeysLeftAlt)},
+      {L"A5", L10NIDX(InputHotkeysRightAlt)},
+      {L"5B", L10NIDX(InputHotkeysLeftWinkey)},
+      {L"5C", L10NIDX(InputHotkeysRightWinkey)},
+      {L"A2", L10NIDX(InputHotkeysLeftCtrl)},
+      {L"A3", L10NIDX(InputHotkeysRightCtrl)},
+      {L"A0", L10NIDX(InputHotkeysLeftShift)},
+      {L"A1", L10NIDX(InputHotkeysRightShift)},
       {nullptr, 0},
   };
   static const optlst_t optlst[] = {
-      {IDC_SCROLLLOCKSTATE, T_BMK, 0, TEXT("Input"), "ScrollLockState",
-       nullptr},
-      {IDC_UNIKEYHOLDMENU, T_BOL, 0, TEXT("Input"), "UniKeyHoldMenu", nullptr},
-      {IDC_KEYCOMBO, T_BOL, 0, TEXT("Input"), "KeyCombo", nullptr},
-      {IDC_USEPTWINDOW, T_BOL, 0, TEXT("KBShortcuts"), "UsePtWindow", nullptr},
+      {IDC_SCROLLLOCKSTATE, T_BMK, 0, L"Input", "ScrollLockState", nullptr},
+      {IDC_UNIKEYHOLDMENU, T_BOL, 0, L"Input", "UniKeyHoldMenu", nullptr},
+      {IDC_KEYCOMBO, T_BOL, 0, L"Input", "KeyCombo", nullptr},
+      {IDC_USEPTWINDOW, T_BOL, 0, L"KBShortcuts", "UsePtWindow", nullptr},
   };
 
-  LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+  auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
+
+  // Body shared by several message paths (was a goto target).
+  auto apply_all = [&]() {
+    //            int i;
+    // Action without click
+    WriteActionDropListS(hwnd, IDC_GRABWITHALT, L"GrabWithAlt", kb_actions);
+    WriteActionDropListS(hwnd, IDC_GRABWITHALTB, L"GrabWithAltB", kb_actions);
+
+    WriteDialogOptions(hwnd, optlst, std::size(optlst));
+    ScrollLockState =
+        WriteOptionBoolB(IDC_SCROLLLOCKSTATE, L"Input", "ScrollLockState", 0);
+    // Modifier key (similar to action list)
+    WriteActionDropListS(hwnd, IDC_MODKEY, L"ModKey", togglekeys);
+    // Hotkeys
+    SaveHotKeys(hotkeys, hwnd, L"Hotkeys");
+    WriteOptionBool(IDC_KEYCOMBO, L"Input", "KeyCombo");
+    UpdateSettings();
+    have_to_apply = 0;
+  };
 
   if (msg == WM_INITDIALOG) {
     edit_shortcut_idx = 0;
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
     // Agressive Pause
-    CheckConfigHotKeys(hotkeys, hwnd, TEXT("Hotkeys"), TEXT("A4 A5"));
+    CheckConfigHotKeys(hotkeys, hwnd, L"Hotkeys", L"A4 A5");
 
 #ifndef _WIN64
     // Always enabled in 64 bit mode.
     EnableDlgItem(hwnd, IDC_AGGRESSIVEPAUSE, TRUE);
-    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WinVer >= WIN2K);
+    EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, TRUE);
 #endif
 
   } else if (msg == WM_COMMAND) {
@@ -1508,10 +1510,10 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
         id == IDC_SHIFT) {
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 1);
     } else if (event == EN_UPDATE && id == IDC_SHORTCUTS_VK) {
-      TCHAR txt[4];
+      wchar_t txt[4];
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
       BYTE vKey = lstrhex2u(txt);
-      TCHAR keyname[32];
+      wchar_t keyname[32];
       keyname[0] = L'\0';
       GetKeyNameText(MapVirtualKey(vKey, 0) << 16, keyname,
                      std::size(keyname) - 8);
@@ -1530,13 +1532,12 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
     if (id == IDC_SHORTCUTS_AC &&
         (event == CBN_SELCHANGE || event == CBN_EDITCHANGE)) {
       // Update the shortcut with the current one.
-      TCHAR txt[64];
+      wchar_t txt[64];
       int i =
           CB_GetTextAndIdx(reinterpret_cast<HWND>(lParam), txt, std::size(txt));
       edit_shortcut_idx = i;
       // MessageBox(hwnd, txt, NULL, 0);
-      WORD shortcut =
-          GetPrivateProfileInt(TEXT("KBShortcuts"), txt, 0, inipath);
+      WORD shortcut = GetPrivateProfileInt(L"KBShortcuts", txt, 0, inipath);
       BYTE vKey = LOBYTE(shortcut);
       BYTE mod = HIBYTE(shortcut);
       SetDlgItemText(hwnd, IDC_SHORTCUTS_VK, LPTR2Hex(txt, vKey));
@@ -1553,32 +1554,33 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
     }
     // WRITE Current Keyboard Shortcut to ini file
     if (id == IDC_SHORTCUTS_SET) {
-      TCHAR txt[kUintDigits + 1], action_string_buf[64];
+      wchar_t txt[kUintDigits + 1], action_string_buf[64];
       // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
       BYTE vKey = lstrhex2u(txt);
       BYTE mod = IsChecked(IDC_ALT) | (IsChecked(IDC_CONTROL) << 1) |
                  (IsChecked(IDC_SHIFT) << 2) | (IsChecked(IDC_WINKEY) << 3);
       WORD shortcut = vKey | (mod << 8);
-      action_string_buf[0] = TEXT('\0');
+      action_string_buf[0] = L'\0';
       int astrlen = GetDlgItemText(hwnd, IDC_SHORTCUTS_AC, action_string_buf,
                                    std::size(action_string_buf));
       if (0 < astrlen && *action_string_buf) {
-        const TCHAR* intstr = shortcut ? Uint2lStr(txt, shortcut)
-                                       : nullptr;  // NULL will remove the KEY
+        const wchar_t* intstr = shortcut ? Uint2lStr(txt, shortcut)
+                                         : nullptr;  // NULL will remove the KEY
         edit_shortcut_idx = CB_AddStringIfNotPresentAndGetIdx(
             GetDlgItem(hwnd, IDC_SHORTCUTS_AC), action_string_buf);
-        WritePrivateProfileString(TEXT("KBShortcuts"), action_string_buf,
-                                  intstr, inipath);
+        WritePrivateProfileString(L"KBShortcuts", action_string_buf, intstr,
+                                  inipath);
       }
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 0);
       SetFocus(GetDlgItem(hwnd, IDC_SHORTCUTS_AC));
-      goto APPLY_ALL;
+      apply_all();
+      return FALSE;
     }
     if (id == IDC_SHORTCUTS_PICK) {
-      HWND pickhwnd;
+      HWND pickhwnd = nullptr;
       WNDCLASS wnd;
-      if (!GetClassInfo(g_hinst, TEXT(APP_NAMEA) TEXT("-PickShortcut"), &wnd)) {
+      if (!GetClassInfo(g_hinst, APP_NAME L"-PickShortcut", &wnd)) {
         WNDCLASS wndd = {CS_PARENTDC,
                          PickShortcutWinProc,
                          0,
@@ -1591,21 +1593,21 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
                          nullptr  //(HBRUSH)(COLOR_HIGHLIGHT+1)
                          ,
                          nullptr,
-                         TEXT(APP_NAMEA) TEXT("-PickShortcut")};
+                         APP_NAME L"-PickShortcut"};
         RegisterClass(&wndd);
       }
       RECT rc;
       GetClientRect(hwnd, &rc);
-      pickhwnd = CreateWindowEx(
-          WS_EX_TOPMOST, TEXT(APP_NAMEA) TEXT("-PickShortcut"), nullptr,
-          WS_CHILD | WS_VISIBLE, rc.left, rc.top, rc.right - rc.left,
-          rc.bottom - rc.top, hwnd, nullptr, g_hinst, nullptr);
+      pickhwnd = CreateWindowEx(WS_EX_TOPMOST, APP_NAME L"-PickShortcut",
+                                nullptr, WS_CHILD | WS_VISIBLE, rc.left, rc.top,
+                                rc.right - rc.left, rc.bottom - rc.top, hwnd,
+                                nullptr, g_hinst, nullptr);
       // Disable all other child windows
       EnumChildWindows(hwnd, EnableAllControlsProc, 0);
       EnableWindow(pickhwnd, TRUE);
       SetFocus(pickhwnd);
       SetActiveWindow(pickhwnd);
-      // SetDlgItemText(hwnd, IDC_SHORTCUTS, TEXT("Press Keys..."));
+      // SetDlgItemText(hwnd, IDC_SHORTCUTS, L"Press Keys...");
       EnableDlgItem(hwnd, IDC_SHORTCUTS_PICK, 0);
     }
     if (id == IDC_SHORTCUTS_CLEAR) {
@@ -1614,7 +1616,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       CheckDlgButton(hwnd, IDC_CONTROL, BST_UNCHECKED);
       CheckDlgButton(hwnd, IDC_WINKEY, BST_UNCHECKED);
       CheckDlgButton(hwnd, IDC_ALT, BST_UNCHECKED);
-      SetDlgItemText(hwnd, IDC_SHORTCUTS_VK, TEXT(""));
+      SetDlgItemText(hwnd, IDC_SHORTCUTS_VK, L"");
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 1);
     }
     if (id == IDC_ADVANCEDBT_AC) {
@@ -1622,7 +1624,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       // and fill the IDC_SHORTCUTS_AC combobox with it.
       advancedActionParam_t acp;
       acp.base_action_lst = kbshortcut_actions;
-      acp.outbuf[0] = TEXT('\0');
+      acp.outbuf[0] = L'\0';
       int code = DialogBoxParam(g_hinst, MAKEINTRESOURCE(IDD_ACTIONPARAM), hwnd,
                                 static_cast<DLGPROC>(AdvancedActionDlgProc),
                                 reinterpret_cast<LPARAM>(&acp));
@@ -1641,31 +1643,29 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
   } else if (msg == WM_NOTIFY) {
     if (pnmh->code == PSN_SETACTIVE) {
       // GrabWithAlt
-      TCHAR txt[64];
+      wchar_t txt[64];
 
-      GetPrivateProfileString(TEXT("Input"), TEXT("ModKey"), TEXT(""), txt,
-                              std::size(txt), inipath);
+      GetPrivateProfileString(L"Input", L"ModKey", L"", txt, std::size(txt),
+                              inipath);
       EnableDlgItem(hwnd, IDC_GRABWITHALTB_H, txt[0]);
       EnableDlgItem(hwnd, IDC_GRABWITHALTB, txt[0]);
 
-      FillActionDropListS(hwnd, IDC_GRABWITHALT, TEXT("GrabWithAlt"),
-                          kb_actions);
-      FillActionDropListS(hwnd, IDC_GRABWITHALTB, TEXT("GrabWithAltB"),
-                          kb_actions);
+      FillActionDropListS(hwnd, IDC_GRABWITHALT, L"GrabWithAlt", kb_actions);
+      FillActionDropListS(hwnd, IDC_GRABWITHALTB, L"GrabWithAltB", kb_actions);
 
       // FillActionDropListS(hwnd, IDC_SHORTCUTS_AC, NULL, kbshortcut_actions);
       {  // Fill combobox with all the shortcuts that are currently configured
-        TCHAR kbsec[1600];
+        wchar_t kbsec[1600];
         HWND control = GetDlgItem(hwnd, IDC_SHORTCUTS_AC);
         CB_ResetContent(control);
-        GetPrivateProfileSection(TEXT("KBShortcuts"), kbsec, std::size(kbsec),
+        GetPrivateProfileSection(L"KBShortcuts", kbsec, std::size(kbsec),
                                  inipath);
-        for (TCHAR* p = kbsec; *p != TEXT('\0'); p += lstrlen(p) + 1) {
-          // MessageBox(hwnd, p, TEXT("KBShortcuts"), 0);
-          TCHAR* pp = lstrchr(p, TEXT('='));
+        for (wchar_t* p = kbsec; *p != L'\0'; p += lstrlen(p) + 1) {
+          // MessageBox(hwnd, p, L"KBShortcuts", 0);
+          wchar_t* pp = lstrchr(p, L'=');
           if (!pp) continue;  // No equal sign...
-          *pp = TEXT('\0');
-          if (!lstrcmpi(p, TEXT("UsePtWindow"))) continue;
+          *pp = L'\0';
+          if (!lstrcmpi(p, L"UsePtWindow")) continue;
           CB_AddString(control, p);
           p = pp + 1;
         }
@@ -1680,9 +1680,9 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       // ModKey init
       HWND control = GetDlgItem(hwnd, IDC_MODKEY);
       CB_ResetContent(control);
-      unsigned j, sel = 0;
+      unsigned j = 0, sel = 0;
       for (j = 0; j < std::size(togglekeys) - 1; j++) {
-        TCHAR key_name[256];
+        wchar_t key_name[256];
         lstrcpy_noaccel(key_name, std::size(key_name),
                         L10NSTR(togglekeys[j].l10nidx));
         CB_AddString(control, key_name);
@@ -1727,24 +1727,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       UpdateDialogStrings(hwnd, strlst, std::size(strlst));
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
-    APPLY_ALL:;
-      //            int i;
-      // Action without click
-      WriteActionDropListS(hwnd, IDC_GRABWITHALT, TEXT("GrabWithAlt"),
-                           kb_actions);
-      WriteActionDropListS(hwnd, IDC_GRABWITHALTB, TEXT("GrabWithAltB"),
-                           kb_actions);
-
-      WriteDialogOptions(hwnd, optlst, std::size(optlst));
-      ScrollLockState = WriteOptionBoolB(IDC_SCROLLLOCKSTATE, TEXT("Input"),
-                                         "ScrollLockState", 0);
-      // Modifier key (similar to action list)
-      WriteActionDropListS(hwnd, IDC_MODKEY, TEXT("ModKey"), togglekeys);
-      // Hotkeys
-      SaveHotKeys(hotkeys, hwnd, TEXT("Hotkeys"));
-      WriteOptionBool(IDC_KEYCOMBO, TEXT("Input"), "KeyCombo");
-      UpdateSettings();
-      have_to_apply = 0;
+      apply_all();
     }
   }
   return FALSE;
@@ -1754,12 +1737,11 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
 static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
                                                 WPARAM wParam, LPARAM lParam) {
   static const optlst_t optlst[] = {
-      {IDC_PROCESSBLACKLIST, T_STR, 0, TEXT("Blacklist"), "Processes",
-       TEXT("")},
-      {IDC_BLACKLIST, T_STR, 0, TEXT("Blacklist"), "Windows", TEXT("")},
-      {IDC_SCROLLLIST, T_STR, 0, TEXT("Blacklist"), "Scroll", TEXT("")},
-      {IDC_MDIS, T_STR, 0, TEXT("Blacklist"), "MDIs", TEXT("")},
-      {IDC_PAUSEBL, T_STR, 0, TEXT("Blacklist"), "Pause", TEXT("")},
+      {IDC_PROCESSBLACKLIST, T_STR, 0, L"Blacklist", "Processes", L""},
+      {IDC_BLACKLIST, T_STR, 0, L"Blacklist", "Windows", L""},
+      {IDC_SCROLLLIST, T_STR, 0, L"Blacklist", "Scroll", L""},
+      {IDC_MDIS, T_STR, 0, L"Blacklist", "MDIs", L""},
+      {IDC_PAUSEBL, T_STR, 0, L"Blacklist", "Pause", L""},
   };
 
   static int have_to_apply = 0;
@@ -1779,7 +1761,7 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
       have_to_apply = 1;
     } else if (event == STN_CLICKED && id == IDC_FINDWINDOW) {
       // Get size of workspace
-      int left = 0, top = 0, width, height;
+      int left = 0, top = 0, width = 0, height = 0;
       if (GetSystemMetrics(SM_CMONITORS) >= 1) {
         left = GetSystemMetrics(SM_XVIRTUALSCREEN);
         top = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -1795,7 +1777,7 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
                       0,       0,
                       g_hinst, nullptr,
                       nullptr, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1),
-                      nullptr, TEXT(APP_NAMEA) TEXT("-find")};
+                      nullptr, APP_NAME L"-find"};
       wnd.hCursor = LoadCursor(g_hinst, MAKEINTRESOURCE(IDI_FIND));
       RegisterClass(&wnd);
       HWND findhwnd =
@@ -1810,7 +1792,7 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
     }
 
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+    auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {
@@ -1822,18 +1804,16 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
           {IDC_PAUSEBL_HEADER, L10NIDX(BlacklistPause)},
           {IDC_FINDWINDOW_BOX, L10NIDX(BlacklistFindWindowBox)}};
       UpdateDialogStrings(hwnd, strlst, std::size(strlst));
-      for (size_t i = 0; i < std::size(optlst); i++)
-        CreateInfoTip(hwnd, optlst[i].idc, l10n->BlacklistFormat);
+      for (const auto& i : optlst)
+        CreateInfoTip(hwnd, i.idc, l10n->BlacklistFormat);
 
       // Enable or disable buttons if needed
-      EnableDlgItem(
-          hwnd, IDC_MDIS,
-          GetPrivateProfileInt(TEXT("General"), TEXT("MDI"), 1, inipath));
+      EnableDlgItem(hwnd, IDC_MDIS,
+                    GetPrivateProfileInt(L"General", L"MDI", 1, inipath));
       EnableDlgItem(
           hwnd, IDC_PAUSEBL,
-          GetPrivateProfileInt(TEXT("KBShortcuts"), TEXT("Kill"), 0, inipath) ||
-              GetPrivateProfileInt(TEXT("Advanced"), TEXT("ACMenuItems"), -1,
-                                   inipath) &
+          GetPrivateProfileInt(L"KBShortcuts", L"Kill", 0, inipath) ||
+              GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1, inipath) &
                   8192);
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Save to the config
@@ -1864,14 +1844,14 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       HWND nwindow = WindowFromPoint(pt);
       HWND window = GetAncestor(nwindow, GA_ROOT);
 
-      TCHAR title[256], classname[256];
+      wchar_t title[256], classname[256];
       GetWindowText(window, title, std::size(title));
       GetClassName(window, classname, std::size(classname));
 
-      TCHAR txt[512];
+      wchar_t txt[512];
       txt[0] = '\0';
       lstrcat_s(txt, std::size(txt), title);
-      lstrcat_s(txt, std::size(txt), TEXT("|"));
+      lstrcat_s(txt, std::size(txt), L"|");
       lstrcat_s(txt, std::size(txt), classname);
       SetDlgItemText(page, IDC_NEWRULE, txt);
 
@@ -1883,10 +1863,10 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       SetDlgItemText(page, IDC_GWLEXSTYLE,
                      LPTR2Hex(txt, GetWindowLongPtr(window, GWL_EXSTYLE)));
       // WM_NCHITTEST messages info at current pt
-      TCHAR tt[32];
+      wchar_t tt[32];
       lstrcpy_s(txt, std::size(txt),
                 Int2lStr(tt, HitTestTimeout(nwindow, pt.x, pt.y)));
-      lstrcat_s(txt, std::size(txt), TEXT("/"));
+      lstrcat_s(txt, std::size(txt), L"/");
       lstrcat_s(txt, std::size(txt),
                 Int2lStr(tt, HitTestTimeout(window, pt.x, pt.y)));
       SetDlgItemText(page, IDC_NCHITTEST, txt);
@@ -1894,21 +1874,21 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       RECT rc;
       SetDlgItemText(page, IDC_DWMCAPBUTTON,
                      (GetCaptionButtonsRect(window, &rc) && PtInRect(&rc, pt))
-                         ? TEXT("Yes")
-                         : TEXT("No"));
+                         ? L"Yes"
+                         : L"No");
 
       // Window rectangle info
       if (GetWindowRectL(window, &rc)) {
         SetDlgItemText(page, IDC_RECT, RectToStr(&rc, txt));
       }
       // IDC_WINHANDLES
-      lstrcpy_s(txt, std::size(txt), TEXT("Hwnd: "));
+      lstrcpy_s(txt, std::size(txt), L"Hwnd: ");
       lstrcat_s(txt, std::size(txt),
                 LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(nwindow)));
-      lstrcat_s(txt, std::size(txt), TEXT(", Root: "));
+      lstrcat_s(txt, std::size(txt), L", Root: ");
       lstrcat_s(txt, std::size(txt),
                 LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(window)));
-      lstrcat_s(txt, std::size(txt), TEXT(", Owner: "));
+      lstrcat_s(txt, std::size(txt), L", Owner: ");
       lstrcat_s(txt, std::size(txt),
                 LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(
                                  GetWindow(window, GW_OWNER))));
@@ -1918,9 +1898,10 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     ShowWindowAsync(findHwnd, SW_SHOW);
 
     DestroyWindow(hwnd);
-    UnregisterClass(TEXT(APP_NAMEA) TEXT("-find"), g_hinst);
+    UnregisterClass(APP_NAME L"-find", g_hinst);
     return 0;
-  } else if (wParam && msg == WM_ERASEBKGND) {
+  }
+  if (wParam && msg == WM_ERASEBKGND) {
     return 1;
   } else if (wParam && msg == WM_PAINT) {
     return 0;
@@ -1933,31 +1914,30 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+    auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
-      TCHAR buf[128];
+      wchar_t buf[128];
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
       // Append version number to version....
       lstrcpy_s(buf, std::size(buf), l10n->AboutVersion);
-      lstrcat_s(buf, std::size(buf), TEXT(" ") TEXT(APP_VERSION));
+      lstrcat_s(buf, std::size(buf), L" " APP_VERSION);
       SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
 
-      SetDlgItemText(hwnd, IDC_URL,
-                     TEXT("https://github.com/RamonUnch/AltSnap"));
+      SetDlgItemText(hwnd, IDC_URL, L"https://github.com/RamonUnch/AltSnap");
       SetDlgItemText(hwnd, IDC_AUTHOR, l10n->AboutAuthor);
       SetDlgItemText(hwnd, IDC_AUTHOR2, l10n->AboutAuthor2);
       SetDlgItemText(hwnd, IDC_LICENSE, l10n->AboutLicense);
       SetDlgItemText(hwnd, IDC_TRANSLATIONS_BOX, l10n->AboutTranslationCredit);
 
-      TCHAR txt[1024];
-      txt[0] = TEXT('\0');
+      wchar_t txt[1024];
+      txt[0] = L'\0';
       for (size_t i = 0; i < langinfo.size(); i++) {
         lstrcat_s(txt, std::size(txt), langinfo[i].lang_english.c_str());
-        lstrcat_s(txt, std::size(txt), TEXT(": "));
+        lstrcat_s(txt, std::size(txt), L": ");
         lstrcat_s(txt, std::size(txt), langinfo[i].author.c_str());
         if (i + 1 != langinfo.size()) {
-          lstrcat_s(txt, std::size(txt), TEXT("\r\n"));
+          lstrcat_s(txt, std::size(txt), L"\r\n");
         }
       }
       SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);
@@ -1966,7 +1946,6 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   return FALSE;
 }
-static HWND NewTestWindow();
 static void ToggleFullScreen(HWND hwnd) {
   LONG_PTR fs = GetWindowLongPtr(hwnd, 0);
   LONG_PTR fl = GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -1990,6 +1969,35 @@ static void ToggleFullScreen(HWND hwnd) {
 }
 /////////////////////////////////////////////////////////////////////////////
 // Simple windows proc that draws the resizing regions.
+// Label of a mouse message in the "test window" event log; null for messages
+// that are not mouse events.
+static const wchar_t* MouseEventName(UINT msg, WPARAM wParam) {
+  switch (msg) {
+    case WM_LBUTTONDOWN:
+      return L"LClick D";
+    case WM_RBUTTONDOWN:
+      return L"RClick D";
+    case WM_MBUTTONDOWN:
+      return L"MClick D";
+    case WM_XBUTTONDOWN:
+      return HIWORD(wParam) == 1 ? L"XClick 1 D" : L"XClick 2 D";
+    case WM_LBUTTONUP:
+      return L"LClick U";
+    case WM_RBUTTONUP:
+      return L"RClick U";
+    case WM_MBUTTONUP:
+      return L"MClick U";
+    case WM_XBUTTONUP:
+      return HIWORD(wParam) == 1 ? L"XClick 1 U" : L"XClick 2 U";
+    case WM_MOUSEWHEEL:
+      return L"Wheel";
+    case WM_MOUSEHWHEEL:
+      return L"HWheel";
+    default:
+      return nullptr;
+  }
+}
+
 static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam) {
   enum { MAXLINES = 16, MAXLL = 48 };
@@ -2002,9 +2010,9 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     WPARAM pWP;
     LPARAM pLP;
     int idx;
-    TCHAR lastkey[MAXLINES][MAXLL];
+    wchar_t lastkey[MAXLINES][MAXLL];
   };
-  const TCHAR* buttonstr = nullptr;
+  const wchar_t* const buttonstr = MouseEventName(msg, wParam);
 
   switch (msg) {
     case WM_CREATE: {
@@ -2027,48 +2035,27 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
       if (wParam == VK_F11) ToggleFullScreen(hwnd);
 
-      goto PRINTT;
+      [[fallthrough]];
     case WM_LBUTTONDOWN:
-      buttonstr = TEXT("LClick D");
-      goto PRINTT;
     case WM_RBUTTONDOWN:
-      buttonstr = TEXT("RClick D");
-      goto PRINTT;
     case WM_MBUTTONDOWN:
-      buttonstr = TEXT("MClick D");
-      goto PRINTT;
     case WM_XBUTTONDOWN:
-      buttonstr = HIWORD(wParam) == 1 ? TEXT("XClick 1 D") : TEXT("XClick 2 D");
-      goto PRINTT;
     case WM_LBUTTONUP:
-      buttonstr = TEXT("LClick U");
-      goto PRINTT;
     case WM_RBUTTONUP:
-      buttonstr = TEXT("RClick U");
-      goto PRINTT;
     case WM_MBUTTONUP:
-      buttonstr = TEXT("MClick U");
-      goto PRINTT;
     case WM_XBUTTONUP:
-      buttonstr = HIWORD(wParam) == 1 ? TEXT("XClick 1 U") : TEXT("XClick 2 U");
-      goto PRINTT;
     case WM_MOUSEWHEEL:
-      buttonstr = TEXT("Wheel");
-      goto PRINTT;
     case WM_MOUSEHWHEEL:
-      buttonstr = TEXT("HWheel");
-      goto PRINTT;
     case WM_KEYUP:
     case WM_SYSKEYUP:
-    case WM_SYSKEYDOWN:
-    PRINTT: {
+    case WM_SYSKEYDOWN: {
       enum { invalidate_all, invalidate_lastline, invalidate_nothing };
-      TCHAR txt[32];
-      struct lastkeyss* lks = reinterpret_cast<struct lastkeyss*>(
+      wchar_t txt[32];
+      auto* lks = reinterpret_cast<struct lastkeyss*>(
           GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (!lks) break;
       int idx = lks->idx;
-      TCHAR(*lastkey)[MAXLL] = lks->lastkey;
+      wchar_t(*lastkey)[MAXLL] = lks->lastkey;
       char zone_to_invalidate = invalidate_all;
 
       if (!buttonstr) {
@@ -2079,22 +2066,22 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           if (lstrlen(lastkey[idx]) == MAXLL - 1) {
             zone_to_invalidate = invalidate_nothing;
           } else {
-            lstrcat_s(lastkey[idx], MAXLL, TEXT("."));
+            lstrcat_s(lastkey[idx], MAXLL, L".");
             zone_to_invalidate = invalidate_lastline;
           }
 
         } else {
-          lstrcpy_s(lastkey[idx], MAXLL, TEXT("vK="));
+          lstrcpy_s(lastkey[idx], MAXLL, L"vK=");
           lstrcat_s(lastkey[idx], MAXLL,
                     LPTR2Hex(txt, static_cast<BYTE>(wParam)));
           lstrcat_s(lastkey[idx], MAXLL,
-                    lParam & (1u << 31)   ? TEXT(" U")
-                    : lParam & (1u << 30) ? TEXT(" R")
-                                          : TEXT(" D"));
-          lstrcat_s(lastkey[idx], MAXLL, TEXT(" sC="));
+                    lParam & (1u << 31)   ? L" U"
+                    : lParam & (1u << 30) ? L" R"
+                                          : L" D");
+          lstrcat_s(lastkey[idx], MAXLL, L" sC=");
           lstrcat_s(lastkey[idx], MAXLL,
                     LPTR2Hex(txt, HIWORD(lParam) & 0x00FF));
-          lstrcat_s(lastkey[idx], MAXLL, TEXT(", LP="));
+          lstrcat_s(lastkey[idx], MAXLL, L", LP=");
           lstrcat_s(lastkey[idx], MAXLL, LPTR2Hex(txt, lParam));
           txt[0] = L',';
           txt[1] = L' ';
@@ -2110,18 +2097,18 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL) {
           short delta = HIWORD(wParam);
           if (delta >= 0) {
-            lstrcat_s(lastkey[idx], MAXLL, TEXT(" +"));
+            lstrcat_s(lastkey[idx], MAXLL, L" +");
           } else {
             delta = -delta;
-            lstrcat_s(lastkey[idx], MAXLL, TEXT(" -"));
+            lstrcat_s(lastkey[idx], MAXLL, L" -");
           }
           lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, delta));
         }
-        lstrcat_s(lastkey[idx], MAXLL, TEXT(" ("));
+        lstrcat_s(lastkey[idx], MAXLL, L" (");
         lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, x));
-        lstrcat_s(lastkey[idx], MAXLL, TEXT(", "));
+        lstrcat_s(lastkey[idx], MAXLL, L", ");
         lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, y));
-        lstrcat_s(lastkey[idx], MAXLL, TEXT("), WP="));
+        lstrcat_s(lastkey[idx], MAXLL, L"), WP=");
         lstrcat_s(lastkey[idx], MAXLL, LPTR2Hex(txt, wParam));
       }
 
@@ -2147,19 +2134,19 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     case WM_SIZE: {
-      TCHAR num[kIntDigits * 4 + 4 + 1];
-      TCHAR title[256 + kIntDigits * 4 + 4];
+      wchar_t num[kIntDigits * 4 + 4 + 1];
+      wchar_t title[256 + kIntDigits * 4 + 4];
       RECT rc;
       GetWindowRectL(hwnd, &rc);
       lstrcpy_noaccel(title, std::size(title), l10n->AdvancedTestWindow);
-      lstrcat_s(title, std::size(title), TEXT(": "));
+      lstrcat_s(title, std::size(title), L": ");
       lstrcat_s(title, std::size(title), RectToStr(&rc, num));
 
-      lstrcat_s(title, std::size(title), TEXT(" ("));
+      lstrcat_s(title, std::size(title), L" (");
       lstrcat_s(title, std::size(title), Int2lStr(num, rc.right - rc.left));
-      lstrcat_s(title, std::size(title), TEXT("x"));
+      lstrcat_s(title, std::size(title), L"x");
       lstrcat_s(title, std::size(title), Int2lStr(num, rc.bottom - rc.top));
-      lstrcat_s(title, std::size(title), TEXT(")"));
+      lstrcat_s(title, std::size(title), L")");
       SetWindowText(hwnd, title);
 
     } break;
@@ -2282,7 +2269,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(lfont), &lfont);
       lfont.lfHeight = -MulDiv(11, ReallyGetDpiForWindow(hwnd), 72);
       long lineheight = -(lfont.lfHeight + lfont.lfHeight / 8);
-      HFONT oldfont =
+      auto oldfont =
           static_cast<HFONT>(SelectObject(hdc, CreateFontIndirect(&lfont)));
       SetBkMode(hdc, TRANSPARENT);
       SetTextColor(hdc, txtcolor);
@@ -2296,7 +2283,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (lks) {
         int idx = lks->idx;
-        const TCHAR(*lastkey)[MAXLL] = lks->lastkey;
+        const wchar_t(*lastkey)[MAXLL] = lks->lastkey;
         for (size_t i = 0; i < MAXLINES; i++) {
           UCHAR didx = (idx + i) % MAXLINES;
           RECT trc = {
@@ -2307,7 +2294,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                    DT_NOCLIP | DT_TABSTOP);
         }
       }
-      const TCHAR* str = l10n->MiscZoneTestWinHelp;
+      const wchar_t* str = l10n->MiscZoneTestWinHelp;
       if (UseZones & 1) {
         RECT trc2 = {lineheight / 2, lineheight / 2, crc.right, splitheight};
         DrawText(hdc, str, lstrlen(str), &trc2, DT_NOCLIP | DT_TABSTOP);
@@ -2330,12 +2317,12 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       //        return 1;
 
     case WM_UPDCFRACTION: {
-      centerfrac = GetPrivateProfileInt(TEXT("General"), TEXT("CenterFraction"),
-                                        24, inipath);
-      centermode = GetPrivateProfileInt(TEXT("General"), TEXT("ResizeCenter"),
-                                        1, inipath);
-      sidefrac = GetPrivateProfileInt(TEXT("General"), TEXT("SidesFraction"),
-                                      255, inipath);
+      centerfrac =
+          GetPrivateProfileInt(L"General", L"CenterFraction", 24, inipath);
+      centermode =
+          GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath);
+      sidefrac =
+          GetPrivateProfileInt(L"General", L"SidesFraction", 255, inipath);
       if (sidefrac == 255) sidefrac = centerfrac;
       return 0;
     } break;
@@ -2350,10 +2337,10 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 }
 #undef MAXLINES
 
-static HWND NewTestWindow() {
-  HWND testwnd;
+HWND NewTestWindow() {
+  HWND testwnd = nullptr;
   WNDCLASS wnd;
-  if (!GetClassInfo(g_hinst, TEXT(APP_NAMEA) TEXT("-Test"), &wnd)) {
+  if (!GetClassInfo(g_hinst, APP_NAME L"-Test", &wnd)) {
     WNDCLASS wndd = {CS_HREDRAW | CS_VREDRAW,
                      TestWindowProc,
                      0,
@@ -2366,21 +2353,20 @@ static HWND NewTestWindow() {
                      nullptr  //(HBRUSH)(COLOR_BACKGROUND+1)
                      ,
                      nullptr,
-                     TEXT(APP_NAMEA) TEXT("-Test")};
+                     APP_NAME L"-Test"};
     RegisterClass(&wndd);
   }
-  TCHAR wintitle[256];
+  wchar_t wintitle[256];
   lstrcpy_noaccel(wintitle, std::size(wintitle), l10n->AdvancedTestWindow);
-  testwnd = CreateWindowEx(0, TEXT(APP_NAMEA) TEXT("-Test"), wintitle,
-                           WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                           CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr,
-                           g_hinst, nullptr);
+  testwnd = CreateWindowEx(0, APP_NAME L"-Test", wintitle, WS_OVERLAPPEDWINDOW,
+                           CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                           CW_USEDEFAULT, nullptr, nullptr, g_hinst, nullptr);
   PostMessage(testwnd, WM_UPDCFRACTION, 0, 0);
   ShowWindow(testwnd, SW_SHOW);
 
   return testwnd;
 }
-static HWND NewTestWindowAt(int x, int y, int width, int height) {
+HWND NewTestWindowAt(int x, int y, int width, int height) {
   HWND hwnd = NewTestWindow();
   if (hwnd) {
     RECT bd;
@@ -2396,41 +2382,33 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
                                                WPARAM wParam, LPARAM lParam) {
 #define V (void*)
   static const optlst_t optlst[] = {
-      {IDC_AUTOREMAXIMIZE, T_BOL, 0, TEXT("Advanced"), "AutoRemaximize",
-       V nullptr},
-      {IDC_AEROTOPMAXIMIZES, T_BMK, 0, TEXT("Advanced"), "AeroTopMaximizes",
+      {IDC_AUTOREMAXIMIZE, T_BOL, 0, L"Advanced", "AutoRemaximize", V nullptr},
+      {IDC_AEROTOPMAXIMIZES, T_BMK, 0, L"Advanced", "AeroTopMaximizes",
        V 1},  // bit 0
-      {IDC_AERODBCLICKSHIFT, T_BMK, 1, TEXT("Advanced"), "AeroTopMaximizes",
+      {IDC_AERODBCLICKSHIFT, T_BMK, 1, L"Advanced", "AeroTopMaximizes",
        V 1},  // bit 1
-      {IDC_MULTIPLEINSTANCES, T_BOL, 0, TEXT("Advanced"), "MultipleInstances",
+      {IDC_MULTIPLEINSTANCES, T_BOL, 0, L"Advanced", "MultipleInstances",
        V nullptr},
-      {IDC_FULLSCREEN, T_BOL, 0, TEXT("Advanced"), "FullScreen", V 1},
-      {IDC_BLMAXIMIZED, T_BOL, 0, TEXT("Advanced"), "BLMaximized", V nullptr},
-      {IDC_FANCYZONE, T_BOL, 0, TEXT("Zones"), "FancyZone", V nullptr},
-      {IDC_NORESTORE, T_BMK, 2, TEXT("General"), "SmartAero",
-       V nullptr},  // bit 2
-      {IDC_MAXWITHLCLICK, T_BMK, 0, TEXT("General"), "MMMaximize",
-       V 1},  // bit 0
-      {IDC_RESTOREONCLICK, T_BMK, 1, TEXT("General"), "MMMaximize",
+      {IDC_FULLSCREEN, T_BOL, 0, L"Advanced", "FullScreen", V 1},
+      {IDC_BLMAXIMIZED, T_BOL, 0, L"Advanced", "BLMaximized", V nullptr},
+      {IDC_FANCYZONE, T_BOL, 0, L"Zones", "FancyZone", V nullptr},
+      {IDC_NORESTORE, T_BMK, 2, L"General", "SmartAero", V nullptr},  // bit 2
+      {IDC_MAXWITHLCLICK, T_BMK, 0, L"General", "MMMaximize", V 1},   // bit 0
+      {IDC_RESTOREONCLICK, T_BMK, 1, L"General", "MMMaximize",
        V nullptr},  // bit 1
-      {IDC_TOPMOSTINDICATOR, T_BOL, 0, TEXT("Advanced"), "TopmostIndicator",
+      {IDC_TOPMOSTINDICATOR, T_BOL, 0, L"Advanced", "TopmostIndicator",
        V nullptr},
 
-      {IDC_CENTERFRACTION, T_STR, 0, TEXT("General"), "CenterFraction",
-       V TEXT("24")},
-      {IDC_SIDESFRACTION, T_STR, 0, TEXT("General"), "SidesFraction",
-       V TEXT("255")},
-      {IDC_AEROHOFFSET, T_STR, 0, TEXT("General"), "AeroHoffset", V TEXT("50")},
-      {IDC_AEROVOFFSET, T_STR, 0, TEXT("General"), "AeroVoffset", V TEXT("50")},
-      {IDC_SNAPTHRESHOLD, T_STR, 0, TEXT("Advanced"), "SnapThreshold",
-       V TEXT("20")},
-      {IDC_AEROTHRESHOLD, T_STR, 0, TEXT("Advanced"), "AeroThreshold",
-       V TEXT("5")},
-      {IDC_SNAPGAP, T_STR, 0, TEXT("Advanced"), "SnapGap", V TEXT("0")},
-      {IDC_AEROSPEED, T_STR, 0, TEXT("Advanced"), "AeroMaxSpeed", V TEXT("")},
-      {IDC_AEROSPEEDTAU, T_STR, 0, TEXT("Advanced"), "AeroSpeedTau",
-       V TEXT("32")},
-      {IDC_MOVETRANS, T_STR, 0, TEXT("General"), "MoveTrans", V TEXT("")},
+      {IDC_CENTERFRACTION, T_STR, 0, L"General", "CenterFraction", V L"24"},
+      {IDC_SIDESFRACTION, T_STR, 0, L"General", "SidesFraction", V L"255"},
+      {IDC_AEROHOFFSET, T_STR, 0, L"General", "AeroHoffset", V L"50"},
+      {IDC_AEROVOFFSET, T_STR, 0, L"General", "AeroVoffset", V L"50"},
+      {IDC_SNAPTHRESHOLD, T_STR, 0, L"Advanced", "SnapThreshold", V L"20"},
+      {IDC_AEROTHRESHOLD, T_STR, 0, L"Advanced", "AeroThreshold", V L"5"},
+      {IDC_SNAPGAP, T_STR, 0, L"Advanced", "SnapGap", V L"0"},
+      {IDC_AEROSPEED, T_STR, 0, L"Advanced", "AeroMaxSpeed", V L""},
+      {IDC_AEROSPEEDTAU, T_STR, 0, L"Advanced", "AeroSpeedTau", V L"32"},
+      {IDC_MOVETRANS, T_STR, 0, L"General", "MoveTrans", V L""},
   };
 #undef V
 
@@ -2454,7 +2432,7 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
       NewTestWindow();
     }
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+    auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {

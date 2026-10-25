@@ -74,9 +74,9 @@ typedef struct tagMSAAMENUINFO {
  * "a"); fprintf(LOG, X, ##__VA_ARGS__); fprintf(LOG,", LastError=%lu\n",err);
  * fclose(LOG); SetLastError(0); }*/
 #define LOGA LOGfunk
-static void LOGSimple(const char* str, size_t len) {
+inline void LOGSimple(const char* str, size_t len) {
   DWORD dummy = 0;
-  HANDLE h;
+  HANDLE h = nullptr;
   h = CreateFileA("ad.log", FILE_APPEND_DATA, FILE_SHARE_READ, nullptr,
                   OPEN_ALWAYS,
                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
@@ -91,7 +91,7 @@ static void LOGSimple(const char* str, size_t len) {
   const DWORD last_error = GetLastError();
   char line[512], error_text[kUintDigits + 1];
 
-  va_list args;
+  va_list args = nullptr;
   va_start(args, fmt);
   std::vsnprintf(line, sizeof(line), fmt, args);
   va_end(args);
@@ -106,7 +106,7 @@ static void LOGSimple(const char* str, size_t len) {
 #else
 #define LOG \
   if (0) LOGdummy
-static void LOGdummy(const char* fmt, ...) {}
+inline void LOGdummy(const char* fmt, ...) {}
 #endif
 
 #ifdef DEBUG
@@ -123,15 +123,15 @@ static void LOGdummy(const char* fmt, ...) {}
 #endif
 
 /* Helper function to pop a message bow with error code*/
-static void ErrorBox(const TCHAR* const title) {
-  LPVOID lpMsgBuf;
+inline void ErrorBox(const wchar_t* const title) {
+  LPVOID lpMsgBuf = nullptr;
   FormatMessage(
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
           FORMAT_MESSAGE_IGNORE_INSERTS,
       nullptr, GetLastError(),
       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), /* Default language */
-      reinterpret_cast<TCHAR*>(&lpMsgBuf), 0, nullptr);
-  MessageBox(nullptr, static_cast<LPCTSTR>(lpMsgBuf), title,
+      reinterpret_cast<wchar_t*>(&lpMsgBuf), 0, nullptr);
+  MessageBox(nullptr, static_cast<const wchar_t*>(lpMsgBuf), title,
              MB_OK | MB_ICONWARNING);
   /* Free the buffer using LocalFree. */
   LocalFree(lpMsgBuf);
@@ -140,7 +140,7 @@ static void ErrorBox(const TCHAR* const title) {
 /* Helper to be able to enable/disable dialog items
  * easily while ensuring we move keyboard focus to
  * the next control if it was selected */
-static BOOL EnableDlgItem(HWND hdlg, UINT id, BOOL enable) {
+inline BOOL EnableDlgItem(HWND hdlg, UINT id, BOOL enable) {
   HWND hwndControl = GetDlgItem(hdlg, id);
   if (!enable && hwndControl == GetFocus()) {
     SendMessage(hdlg, WM_NEXTDLGCTL, 0, FALSE);
@@ -148,7 +148,7 @@ static BOOL EnableDlgItem(HWND hdlg, UINT id, BOOL enable) {
   return EnableWindow(hwndControl, enable);
 }
 
-static DWORD GetMsgPT(POINT* pt) {
+inline DWORD GetMsgPT(POINT* pt) {
   DWORD point = GetMessagePos();
   pt->x = GET_X_LPARAM(point);
   pt->y = GET_Y_LPARAM(point);
@@ -157,7 +157,7 @@ static DWORD GetMsgPT(POINT* pt) {
 }
 
 /* Removes the trailing file name from a path */
-static BOOL PathRemoveFileSpecL(TCHAR* p) {
+inline BOOL PathRemoveFileSpecL(wchar_t* p) {
   int i = 0;
   if (!p) return FALSE;
 
@@ -169,8 +169,8 @@ static BOOL PathRemoveFileSpecL(TCHAR* p) {
 }
 
 /* Removes the path and keeps only the file name */
-static void PathStripPathL(TCHAR* p) {
-  int i = 0, j;
+inline void PathStripPathL(wchar_t* p) {
+  int i = 0, j = 0;
   if (!p) return;
 
   while (p[++i] != '\0');
@@ -180,7 +180,7 @@ static void PathStripPathL(TCHAR* p) {
   p[j] = '\0';
 }
 
-static BOOL HaveProc(const char* const DLLname, const char* const PROCname) {
+inline BOOL HaveProc(const char* const DLLname, const char* const PROCname) {
   HINSTANCE hdll = LoadLibraryA(DLLname);
   BOOL ret = FALSE;
   if (hdll) {
@@ -192,9 +192,9 @@ static BOOL HaveProc(const char* const DLLname, const char* const PROCname) {
   return ret;
 }
 
-static FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
-  HINSTANCE hdll;
-  FARPROC ret = static_cast<FARPROC>(nullptr);
+inline FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
+  HINSTANCE hdll = nullptr;
+  auto ret = static_cast<FARPROC>(nullptr);
 
   if ((hdll = GetModuleHandleA(DLLname))) {
     return GetProcAddress(hdll, PROCname);
@@ -209,7 +209,7 @@ static FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
 
 // Sleeps for `duration_ms`, temporarily raising the system timer resolution
 // for short sleeps so that Sleep() is accurate to ~1.5 ms instead of ~15 ms.
-static void ASleep(DWORD duration_ms) {
+inline void ASleep(DWORD duration_ms) {
   TIMECAPS tc;
   if (duration_ms > 15 || timeGetDevCaps(&tc, sizeof(tc)) != TIMERR_NOERROR) {
     Sleep(duration_ms);  // No need for an accurate sleep (or not available).
@@ -220,8 +220,8 @@ static void ASleep(DWORD duration_ms) {
   timeEndPeriod(tc.wPeriodMin);
 }
 
-static BOOL FreeDLLByName(const char* const DLLname) {
-  HINSTANCE hdll;
+inline BOOL FreeDLLByName(const char* const DLLname) {
+  HINSTANCE hdll = nullptr;
   if ((hdll = GetModuleHandleA(DLLname))) return FreeLibrary(hdll);
   return FALSE;
 }
@@ -231,7 +231,7 @@ static BOOL FreeDLLByName(const char* const DLLname) {
 /* Available only on Windows 7+s */
 
 /* Helper to set alpha and automatically add/remove WS_EX_LAYERED attrib */
-static void SetWindowAlpha(HWND hwnd, BYTE alpha) {
+inline void SetWindowAlpha(HWND hwnd, BYTE alpha) {
   /*LOGA("Setting ALPHA to %d", (int)alpha);*/
   LONG_PTR exstyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
   if (alpha == 255) {
@@ -250,7 +250,7 @@ static void SetWindowAlpha(HWND hwnd, BYTE alpha) {
 /* With an Windows 8 fallback */
 
 /* Fallbacks for all windows */
-static UINT ReallyGetDpiForWindow(const HWND hwnd) {
+inline UINT ReallyGetDpiForWindow(const HWND hwnd) {
   UINT dpi = GetDpiForWindow(hwnd);
   if (!dpi) {
     HDC hdc = GetDC(hwnd);
@@ -271,8 +271,8 @@ static UINT ReallyGetDpiForWindow(const HWND hwnd) {
  * WM_NCCREATE message handler.
  */
 /* Only applies to Windows NT for build number */
-[[nodiscard]] static BOOL OredredWinVer() {
-  DWORD oVer;
+[[nodiscard]] inline BOOL OredredWinVer() {
+  DWORD oVer = 0;
   DWORD ver = GetVersion();
   oVer = (ver & 0x000000FF) << 24    /* MAJOR */
          | (ver & 0x0000FF00) << 8   /* MINOR */
@@ -285,17 +285,17 @@ static UINT ReallyGetDpiForWindow(const HWND hwnd) {
   }
   return oVer;
 }
-static BOOL IsDarkModeEnabled() {
+inline BOOL IsDarkModeEnabled() {
   DWORD value = 0;
   if (OredredWinVer() >= 0x0A004563) {
     /* In case of Windows 10 build 10.0.17763 or 10.x (future) or 11+ */
     DWORD len = sizeof(value);
-    HKEY key;
+    HKEY key = nullptr;
     if (RegOpenKeyEx(HKEY_CURRENT_USER,
-                     TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Themes"
-                          "\\Personalize"),
+                     L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes"
+                     "\\Personalize",
                      0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
-      if (RegQueryValueEx(key, TEXT("AppsUseLightTheme"), nullptr, nullptr,
+      if (RegQueryValueEx(key, L"AppsUseLightTheme", nullptr, nullptr,
                           reinterpret_cast<LPBYTE>(&value),
                           &len) == ERROR_SUCCESS) {
         value = !value;
@@ -305,7 +305,7 @@ static BOOL IsDarkModeEnabled() {
   }
   return value;
 }
-static BOOL IsHighContrastEnabled() {
+inline BOOL IsHighContrastEnabled() {
   HIGHCONTRAST hc = {sizeof(hc)};
   if (SystemParametersInfo(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, FALSE))
     return hc.dwFlags & HCF_HIGHCONTRASTON;
@@ -318,7 +318,7 @@ static BOOL IsHighContrastEnabled() {
  * Since Windows 10 build 20H1 and on Win11
  * kDwmaUseImmersiveDarkMode=19 up to Win10 2004
  * kDwmaUseImmersiveDarkMode=20 since Win10 20H1 */
-static BOOL AllowDarkTitlebar(HWND hwnd) {
+inline BOOL AllowDarkTitlebar(HWND hwnd) {
   BOOL DarkMode = FALSE;
   if (IsHighContrastEnabled())
     return FALSE; /* Nothing to do and ignore DarkMode */
@@ -333,7 +333,7 @@ static BOOL AllowDarkTitlebar(HWND hwnd) {
 
     if (OredredWinVer() < 0x0A0047BA) {
       /* Windows 10 build 10.0.18362 ie: before 1903 */
-      SetProp(hwnd, TEXT("UseImmersiveDarkModeColors"),
+      SetProp(hwnd, L"UseImmersiveDarkModeColors",
               reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(DarkMode)));
     }
     DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkModePre20H1, &DarkMode,
@@ -344,21 +344,21 @@ static BOOL AllowDarkTitlebar(HWND hwnd) {
 }
 
 /* Helper function */
-static int GetSystemMetricsForWin(int nIndex, HWND hwnd) {
+inline int GetSystemMetricsForWin(int nIndex, HWND hwnd) {
   return GetSystemMetricsForDpi(nIndex, GetDpiForWindow(hwnd));
 }
-typedef struct tagRgTicTac {
+using RGTICTAC = struct tagRgTicTac {
   LARGE_INTEGER sta;
   LARGE_INTEGER end;
   LARGE_INTEGER frq;
-} RGTICTAC;
+};
 
-static BOOL RGTic(RGTICTAC* tt) {
+inline BOOL RGTic(RGTICTAC* tt) {
   QueryPerformanceFrequency(&tt->frq);
   return QueryPerformanceCounter(&tt->sta);
 }
 
-static int RGTac(RGTICTAC* tt) {
+inline int RGTac(RGTICTAC* tt) {
   if (QueryPerformanceCounter(&tt->end)) {
     return MulDiv(tt->end.LowPart - tt->sta.LowPart, 1000000, tt->frq.LowPart);
   }
@@ -371,7 +371,7 @@ static int RGTac(RGTICTAC* tt) {
 
 /* Needed on Windows 8+ to recive the WM_POWERBROADCAST mesage */
 
-static COLORREF GetSysColorizationColor() {
+inline COLORREF GetSysColorizationColor() {
   DWORD color = 0;
   BOOL b = FALSE;
   if (S_OK == DwmGetColorizationColor(&color, &b)) {
@@ -384,39 +384,39 @@ static COLORREF GetSysColorizationColor() {
   return 0;
 }
 
-[[nodiscard]] static long average(long a, long b) {
+[[nodiscard]] inline long average(long a, long b) {
   return (a >> 1) + (b >> 1) + (((a & 1) + (b & 1)) >> 1);
 }
-[[nodiscard]] static long averageX(const RECT* rc) {
+[[nodiscard]] inline long averageX(const RECT* rc) {
   return average(rc->left, rc->right);
 }
-[[nodiscard]] static long averageY(const RECT* rc) {
+[[nodiscard]] inline long averageY(const RECT* rc) {
   return average(rc->top, rc->bottom);
 }
 
 /* #define DwmGetWindowAttribute DwmGetWindowAttribute */
 
-static void SubRect(RECT* __restrict__ frame, const RECT* rect) {
+inline void SubRect(RECT* __restrict__ frame, const RECT* rect) {
   frame->left -= rect->left;
   frame->top -= rect->top;
   frame->right = rect->right - frame->right;
   frame->bottom = rect->bottom - frame->bottom;
 }
-static void InflateRectBorder(RECT* __restrict__ rc, const RECT* bd) {
+inline void InflateRectBorder(RECT* __restrict__ rc, const RECT* bd) {
   rc->left -= bd->left;
   rc->top -= bd->top;
   rc->right += bd->right;
   rc->bottom += bd->bottom;
 }
 
-static void DeflateRectBorder(RECT* __restrict__ rc, const RECT* bd) {
+inline void DeflateRectBorder(RECT* __restrict__ rc, const RECT* bd) {
   rc->left += bd->left;
   rc->top += bd->top;
   rc->right -= bd->right;
   rc->bottom -= bd->bottom;
 }
 
-static void OffsetPoints(POINT* pts, long dx, long dy, unsigned count) {
+inline void OffsetPoints(POINT* pts, long dx, long dy, unsigned count) {
   while (count--) {
     pts->x += dx;
     pts->y += dy;
@@ -424,7 +424,7 @@ static void OffsetPoints(POINT* pts, long dx, long dy, unsigned count) {
   }
 }
 
-static void FixDWMRectLL(HWND hwnd, RECT* bbb, const int SnapGap) {
+inline void FixDWMRectLL(HWND hwnd, RECT* bbb, const int SnapGap) {
   RECT rect, frame;
 
   if (S_OK == DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame,
@@ -445,7 +445,7 @@ static void FixDWMRectLL(HWND hwnd, RECT* bbb, const int SnapGap) {
  * sense, this is the case on Windows 7 and 8.x for example
  * We use DWM api when available in order to get the REAL client area
  */
-static BOOL GetWindowRectLL(HWND hwnd, RECT* rect, const int SnapGap) {
+inline BOOL GetWindowRectLL(HWND hwnd, RECT* rect, const int SnapGap) {
   HRESULT ret = DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, rect,
                                       sizeof(*rect));
   if (ret == S_OK) {
@@ -466,7 +466,7 @@ static BOOL GetWindowRectLL(HWND hwnd, RECT* rect, const int SnapGap) {
  * https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507
  * I had to figure it out the Hard way...
  */
-static int IsWindowCloaked(HWND hwnd) {
+inline int IsWindowCloaked(HWND hwnd) {
   int cloaked = 0;
   return S_OK == DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
                                        sizeof(cloaked)) &&
@@ -477,20 +477,20 @@ static int IsWindowCloaked(HWND hwnd) {
  * is an issue specific to a system update window in Windows 11 (and maybe other
  * versions as well), although this has not been confirmed.
  */
-static BOOL HasWindowSizeZero(HWND hwnd) {
+inline BOOL HasWindowSizeZero(HWND hwnd) {
   RECT rc;
   return GetWindowRect(hwnd, &rc) &&
          (rc.right == rc.left || rc.bottom == rc.top);
 }
-static BOOL IsVisible(HWND hwnd) {
+inline BOOL IsVisible(HWND hwnd) {
   return IsWindowVisible(hwnd) && !IsWindowCloaked(hwnd) &&
          !HasWindowSizeZero(hwnd);
 }
 
 /* Gets the original owner of hwnd.
  * stops going back the owner chain if invisible. */
-static HWND GetRootOwner(HWND hwnd) {
-  HWND parent;
+inline HWND GetRootOwner(HWND hwnd) {
+  HWND parent = nullptr;
   int i = 0;
   while ((parent = (GetWindowLongPtr(hwnd, GWL_STYLE) & WS_CHILD)
                        ? GetParent(hwnd)
@@ -511,7 +511,7 @@ static HWND GetRootOwner(HWND hwnd) {
 /* Use the DWM api to obtain the rectangel that *should* contain all
  * caption buttons. This is usefull to ensure we are not in one of them.
  */
-static BOOL GetCaptionButtonsRect(HWND hwnd, RECT* rc) {
+inline BOOL GetCaptionButtonsRect(HWND hwnd, RECT* rc) {
   int ret =
       DwmGetWindowAttribute(hwnd, DWMWA_CAPTION_BUTTON_BOUNDS, rc, sizeof(*rc));
   /* Convert rectangle to to screen coordinate. */
@@ -526,23 +526,23 @@ static BOOL GetCaptionButtonsRect(HWND hwnd, RECT* rc) {
 
 // NtSuspendProcess/NtResumeProcess are undocumented ntdll exports that have no
 // import library, so they are resolved once at first use.
-static LONG CallNtProcessFunction(const char* name, HANDLE process) {
+inline LONG CallNtProcessFunction(const char* name, HANDLE process) {
   using NtProcessFn = LONG(NTAPI*)(HANDLE);
   constexpr LONG kFailure = 666;
-  const HMODULE ntdll = GetModuleHandle(TEXT("ntdll.dll"));
+  const HMODULE ntdll = GetModuleHandle(L"ntdll.dll");
   if (!ntdll) return kFailure;
   const auto fn = reinterpret_cast<NtProcessFn>(
       reinterpret_cast<void*>(GetProcAddress(ntdll, name)));
   return fn ? fn(process) : kFailure;
 }
-static LONG NtSuspendProcess(HANDLE process) {
+inline LONG NtSuspendProcess(HANDLE process) {
   return CallNtProcessFunction("NtSuspendProcess", process);
 }
-static LONG NtResumeProcess(HANDLE process) {
+inline LONG NtResumeProcess(HANDLE process) {
   return CallNtProcessFunction("NtResumeProcess", process);
 }
 
-static BOOL HaveDWM() {
+inline BOOL HaveDWM() {
   static int first = 1;
   static BOOL have_dwm = FALSE;
   if (first) DwmIsCompositionEnabled(&have_dwm);
@@ -553,7 +553,7 @@ static BOOL HaveDWM() {
 
 /* PSAPI.DLL */
 
-static DWORD GetWindowProgNameFromPid(DWORD pid, TCHAR* title,
+inline DWORD GetWindowProgNameFromPid(DWORD pid, wchar_t* title,
                                       size_t title_len) {
   DWORD ret = 0;
   HANDLE proc =
@@ -573,9 +573,9 @@ static DWORD GetWindowProgNameFromPid(DWORD pid, TCHAR* title,
   return ret;
 }
 
-static DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
-                                        TCHAR* title, size_t title_len);
-static DWORD GetWindowProgName(HWND hwnd, TCHAR* title, size_t title_len) {
+inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
+                                        wchar_t* title, size_t title_len);
+inline DWORD GetWindowProgName(HWND hwnd, wchar_t* title, size_t title_len) {
   DWORD pid = 0;
   if (!GetWindowThreadProcessId(hwnd, &pid) || !pid ||
       !GetWindowProgNameFromPid(pid, title, title_len))
@@ -583,7 +583,7 @@ static DWORD GetWindowProgName(HWND hwnd, TCHAR* title, size_t title_len) {
 
   PathStripPathL(title);
 
-  if (pid && !lstrcmpi(title, TEXT("ApplicationFrameHost.exe"))) {
+  if (pid && !lstrcmpi(title, L"ApplicationFrameHost.exe")) {
     DWORD pid2 = GetWindowProgNameSubWindow(pid, hwnd, title, title_len);
     if (pid2) {
       PathStripPathL(title);
@@ -600,8 +600,8 @@ struct pid_pair_struct {
   DWORD parent_pid;
   DWORD child_pid;
 };
-static BOOL CALLBACK GetWindowProgName_subwins_EnumProc(HWND hwnd, LPARAM lp) {
-  struct pid_pair_struct* pids = reinterpret_cast<struct pid_pair_struct*>(lp);
+inline BOOL CALLBACK GetWindowProgName_subwins_EnumProc(HWND hwnd, LPARAM lp) {
+  auto* pids = reinterpret_cast<struct pid_pair_struct*>(lp);
   DWORD hwnd_pid = 0;
   if (GetWindowThreadProcessId(hwnd, &hwnd_pid) && hwnd_pid &&
       hwnd_pid != pids->parent_pid) {
@@ -615,8 +615,8 @@ static BOOL CALLBACK GetWindowProgName_subwins_EnumProc(HWND hwnd, LPARAM lp) {
 /* This is for UWP applications that are inside an ApplicationFrameHost.exe
  * window In this case it is possible to look for a child window that has a
  * different pid This is crazy I know but it seems to work. */
-static DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
-                                        TCHAR* title, size_t title_len) {
+inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
+                                        wchar_t* title, size_t title_len) {
   struct pid_pair_struct pids = {0, 0};
   pids.parent_pid = parentpid; /* PID of ApplicationFrameHost or similar */
 
@@ -640,9 +640,9 @@ static DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
  * we try to get the icon from the window class if everything failed or
  * if the first message timed out (freezing program).
  * Note that ICON_SMALL2 was introduced by Windows XP (I think) */
-static HICON GetWindowIcon(HWND hwnd) {
+inline HICON GetWindowIcon(HWND hwnd) {
 #define TIMEOUT 64
-  HICON icon;
+  HICON icon = nullptr;
   if (SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG,
                          TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon))) {
     /* The message failed without timeout */
@@ -711,9 +711,9 @@ struct NEWNONCLIENTMETRICSAW {
   LOGFONT lfMessageFont;
   int iPaddedBorderWidth; /* New in Window Vista */
 };
-static BOOL GetNonClientMetricsDpi(struct NEWNONCLIENTMETRICSAW* ncm,
+inline BOOL GetNonClientMetricsDpi(struct NEWNONCLIENTMETRICSAW* ncm,
                                    UINT dpi) {
-  BOOL ret;
+  BOOL ret = 0;
   ZeroObject(*ncm);
   ncm->cbSize = sizeof(struct NEWNONCLIENTMETRICSAW);
   ret = SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS,
@@ -726,32 +726,32 @@ static BOOL GetNonClientMetricsDpi(struct NEWNONCLIENTMETRICSAW* ncm,
   }
   return ret;
 }
-static HFONT CreateNCMenuFont(UINT dpi) {
+inline HFONT CreateNCMenuFont(UINT dpi) {
   struct NEWNONCLIENTMETRICSAW ncm;
   GetNonClientMetricsDpi(&ncm, dpi);
   return CreateFontIndirect(&ncm.lfMenuFont);
 }
 
-static void MaximizeWindow(HWND hwnd) {
+inline void MaximizeWindow(HWND hwnd) {
   PostMessage(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
 }
-static void RestoreWindow(HWND hwnd) {
+inline void RestoreWindow(HWND hwnd) {
   PostMessage(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
 }
-static void ToggleMaxRestore(HWND hwnd) {
+inline void ToggleMaxRestore(HWND hwnd) {
   PostMessage(hwnd, WM_SYSCOMMAND, IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE,
               0);
 }
-static void MinimizeWindow(HWND hwnd) {
+inline void MinimizeWindow(HWND hwnd) {
   PostMessage(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
 }
 /* Just changes the window Z-order */
-static BOOL SetWindowLevel(HWND hwnd, HWND hafter) {
+inline BOOL SetWindowLevel(HWND hwnd, HWND hafter) {
   return SetWindowPos(
       hwnd, hafter, 0, 0, 0, 0,
       SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 }
-static int HitTestTimeoutL(HWND hwnd, LPARAM lParam) {
+inline int HitTestTimeoutL(HWND hwnd, LPARAM lParam) {
   DorQWORD area = 0;
 
   /*
@@ -775,9 +775,9 @@ static int HitTestTimeoutL(HWND hwnd, LPARAM lParam) {
  * ie: wndpl.showCmd=SW_SHOWNORMAL, but  its actual rect does not match with
  * its rcNormalPosition and if the WM_RESTORE command is sent, The window
  * will be restored. This is a non documented behaviour. */
-static int IsWindowSnapped(HWND hwnd) {
+inline int IsWindowSnapped(HWND hwnd) {
   RECT rect;
-  int W, H, nW, nH;
+  int W = 0, H = 0, nW = 0, nH = 0;
   WINDOWPLACEMENT wndpl;
   wndpl.length = sizeof(wndpl);
 
@@ -793,7 +793,7 @@ static int IsWindowSnapped(HWND hwnd) {
 }
 
 /* Helper function to get the Min and Max tracking sizes */
-static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
+inline void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   MINMAXINFO mmi;
   UINT dpi = GetDpiForWindow(hwnd);
   ZeroObject(mmi);
@@ -804,7 +804,7 @@ static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   *Min = mmi.ptMinTrackSize;
   *Max = mmi.ptMaxTrackSize;
   if ((flags & 3) != 3) {
-    DWORD_PTR ret; /* 32ms timeout */
+    DWORD_PTR ret = 0; /* 32ms timeout */
     SendMessageTimeout(hwnd, WM_GETMINMAXINFO, 0,
                        reinterpret_cast<LPARAM>(&mmi), SMTO_ABORTIFHUNG, 32,
                        &ret);
@@ -813,30 +813,30 @@ static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   }
 }
 
-[[nodiscard]] static int SamePt(const POINT a, const POINT b) {
+[[nodiscard]] inline int SamePt(const POINT a, const POINT b) {
   return (a.x == b.x && a.y == b.y);
 }
 
 /* Limit x between l and h */
-[[nodiscard]] static int CLAMP(int l, int x, int h) {
+[[nodiscard]] inline int CLAMP(int l, int x, int h) {
   return (x < l) ? l : ((x > h) ? h : x);
 }
 
 /* Says if a rect is inside another one */
-[[nodiscard]] static BOOL RectInRect(const RECT* big, const RECT* wnd) {
+[[nodiscard]] inline BOOL RectInRect(const RECT* big, const RECT* wnd) {
   return wnd->left >= big->left && wnd->top >= big->top &&
          wnd->right <= big->right && wnd->bottom <= big->bottom;
 }
 
-[[nodiscard]] static BOOL RectInRectT(const RECT* big, const RECT* wnd,
+[[nodiscard]] inline BOOL RectInRectT(const RECT* big, const RECT* wnd,
                                       const int T) {
   return wnd->left + T >= big->left && wnd->top + T >= big->top &&
          wnd->right <= big->right + T && wnd->bottom <= big->bottom + T;
 }
 
-[[nodiscard]] static unsigned WhichSideRectInRect(const RECT* mon,
+[[nodiscard]] inline unsigned WhichSideRectInRect(const RECT* mon,
                                                   const RECT* wnd) {
-  unsigned flag;
+  unsigned flag = 0;
   flag = ((wnd->left == mon->left) & (mon->right - wnd->right > 16)) << 2;
   flag |= ((wnd->right == mon->right) & (wnd->left - mon->left > 16)) << 3;
   flag |= ((wnd->top == mon->top) & (mon->bottom - wnd->bottom > 16)) << 4;
@@ -846,7 +846,7 @@ static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
 }
 
 /* the seg rectangle must be zero height or zero width */
-static void CropOutRectFromSeg(RECT* seg, const RECT* cover) {
+inline void CropOutRectFromSeg(RECT* seg, const RECT* cover) {
   POINT point1 = {seg->left, seg->top};
   POINT point2 = {seg->right, seg->bottom};
   if (seg->left == seg->right) {
@@ -868,78 +868,67 @@ static void CropOutRectFromSeg(RECT* seg, const RECT* cover) {
   }
 }
 
-[[nodiscard]] static int IsEqualT(int a, int b, int th) {
+[[nodiscard]] inline int IsEqualT(int a, int b, int th) {
   return (b - th <= a) & (a <= b + th);
 }
-static int IsInRangeT(int x, int a, int b, int T) {
+inline int IsInRangeT(int x, int a, int b, int T) {
   return (a - T <= x) & (x <= b + T);
 }
-[[nodiscard]] static int EqualRectT(const RECT* a, const RECT* b, const int T) {
+[[nodiscard]] inline int EqualRectT(const RECT* a, const RECT* b, const int T) {
   return IsEqualT(a->left, b->left, T) && IsEqualT(a->right, b->right, T) &&
          IsEqualT(a->top, b->top, T) && IsEqualT(a->bottom, b->bottom, T);
 }
-[[nodiscard]] static unsigned AreRectsAlignedOutT(const RECT* a, const RECT* b,
+[[nodiscard]] inline unsigned AreRectsAlignedOutT(const RECT* a, const RECT* b,
                                                   const int tol) {
   return IsEqualT(a->left, b->right, tol) << 2 |
          IsEqualT(a->top, b->bottom, tol) << 4 |
          IsEqualT(a->right, b->left, tol) << 3 |
          IsEqualT(a->bottom, b->top, tol) << 5;
 }
-[[nodiscard]] static unsigned AreRectsAlignedInT(const RECT* a, const RECT* b,
+[[nodiscard]] inline unsigned AreRectsAlignedInT(const RECT* a, const RECT* b,
                                                  const int tol) {
   return IsEqualT(a->left, b->left, tol) << 2 |
          IsEqualT(a->top, b->top, tol) << 4 |
          IsEqualT(a->right, b->right, tol) << 3 |
          IsEqualT(a->bottom, b->bottom, tol) << 5;
 }
-[[nodiscard]] static unsigned AreRectsAligned2T(const RECT* a, const RECT* b,
+[[nodiscard]] inline unsigned AreRectsAligned2T(const RECT* a, const RECT* b,
                                                 const int tol) {
   return AreRectsAlignedOutT(a, b, tol) | (AreRectsAlignedInT(b, a, tol) << 16);
 }
 
-static int InRange(int x, int a, int b) {
+inline int InRange(int x, int a, int b) {
   return (x >= a) && (x <= b);
 }
-[[nodiscard]] static int SegT(long ax, long bx, const long* _ay12,
-                              const long* _by12, int tol) {
-  const long by1 = _by12[0];   /* left/top */
-  const long by2 = _by12[2];   /* right/bottom */
-  const long ay1 = _ay12[0];   /* left/top */
-  const long ay2 = _ay12[2];   /* right/bottom */
+// True if the segments [ay1, ay2] and [by1, by2] overlap and the coordinates
+// ax and bx (perpendicular to them) are within `tol` of each other.
+[[nodiscard]] inline int SegT(long ax, long bx, long ay1, long ay2, long by1,
+                              long by2, int tol) {
   return IsEqualT(ax, bx, tol) /* ax == bx */
          && (InRange(ay1, by1, by2) || InRange(by1, ay1, ay2) ||
              InRange(ay2, by1, by2) || InRange(by2, ay1, ay2));
 }
 /* Tells if rect b is touching rect a and on which side
  * 2^X, x=2 for Left, 3 for right, 4 for top and 5 for Bottom*/
-[[nodiscard]] static unsigned AreRectsTouchingT(const RECT* a, const RECT* b,
+[[nodiscard]] inline unsigned AreRectsTouchingT(const RECT* a, const RECT* b,
                                                 const int tol) {
-  return SegT(a->left, b->right, &a->top, &b->top, tol) << 2      /* Left */
-         | SegT(a->right, b->left, &a->top, &b->top, tol) << 3    /* Right */
-         | SegT(a->top, b->bottom, &a->left, &b->left, tol) << 4  /* Top */
-         | SegT(a->bottom, b->top, &a->left, &b->left, tol) << 5; /* Bottom */
+  return SegT(a->left, b->right, a->top, a->bottom, b->top, b->bottom, tol)
+             << 2 /* Left */
+         | SegT(a->right, b->left, a->top, a->bottom, b->top, b->bottom, tol)
+               << 3 /* Right */
+         | SegT(a->top, b->bottom, a->left, a->right, b->left, b->right, tol)
+               << 4 /* Top */
+         | SegT(a->bottom, b->top, a->left, a->right, b->left, b->right, tol)
+               << 5; /* Bottom */
 }
-#if 0
-[[nodiscard]] static unsigned AreRectsTouchingInT(const RECT *a, const RECT *b, const int tol)
-{
-    return SegT(a->left, b->left, &a->top, &b->bottom, tol) << 2 /* Left */
-         | SegT(a->right, b->right, &a->top, &b->bottom, tol) << 3 /* Right */
-         | SegT(a->top, b->top, &a->left, &b->right, tol) << 4 /* Top */
-         | SegT(a->bottom, b->bottom, &a->left, &b->right, tol) << 5; /* Bottom */
-}
-[[nodiscard]] static unsigned AreRectsTouching2T(const RECT *a, const RECT *b, const int tol)
-{
-    return AreRectsTouchingT(a, b, tol) | AreRectsTouchingInT(a, b, tol) << 16;
-}
-#endif
-static void CropRect(RECT* __restrict__ wnd, const RECT* crop) {
+inline void CropRect(RECT* __restrict__ wnd, const RECT* crop) {
   wnd->left = std::max(wnd->left, crop->left);
   wnd->top = std::max(wnd->top, crop->top);
   wnd->right = std::min(wnd->right, crop->right);
   wnd->bottom = std::min(wnd->bottom, crop->bottom);
 }
 
-static void CenterRectInRect(RECT* __restrict__ wnd, const RECT* mon) {
+inline void CenterRectInRect(RECT* __restrict__ wnd, const RECT* mon) {
   int width = wnd->right - wnd->left;
   int height = wnd->bottom - wnd->top;
   wnd->left = mon->left + (mon->right - mon->left) / 2 - width / 2;
@@ -948,11 +937,11 @@ static void CenterRectInRect(RECT* __restrict__ wnd, const RECT* mon) {
   wnd->bottom = wnd->top + height;
 }
 
-static void ClampPointInRect(const RECT* rc, POINT* __restrict__ pt) {
+inline void ClampPointInRect(const RECT* rc, POINT* __restrict__ pt) {
   pt->x = CLAMP(rc->left, pt->x, rc->right - 1);
   pt->y = CLAMP(rc->top, pt->y, rc->bottom - 1);
 }
-static void RectFromPts(RECT* rc, const POINT a, const POINT b) {
+inline void RectFromPts(RECT* rc, const POINT a, const POINT b) {
   rc->left = std::min(a.x, b.x);
   rc->top = std::min(a.y, b.y);
   rc->right = std::max(a.x, b.x);
@@ -964,14 +953,15 @@ static void RectFromPts(RECT* rc, const POINT a, const POINT b) {
 
 // Reads a whole ini section as "key=value\0key=value\0\0", growing the buffer
 // until the section fits. Returns an empty vector if the section is missing.
-[[nodiscard]] static std::vector<TCHAR> ReadIniSection(
-    const TCHAR* section, const TCHAR* ini_path, size_t initial_size = 8192) {
-  std::vector<TCHAR> buffer;
+[[nodiscard]] inline std::vector<wchar_t> ReadIniSection(
+    const wchar_t* section, const wchar_t* ini_path,
+    size_t initial_size = 8192) {
+  std::vector<wchar_t> buffer;
   size_t size = initial_size / 2;
-  DWORD copied;
+  DWORD copied = 0;
   do {  // GetPrivateProfileSection() returns size - 2 when it truncates.
     size *= 2;
-    buffer.assign(size, TEXT('\0'));
+    buffer.assign(size, L'\0');
     copied = GetPrivateProfileSection(section, buffer.data(),
                                       static_cast<DWORD>(size), ini_path);
   } while (copied == size - 2);
@@ -980,10 +970,11 @@ static void RectFromPts(RECT* rc, const POINT a, const POINT b) {
 }
 
 // Reads a string value of any length from an ini file.
-[[nodiscard]] static std::basic_string<TCHAR> ReadIniString(
-    const TCHAR* section, const TCHAR* key, const TCHAR* default_value,
-    const TCHAR* ini_path) {
-  std::basic_string<TCHAR> value(1024, TEXT('\0'));
+[[nodiscard]] inline std::wstring ReadIniString(const wchar_t* section,
+                                                const wchar_t* key,
+                                                const wchar_t* default_value,
+                                                const wchar_t* ini_path) {
+  std::wstring value(1024, L'\0');
   for (;;) {
     const DWORD copied =
         GetPrivateProfileString(section, key, default_value, value.data(),
@@ -992,35 +983,30 @@ static void RectFromPts(RECT* rc, const POINT a, const POINT b) {
       value.resize(copied);
       return value;
     }
-    value.assign(value.size() * 2, TEXT('\0'));
+    value.assign(value.size() * 2, L'\0');
   }
 }
 
-static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
-                                         const char* const oname,
-                                         const TCHAR* const def) {
+// Looks up `oname` in a section returned by GetPrivateProfileSection() (a
+// double-NUL-terminated list of "key=value" strings). Returns a pointer to the
+// value inside `section`, or `def` if the key is missing. Keys are ASCII and
+// compared case-insensitively.
+inline const wchar_t* GetSectionOptionCStr(const wchar_t* section,
+                                           const char* const oname,
+                                           const wchar_t* const def) {
   if (section) {
-    TCHAR name[64];
-    const TCHAR* p;
-    size_t plen;
-    str2tchar_s(name, std::size(name) - 1, oname);
-    lstrcat_s(name, std::size(name),
-              TEXT("=")); /* Add equal at the end of name */
-
-    for (p = section; *p; p += plen + 1) { /* Double NULL treminated string */
-      if (!lstrcmpi_samestart(p, name)) {
-        return p + lstrlen(name); /* DONE! */
-      }
-      plen = lstrlen(p);
+    std::wstring key(oname, oname + std::strlen(oname));
+    key += L'=';
+    for (const wchar_t* p = section; *p; p += lstrlen(p) + 1) {
+      if (!lstrcmpi_samestart(p, key.c_str())) return p + key.size();
     }
   }
-  /* Default to the provided def string */
   return def;
 }
 /* Get the int inside the section returned by GetPrivateProfileSection */
-static int GetSectionOptionInt(const TCHAR* section, const char* const oname,
+inline int GetSectionOptionInt(const wchar_t* section, const char* const oname,
                                const int def) {
-  const TCHAR* val = GetSectionOptionCStr(section, oname, nullptr);
+  const wchar_t* val = GetSectionOptionCStr(section, oname, nullptr);
   if (val) return strtoi(val);
   /* Default to the provided def value */
   return def;
@@ -1028,14 +1014,14 @@ static int GetSectionOptionInt(const TCHAR* section, const char* const oname,
 
 /* MAP Ini file section to a table of strings
  * TODO: use hash map instead of linear search */
-static void RGIniMapSection(const TCHAR* section, /*OUT*/ TCHAR const** map,
+inline void RGIniMapSection(const wchar_t* section, /*OUT*/ wchar_t const** map,
                             char const* const* const ini_mapping,
                             size_t maplen) {
   char key[64];
   ZeroRange(map, maplen); /* Always zero out */
-  for (const TCHAR* p = section; *p; p += lstrlen(p) + 1) {
+  for (const wchar_t* p = section; *p; p += lstrlen(p) + 1) {
     char* pk = key;
-    while (*p && *p != TEXT('=') && pk < key + 63)
+    while (*p && *p != L'=' && pk < key + 63)
       *pk++ = *p++; /* Copy key to char, stop at '=' sign */
     *pk = '\0';
     p++;

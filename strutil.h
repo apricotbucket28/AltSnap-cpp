@@ -78,7 +78,7 @@ template <typename CharT>
 }
 
 // -----------------------------------------------------------------------------
-// Narrow -> TCHAR widening (for ASCII-only identifiers such as ini key names)
+// Narrow -> wchar_t widening (for ASCII-only identifiers such as ini key names)
 // -----------------------------------------------------------------------------
 
 // Copies the ASCII string `src` into `dest`, widening each char. `dest` must be

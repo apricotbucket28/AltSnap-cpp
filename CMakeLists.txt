@@ -101,14 +101,15 @@ set(ALTSNAP_LINK_FLAGS
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
     hooks.cc
+    snap.cc
+    zones.cc
     hooks.h
+    hooks_internal.h
+    snap.h
+    zones.h
 )
 altsnap_add_rc(hooks hooks.rc)
-# Included via #include, not compiled separately (unity build) -
-# listed here only so they show up in IDEs and are tracked as deps.
-set_source_files_properties(zones.cc snap.cc unfuck.h strutil.h
-    PROPERTIES HEADER_FILE_ONLY TRUE)
-target_sources(hooks PRIVATE zones.cc snap.cc unfuck.h strutil.h)
+target_sources(hooks PRIVATE unfuck.h strutil.h)
 
 set_target_properties(hooks PROPERTIES
     PREFIX ""
@@ -128,8 +129,14 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     altsnap.cc
+    config.cc
+    languages.cc
+    tray.cc
+    altsnap.h
+    config.h
     hooks.h
     languages.h
+    tray.h
 )
 altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/window.rc
@@ -142,11 +149,10 @@ altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/media/tray-enabled.ico
 )
 set_source_files_properties(
-    tray.cc config.cc languages.cc unfuck.h strutil.h
     window.rc AltSnap.exe.manifest resource.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
 target_sources(AltSnap PRIVATE
-    tray.cc config.cc languages.cc unfuck.h strutil.h
+    unfuck.h strutil.h
     window.rc AltSnap.exe.manifest resource.h)
 
 set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")

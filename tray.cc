@@ -6,6 +6,13 @@
  * Modified By Raymond Gillibert in 2020                                 *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#include "tray.h"
+
+#include "altsnap.h"
+#include "config.h"
+#include "hooks.h"
+#include "languages.h"
+
 #ifndef NIF_INFO
 #define NIF_INFO 0x00000010
 #endif
@@ -17,45 +24,43 @@ static struct {  // NOTIFYICONDATA for NT4
   UINT uFlags;
   UINT uCallbackMessage;
   HICON hIcon;
-  TCHAR szTip[64];
+  wchar_t szTip[64];
 } tray;
 
-static unsigned char tray_added = 0;
-static unsigned char tray_hidden = 0;
-static unsigned char UseZones = 0;
-static int LayoutNumber = 0;
-static int MaxLayouts = 0;
+unsigned char tray_added = 0;
+unsigned char tray_hidden = 0;
+unsigned char UseZones = 0;
+int LayoutNumber = 0;
+int MaxLayouts = 0;
 
-enum { ICONS_COUNT = 3 };
-static const TCHAR* tray_iconstr[] = {TEXT("TRAY_OFF"), TEXT("TRAY_ON"),
-                                      TEXT("TRAY_SUS")};
-static const TCHAR* tray_tooltipstr[] = {
-    TEXT(APP_NAMEA) TEXT(" (Off)"),
-    TEXT(APP_NAMEA) TEXT(" (On)"),
-    TEXT(APP_NAMEA) TEXT("..."),
+static const wchar_t* tray_iconstr[] = {L"TRAY_OFF", L"TRAY_ON", L"TRAY_SUS"};
+static const wchar_t* tray_tooltipstr[] = {
+    APP_NAME L" (Off)",
+    APP_NAME L" (On)",
+    APP_NAME L"...",
 };
-static HICON g_icons[ICONS_COUNT];
+HICON g_icons[ICONS_COUNT];
 
 static void LoadAllIcons() {
-  TCHAR theme[MAX_PATH];  // Get theme name
-  int ret = GetPrivateProfileString(TEXT("General"), TEXT("Theme"), TEXT(""),
-                                    theme, std::size(theme), inipath);
+  wchar_t theme[MAX_PATH];  // Get theme name
+  int ret = GetPrivateProfileString(L"General", L"Theme", L"", theme,
+                                    std::size(theme), inipath);
   if (ret && theme[1]) {
-    TCHAR path[MAX_PATH];
+    wchar_t path[MAX_PATH];
     DWORD mod = GetModuleFileName(nullptr, path, std::size(path));
     if (mod) {
       PathRemoveFileSpecL(path);
-      lstrcat_s(path, std::size(path), TEXT("\\Themes\\"));  // Themes subfolder
-      lstrcat_s(path, std::size(path), theme);               // Theme name
+      lstrcat_s(path, std::size(path), L"\\Themes\\");  // Themes subfolder
+      lstrcat_s(path, std::size(path), theme);          // Theme name
       int len = lstrlen(path);
-      TCHAR* p = path + len;
-      *p++ = TEXT('\\');
+      wchar_t* p = path + len;
+      *p++ = L'\\';
       if (len < MAX_PATH - 13) {  // strlen("TRAY_OFF.ICO")==12
-        UCHAR i;
+        UCHAR i = 0;
         for (i = 0; i < 3; i++) {
           lstrcpy_s(p, std::size(path) - len, tray_iconstr[i]);
-          lstrcat_s(path, std::size(path), TEXT(".ico"));
-          HICON tmp = static_cast<HICON>(
+          lstrcat_s(path, std::size(path), L".ico");
+          auto tmp = static_cast<HICON>(
               LoadImage(g_hinst, path, IMAGE_ICON, 0, 0,
                         LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_LOADTRANSPARENT));
           g_icons[i] =
@@ -71,13 +76,11 @@ static void LoadAllIcons() {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-static int InitTray() {
+int InitTray() {
   ScrollLockState =
-      GetPrivateProfileInt(TEXT("Input"), TEXT("ScrollLockState"), 0, inipath);
-  LayoutNumber =
-      GetPrivateProfileInt(TEXT("Zones"), TEXT("LayoutNumber"), 0, inipath);
-  MaxLayouts =
-      GetPrivateProfileInt(TEXT("Zones"), TEXT("MaxLayouts"), 0, inipath);
+      GetPrivateProfileInt(L"Input", L"ScrollLockState", 0, inipath);
+  LayoutNumber = GetPrivateProfileInt(L"Zones", L"LayoutNumber", 0, inipath);
+  MaxLayouts = GetPrivateProfileInt(L"Zones", L"MaxLayouts", 0, inipath);
   MaxLayouts = CLAMP(0, MaxLayouts, 10);
   LayoutNumber = CLAMP(0, LayoutNumber, std::max(0, MaxLayouts - 1));
 
@@ -92,14 +95,14 @@ static int InitTray() {
 
   // Register TaskbarCreated so we can re-add the tray icon if (when)
   // explorer.exe crashes
-  WM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
+  WM_TASKBARCREATED = RegisterWindowMessage(L"TaskbarCreated");
   LOG("Register TaskbarCreated message: %X", WM_TASKBARCREATED);
 
   return 0;
 }
 /////////////////////////////////////////////////////////////////////////////
-static int UpdateTray() {
-  int Index = !!ENABLED();
+int UpdateTray() {
+  int Index = !!IsEnabled();
   if (Index) {
     Index += (ScrollLockState & 1) &&
              !(!(GetKeyState(VK_SCROLL) & 1) ^ !(ScrollLockState & 2));
@@ -142,7 +145,7 @@ static int UpdateTray() {
   return 0;
 }
 /////////////////////////////////////////////////////////////////////////////
-static int RemoveTray() {
+int RemoveTray() {
   LOG("RemoveTray() tray_added=%d", static_cast<int>(tray_added));
   if (!tray_added) return 1;
 
@@ -156,114 +159,111 @@ static int RemoveTray() {
 
 /////////////////////////////////////////////////////////////////////////////
 // Zones functions
-static void WriteCurrentLayoutNumber() {
+void WriteCurrentLayoutNumber() {
   if (MaxLayouts) {
-    TCHAR txt[kUintDigits + 1];
-    WritePrivateProfileString(TEXT("Zones"), TEXT("LayoutNumber"),
+    wchar_t txt[kUintDigits + 1];
+    WritePrivateProfileString(L"Zones", L"LayoutNumber",
                               Uint2lStr(txt, LayoutNumber), inipath);
   }
 }
-static TCHAR* RectToStr(const RECT* rc, TCHAR rectstr[kIntDigits * 4 + 4 + 1]) {
-  TCHAR txt[kIntDigits + 1];
+wchar_t* RectToStr(const RECT* rc, wchar_t rectstr[kIntDigits * 4 + 4 + 1]) {
+  wchar_t txt[kIntDigits + 1];
   const long* RC = reinterpret_cast<const long*>(rc);
   rectstr[0] = '\0';
   for (size_t i = 0; i < 4; i++) {
     lstrcat_s(rectstr, 64, Int2lStr(txt, static_cast<int>(RC[i])));
-    lstrcat_s(rectstr, 64, TEXT(","));
+    lstrcat_s(rectstr, 64, L",");
   }
   return rectstr;
 }
 // Save a rect as a string in a Zone<num> entry in the inifile
 static void SaveZone(const RECT* rc, unsigned num) {
-  TCHAR txt[64], name[32];
-  WritePrivateProfileString(TEXT("Zones"),
-                            ZidxToZonestr(LayoutNumber, num, name),
+  wchar_t txt[64], name[32];
+  WritePrivateProfileString(L"Zones", ZidxToZonestr(LayoutNumber, num, name),
                             RectToStr(rc, txt), inipath);
 }
 static void ClearAllZones() {
-  int i;
-  TCHAR txt[128], name[32];
+  int i = 0;
+  wchar_t txt[128], name[32];
   for (i = 0; i < 2048; i++) {
     ZidxToZonestr(LayoutNumber, i, name);
-    if (GetPrivateProfileString(TEXT("Zones"), name, TEXT(""), txt,
-                                std::size(txt), inipath)) {
-      WritePrivateProfileString(TEXT("Zones"), name, TEXT(""), inipath);
+    if (GetPrivateProfileString(L"Zones", name, L"", txt, std::size(txt),
+                                inipath)) {
+      WritePrivateProfileString(L"Zones", name, L"", inipath);
     }
   }
 }
 // Call with lParam = 1 to reset NZones
-BOOL CALLBACK SaveTestWindow(HWND hwnd, LPARAM lParam) {
+static BOOL CALLBACK SaveTestWindow(HWND hwnd, LPARAM lParam) {
   static unsigned NZones;
   if (lParam) {  // Reset number of Zones
     NZones = 0;
     return FALSE;
   }
 
-  TCHAR classn[256];
+  wchar_t classn[256];
   RECT rc;
   if (IsWindowVisible(hwnd) && GetClassName(hwnd, classn, std::size(classn)) &&
-      !lstrcmp(classn, TEXT(APP_NAMEA) TEXT("-Test")) &&
-      GetWindowRectL(hwnd, &rc)) {
+      !lstrcmp(classn, APP_NAME L"-Test") && GetWindowRectL(hwnd, &rc)) {
     SaveZone(&rc, NZones++);
     PostMessage(hwnd, WM_CLOSE, 0, 0);
   }
   return TRUE;
 }
 
-static void SaveCurrentLayout() {
+void SaveCurrentLayout() {
   ClearAllZones();
   SaveTestWindow(nullptr, 1);
   EnumThreadWindows(GetCurrentThreadId(), SaveTestWindow, 0);
 }
 
-BOOL CALLBACK CloseTestWindowCB(HWND hwnd, LPARAM lParam) {
-  TCHAR classn[256];
+static BOOL CALLBACK CloseTestWindowCB(HWND hwnd, LPARAM lParam) {
+  wchar_t classn[256];
   if (GetClassName(hwnd, classn, std::size(classn)) &&
-      !lstrcmp(classn, TEXT(APP_NAMEA) TEXT("-Test"))) {
+      !lstrcmp(classn, APP_NAME L"-Test")) {
     PostMessage(hwnd, WM_CLOSE, 0, 0);
   }
   return TRUE;
 }
 
-static void CloseAllTestWindows() {
+void CloseAllTestWindows() {
   EnumThreadWindows(GetCurrentThreadId(), CloseTestWindowCB, 0);
 }
 
-static void catFullLayoutName(TCHAR* txt, size_t len, int laynum) {
-  TCHAR n1[kUintDigits + 1];
+void catFullLayoutName(wchar_t* txt, size_t len, int laynum) {
+  wchar_t n1[kUintDigits + 1];
   lstrcat_s(txt, len, l10n->MenuSnapLayout);
   lstrcat_s(txt, len, Uint2lStr(n1, laynum + 1));
   if (G_HooksWinProc) {
     DWORD rez = 0;
     if ((rez = G_HooksWinProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0))) {
       // Add (width:height) to label the layout.
-      lstrcat_s(txt, len, TEXT("  ("));
+      lstrcat_s(txt, len, L"  (");
       lstrcat_s(txt, len, Uint2lStr(n1, LOWORD(rez)));
-      lstrcat_s(txt, len, TEXT(":"));
+      lstrcat_s(txt, len, L":");
       lstrcat_s(txt, len, Uint2lStr(n1, HIWORD(rez)));
-      lstrcat_s(txt, len, TEXT(")"));
+      lstrcat_s(txt, len, L")");
     } else {
-      lstrcat_s(txt, len, TEXT("  "));
+      lstrcat_s(txt, len, L"  ");
       lstrcat_s(txt, len, l10n->MenuEmptyZone);  // (empty)
     }
   } else {
-    lstrcat_s(txt, len, TEXT("  (...)"));
+    lstrcat_s(txt, len, L"  (...)");
   }
 }
 
 /////////////////////////////////////////////////////////////////////////////
-static void ShowContextMenu(HWND hwnd) {
+void ShowContextMenu(HWND hwnd) {
   POINT pt;
   GetCursorPos(&pt);
   HMENU menu = CreatePopupMenu();
 
   AppendMenu(menu, MF_STRING, CMD_TOGGLE,
-             (ENABLED() ? l10n->MenuDisable : l10n->MenuEnable));
+             (IsEnabled() ? l10n->MenuDisable : l10n->MenuEnable));
   AppendMenu(menu, MF_STRING, CMD_HIDE, l10n->MenuHideTray);
-  if (WinVer >= VISTA)  // Vista+
-    InsertMenu(menu, -1, elevated ? MF_BYPOSITION | MF_GRAYED : MF_BYPOSITION,
-               CMD_ELEVATE,
-               (elevated ? l10n->GeneralElevated : l10n->GeneralElevate));
+  InsertMenu(menu, -1, elevated ? MF_BYPOSITION | MF_GRAYED : MF_BYPOSITION,
+             CMD_ELEVATE,
+             (elevated ? l10n->GeneralElevated : l10n->GeneralElevate));
 
   AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenu(menu, MF_STRING, CMD_CONFIG, l10n->MenuConfigure);
@@ -272,8 +272,8 @@ static void ShowContextMenu(HWND hwnd) {
 
   if (UseZones & 1) {  // Zones section
     if (MaxLayouts) AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
-    int i;
-    TCHAR txt[128];
+    int i = 0;
+    wchar_t txt[128];
     for (i = 0; i < MaxLayouts; i++) {
       txt[0] = '\0';
       catFullLayoutName(txt, std::size(txt), i);
@@ -285,23 +285,21 @@ static void ShowContextMenu(HWND hwnd) {
     }
 
     if (!(UseZones & 2)) {
-      TCHAR numstr[kIntDigits + 1];
+      wchar_t numstr[kIntDigits + 1];
       lstrcpy_s(txt, std::size(txt), l10n->MenuEditLayout);
-      lstrcat_s(txt, std::size(txt), TEXT(" "));
+      lstrcat_s(txt, std::size(txt), L" ");
       lstrcat_s(txt, std::size(txt), Int2lStr(numstr, LayoutNumber + 1));
       AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
       AppendMenu(menu, MF_STRING, CMD_TESTWIN, l10n->AdvancedTestWindow);
       AppendMenu(menu, MF_STRING, CMD_EDITLAYOUT, txt);
       AppendMenu(menu,
-                 FindWindow(TEXT(APP_NAMEA) TEXT("-test"), nullptr)
-                     ? MF_STRING
-                     : MF_STRING | MF_GRAYED,
+                 FindWindow(APP_NAME L"-test", nullptr) ? MF_STRING
+                                                        : MF_STRING | MF_GRAYED,
                  CMD_SAVEZONES, l10n->MenuSaveZones);
 
       AppendMenu(menu,
-                 FindWindow(TEXT(APP_NAMEA) TEXT("-test"), nullptr)
-                     ? MF_STRING
-                     : MF_STRING | MF_GRAYED,
+                 FindWindow(APP_NAME L"-test", nullptr) ? MF_STRING
+                                                        : MF_STRING | MF_GRAYED,
                  CMD_CLOSEZONES, l10n->MenuCloseAllZones);
     }
   }
