@@ -7,6 +7,7 @@
 #include "zones.h"
 
 #include "hooks_internal.h"
+#include "ini_section.h"
 #include "snap.h"
 
 std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
@@ -17,7 +18,7 @@ void freezones() {
 }
 
 static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
-                           const wchar_t* inisection) {
+                           const IniSection& section) {
   if (idx > MAX_ZONES) return 0;
 
   long* ZONE = reinterpret_cast<long*>(zone);
@@ -25,8 +26,8 @@ static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
   zname[0] = '\0';
   wchar_t zaschii[128];
 
-  const wchar_t* txt = GetSectionOptionCStr(
-      inisection, ZidxToZonestrA(laynum, idx, zname), nullptr);
+  const wchar_t* txt =
+      section.GetString(ZidxToZonestrA(laynum, idx, zname), nullptr);
   if (!txt || !txt[0]) return 0;
   // LOGA("Zone(%u, %u) = %ls", laynum, idx, txt);
   //  Copy to modifyable buffer.
@@ -44,17 +45,16 @@ static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
   }
   return 1;
 }
-static void ReadZonesFromLayout(const wchar_t* inisection, unsigned laynum) {
+static void ReadZonesFromLayout(const IniSection& section, unsigned laynum) {
   Zones[laynum].clear();
   RECT tmpzone;
-  while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].size(), inisection)) {
+  while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].size(), section)) {
     Zones[laynum].push_back(tmpzone);
   }
 }
 // Load all zones from ini file
-void ReadZones(const wchar_t* inisection) {
-  for (size_t i = 0; i < std::size(Zones); i++)
-    ReadZonesFromLayout(inisection, i);
+void ReadZones(const IniSection& section) {
+  for (size_t i = 0; i < std::size(Zones); i++) ReadZonesFromLayout(section, i);
 }
 
 // Generate a grid if asked
@@ -80,7 +80,7 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
     }
   }
 }
-void ReadGrids(const wchar_t* inisection) {
+void ReadGrids(const IniSection& section) {
   char gnamex[8];
   char gnamey[8];
   lstrcpy_s(gnamex, std::size(gnamex), "GridNx");
@@ -89,8 +89,8 @@ void ReadGrids(const wchar_t* inisection) {
   gnamey[7] = '\0';
   for (size_t i = 0; i < std::size(Grids); i++) {
     Grids[i] = 0;
-    unsigned short GridNx = GetSectionOptionInt(inisection, gnamex, 0);
-    unsigned short GridNy = GetSectionOptionInt(inisection, gnamey, 0);
+    unsigned short GridNx = section.GetInt(gnamex, 0);
+    unsigned short GridNy = section.GetInt(gnamey, 0);
     if (GridNx && GridNy && GridNx * GridNy <= MAX_ZONES) {
       Grids[i] = GridNx | GridNy << 16;  // Store grid dimentions
       GenerateGridZones(i, GridNx, GridNy);
@@ -554,20 +554,17 @@ static void ZonesPrevResetRegion() {
   SetWindowRgn(g_zphwnd, hregion, FALSE);
 }
 
-void SnapLayoutPreviewCreateDestroy(const wchar_t* inisection) {
+void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
   if (!conf.ShowZonesPrevw) return;
-  if (inisection) {
-    int bgcol[2], bdcol[2];
-    readhotkeys(inisection, "ZonesPrevwBGCol", L"FF FF FF",
-                reinterpret_cast<UCHAR*>(&bgcol[0]), 3);
-    readhotkeys(inisection, "ZonesPrevwBDCol", L"00 00 00",
-                reinterpret_cast<UCHAR*>(&bdcol[0]), 3);
-    g_ZPrevBDCol = bdcol[0];
+  if (section) {
+    const COLORREF bgcol =
+        ReadColor(*section, "ZonesPrevwBGCol", L"FF FF FF", 3);
+    g_ZPrevBDCol = ReadColor(*section, "ZonesPrevwBDCol", L"00 00 00", 3);
     const UCHAR opacity = conf.ZonesPrevwOpacity;
     const UCHAR usetrans = opacity != 0 && opacity != 255;
     const WNDPROC wproc = opacity == 0 ? DefWindowProc : SnapLayoutWinProc;
     const HBRUSH wbrush =
-        opacity == 0 ? CreateSolidBrush(bdcol[0]) : CreateSolidBrush(bgcol[0]);
+        opacity == 0 ? CreateSolidBrush(g_ZPrevBDCol) : CreateSolidBrush(bgcol);
     const WNDCLASS wnd = {
         0,       wproc,   0,      0,       hinstDLL,
         nullptr, nullptr, wbrush, nullptr, APP_NAME L"-ZonesPreview"};

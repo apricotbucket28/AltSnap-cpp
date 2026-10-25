@@ -3,7 +3,7 @@
 
 #include <windows.h>
 
-#include "unfuck.h"
+#include "winutil.h"
 
 // MainWindow commands
 enum {
@@ -58,7 +58,6 @@ enum {
 #define APP_ASONOFF APP_NAME L"-ASOnOff"
 #define APP_MOVEONOFF APP_NAME L"-MoveOnOff"
 #define APP_PRODPI APP_NAME L"-ODPI"
-#define APP_OWDMCP APP_NAME L"-OWDMCP"
 #define FZ_PROPPT L"FancyZones_RestoreSize"
 #define FZ_PROPZONES L"FancyZones_zones"
 

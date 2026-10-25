@@ -282,12 +282,4 @@ template <typename CharT, size_t N>
 // code; this only exists for the few structs that still own raw C strings.
 // -----------------------------------------------------------------------------
 
-template <typename CharT>
-[[nodiscard]] CharT* lstrdup(const CharT* s) {
-  const size_t bytes = (std::char_traits<CharT>::length(s) + 1) * sizeof(CharT);
-  auto* copy = static_cast<CharT*>(std::malloc(bytes));
-  if (copy) std::memcpy(copy, s, bytes);
-  return copy;
-}
-
 #endif  // ALTSNAP_STRUTIL_H_

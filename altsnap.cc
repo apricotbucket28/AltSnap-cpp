@@ -139,26 +139,26 @@ static void ShowSClickMenu(HWND hwnd, LPARAM param) {
     short l10nidx;
   } mnlst[] = {
       /* hide, action,      MF_FLAG/CHECKED,    menu string */
-      {AC_ALWAYSONTOP, CHK(LP_TOPMOST), L10NIDX(InputActionAlwaysOnTop)},
-      {AC_BORDERLESS, CHK(LP_BORDERLESS), L10NIDX(InputActionBorderless)},
-      {AC_CENTER, MF_STRING, L10NIDX(InputActionCenter)},
-      {AC_CENTER2, MF_STRING, L10NIDX(InputActionCenter2)},
-      {AC_ROLL, CHK(LP_ROLLED), L10NIDX(InputActionRoll)},
-      {AC_LOWER, MF_STRING, L10NIDX(InputActionLower)},
-      {AC_MAXHV, MF_STRING, L10NIDX(InputActionMaximizeHV)},
-      {AC_MINALL, MF_STRING, L10NIDX(InputActionMinAllOther)},
-      {AC_SIDESNAP, MF_STRING, L10NIDX(InputActionSideSnap)},
+      {AC_ALWAYSONTOP, CHK(LP_TOPMOST), L10nId::InputActionAlwaysOnTop},
+      {AC_BORDERLESS, CHK(LP_BORDERLESS), L10nId::InputActionBorderless},
+      {AC_CENTER, MF_STRING, L10nId::InputActionCenter},
+      {AC_CENTER2, MF_STRING, L10nId::InputActionCenter2},
+      {AC_ROLL, CHK(LP_ROLLED), L10nId::InputActionRoll},
+      {AC_LOWER, MF_STRING, L10nId::InputActionLower},
+      {AC_MAXHV, MF_STRING, L10nId::InputActionMaximizeHV},
+      {AC_MINALL, MF_STRING, L10nId::InputActionMinAllOther},
+      {AC_SIDESNAP, MF_STRING, L10nId::InputActionSideSnap},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {AC_MAXIMIZE, CHK(LP_MAXIMIZED), L10NIDX(InputActionMaximize)},
-      {AC_MINIMIZE, MF_STRING, L10NIDX(InputActionMinimize)},
-      {AC_CLOSE, MF_STRING, L10NIDX(InputActionClose)},
+      {AC_MAXIMIZE, CHK(LP_MAXIMIZED), L10nId::InputActionMaximize},
+      {AC_MINIMIZE, MF_STRING, L10nId::InputActionMinimize},
+      {AC_CLOSE, MF_STRING, L10nId::InputActionClose},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {AC_KILL, MF_STRING, L10NIDX(InputActionKill)},
+      {AC_KILL, MF_STRING, L10nId::InputActionKill},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {AC_MOVEONOFF, CHK(LP_MOVEONOFF), L10NIDX(InputActionMoveOnOff)},
+      {AC_MOVEONOFF, CHK(LP_MOVEONOFF), L10nId::InputActionMoveOnOff},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {show_oriclick, MF_STRING, L10NIDX(InputActionOriClick)},
-      {AC_NONE, MF_STRING, L10NIDX(InputActionNothing)},
+      {show_oriclick, MF_STRING, L10nId::InputActionOriClick},
+      {AC_NONE, MF_STRING, L10nId::InputActionNothing},
   };
 #undef CHK
 #undef K
@@ -167,7 +167,7 @@ static void ShowSClickMenu(HWND hwnd, LPARAM param) {
     if ((ACMenuItems >> i) & 1 &&
         mnlst[i].action != 0xFF) {  // Put the action in the HIWORD of wParam
       const wchar_t* str =
-          mnlst[i].l10nidx >= 0 ? L10NSTR(mnlst[i].l10nidx) : nullptr;
+          mnlst[i].l10nidx >= 0 ? l10n->Get(mnlst[i].l10nidx) : nullptr;
       AppendMenu(menu, mnlst[i].mf, mnlst[i].action << 16, str);
     }
   }

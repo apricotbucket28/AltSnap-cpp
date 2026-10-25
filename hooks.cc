@@ -11,7 +11,9 @@
 #include <cstddef>
 #include <vector>
 
+#include "blacklist.h"
 #include "hooks_internal.h"
+#include "ini_section.h"
 #include "snap.h"
 #include "zones.h"
 
@@ -138,46 +140,7 @@ static const struct OptionListItem Zones_uchars[] = {
 #endif
 };
 
-// Blacklist (dynamically allocated)
-struct blacklistitem {
-  const wchar_t* title;
-  const wchar_t* classname;
-  const wchar_t* exename;
-};
-using blacklistitem_t = blacklistitem;
-// One blacklist. The items point into `data`, which owns the (NUL-split)
-// characters; `data` must therefore never be reallocated after parsing.
-struct blacklist {
-  std::vector<blacklistitem_t> items;
-  std::vector<wchar_t> data;
-};
-using blacklist_t = blacklist;
-// MEMBER ORDER MUST MATCH BlackListStrings[] below.
-static struct BlacklistSet {
-  blacklist_t Processes;
-  blacklist_t Windows;
-  blacklist_t Snaplist;
-  blacklist_t MDIs;
-  blacklist_t Pause;
-  blacklist_t MMBLower;
-  blacklist_t Scroll;
-  blacklist_t IScroll;
-  blacklist_t AResize;
-  blacklist_t SSizeMove;
-  blacklist_t NCHittest;
-  blacklist_t Bottommost;
-
-  // All lists in declaration order.
-  std::array<blacklist_t*, 12> All() {
-    return {&Processes, &Windows,   &Snaplist,  &MDIs,
-            &Pause,     &MMBLower,  &Scroll,    &IScroll,
-            &AResize,   &SSizeMove, &NCHittest, &Bottommost};
-  }
-} BlkLst;
-static const char* const BlackListStrings[] = {
-    "Processes",  // Max length is 15 char + NULL
-    "Windows",   "Snaplist", "MDIs",      "Pause",     "MMBLower",  "Scroll",
-    "IScroll",   "AResize",  "SSizeMove", "NCHittest", "Bottommost"};
+static Blacklists BlkLst;  // All the blacklists, read from the ini file
 // Input sequences of the "Shrt0".."ShrtZ" ini options: a count byte followed
 // by that many (key, up/down) pairs. Empty if the sequence is not defined.
 static std::array<std::vector<UCHAR>, 36> g_inputSequences;
@@ -190,28 +153,6 @@ static HHOOK mousehook = nullptr;
 static HHOOK g_keyhook = nullptr;
 
 /////////////////////////////////////////////////////////////////////////////
-// Wether a window is present or not in a blacklist
-[[nodiscard]] static int blacklisted_from_names(const blacklist_t* list,
-                                                const wchar_t* exename,
-                                                const wchar_t* title,
-                                                const wchar_t* classname) {
-  // If the first element is *:*|* (NULL:NULL|NULL)then we are in whitelist mode
-  // mode = 1 => blacklist, mode = 0 => whitelist;
-  UCHAR mode = list->items[0].classname || list->items[0].title ||
-               list->items[0].exename;
-  size_t i = !mode;  // Skip the first item...
-
-  for (; i < list->items.size(); i++) {
-    if (!lstrcmp_star(classname, list->items[i].classname) &&
-        !lstrcmp_star(title, list->items[i].title) &&
-        (!list->items[i].exename ||
-         !lstrcmpi(exename, list->items[i].exename))) {
-      return mode;
-    }
-  }
-
-  return !mode;
-}
 static void blacklist_cache_state() {
   state.cached_hwnd_blacklist = state.hwnd;
   state.title[0] = state.classname[0] = state.exename[0] = L'\0';
@@ -219,15 +160,14 @@ static void blacklist_cache_state() {
   GetWindowText(state.hwnd, state.title, std::size(state.title));
   GetClassName(state.hwnd, state.classname, std::size(state.classname));
 }
-[[nodiscard]] static int blacklisted(HWND hwnd, const blacklist_t* list) {
+[[nodiscard]] static bool blacklisted(HWND hwnd, const Blacklist& list) {
   // Null hwnd or empty list
-  if (!hwnd || list->items.empty()) return 0;
+  if (!hwnd || list.empty()) return false;
 
   if (hwnd == state.hwnd) {
     // Magage a simple cache only for the state window
     if (state.hwnd != state.cached_hwnd_blacklist) blacklist_cache_state();
-    return blacklisted_from_names(list, state.exename, state.title,
-                                  state.classname);
+    return list.Contains(state.exename, state.title, state.classname);
   }
 
   wchar_t title[256], classname[256];
@@ -239,7 +179,7 @@ static void blacklist_cache_state() {
 
   // LOGA( "hwnd=%X (%ls:%ls|%ls) blacklist = %X, thread=%d", (UINT)hwnd,
   // exename, title, classname, (UINT)list, (int)GetCurrentThreadId());
-  return blacklisted_from_names(list, exename, title, classname);
+  return list.Contains(exename, title, classname);
 }
 
 static int isClassName(HWND hwnd, const wchar_t* str) {
@@ -255,7 +195,7 @@ static int isClassName(HWND hwnd, const wchar_t* str) {
             | thickf | (thickf << 1);
 
   if (!ret) ret = !!GetBorderlessFlag(hwnd);
-  if (!ret) ret = !!blacklisted(hwnd, &BlkLst.AResize);  // Always resize list
+  if (!ret) ret = !!blacklisted(hwnd, BlkLst.AResize);  // Always resize list
 
   return ret;
 }
@@ -292,7 +232,7 @@ static int IsFullScreenBL(HWND hwnd) {
 // WM_ENTERSIZEMOVE or WM_EXITSIZEMOVE...
 static void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta) {
   // Don't send WM_ENTER/EXIT SIZEMOVE if the window is in SSizeMove BL
-  if (!blacklisted(hwnd, &BlkLst.SSizeMove)) {
+  if (!blacklisted(hwnd, BlkLst.SSizeMove)) {
     PostMessage(hwnd, sta ? WM_ENTERSIZEMOVE : WM_EXITSIZEMOVE, 0, 0);
   }
   // Always send the NotifyWinEvent for IAccessible interface.
@@ -311,8 +251,8 @@ static int HitTestTimeoutbl(HWND hwnd, POINT pt) {
 
   // Try first with the ancestor window for some buggy AppX?
   HWND ancestor = state.hwnd = GetAncestor(hwnd, GA_ROOT);
-  if (blacklisted(ancestor, &BlkLst.MMBLower)) return 0;
-  if (hwnd != ancestor && blacklisted(ancestor, &BlkLst.NCHittest)) {
+  if (blacklisted(ancestor, BlkLst.MMBLower)) return 0;
+  if (hwnd != ancestor && blacklisted(ancestor, BlkLst.NCHittest)) {
     SendMessageTimeout(ancestor, WM_NCHITTEST, 0, MAKELPARAM(pt.x, pt.y),
                        SMTO_NORMAL, 200, &area);
   }
@@ -396,7 +336,7 @@ static int ShouldSnapTo(HWND hwnd) {
                  WS_CAPTION ||
              (style & WS_THICKFRAME) ||
              GetBorderlessFlag(hwnd)  //&(WS_THICKFRAME|WS_CAPTION)
-             || blacklisted(hwnd, &BlkLst.Snaplist));
+             || blacklisted(hwnd, BlkLst.Snaplist));
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -545,7 +485,7 @@ static void EnumSnapped() {
 static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
   struct snwdata sn;
   if (ShouldSnapTo(hwnd) && !IsZoomed(hwnd) && IsResizable(hwnd) &&
-      !blacklisted(hwnd, &BlkLst.Windows) && GetWindowRectL(hwnd, &sn.rc)) {
+      !blacklisted(hwnd, BlkLst.Windows) && GetWindowRectL(hwnd, &sn.rc)) {
     // Only considers windows that are
     // touching the currently resized window
     RECT statewnd;
@@ -1120,7 +1060,7 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
  * emulators can snap to their character-cell grid.  */
 static BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
   /* Apply the blacklist (also applies to WM_*SIZEMOVE) */
-  if (blacklisted(hwnd, &BlkLst.SSizeMove)) return FALSE;
+  if (blacklisted(hwnd, BlkLst.SSizeMove)) return FALSE;
 
   /* WM_SIZING may enforce minimum width/height */
   if (conf.IgnoreMinMaxInfo != 0) {
@@ -2268,7 +2208,7 @@ static void HotkeyUp() {
 ///////////////////////////////////////////////////////////////////////////
 static int ActionPause(HWND hwnd, UCHAR pause) {
   //    LOGA("Entering pause/resume %d", (int)pause);
-  if (!blacklisted(hwnd, &BlkLst.Pause)) {
+  if (!blacklisted(hwnd, BlkLst.Pause)) {
     wchar_t tmpname[256];
     DWORD pid = GetWindowProgName(hwnd, tmpname, std::size(tmpname));
 
@@ -2333,7 +2273,7 @@ static int ActionKill(HWND hwnd) {
     }
   }
 
-  if (blacklisted(hwnd, &BlkLst.Pause)) return 0;
+  if (blacklisted(hwnd, BlkLst.Pause)) return 0;
 
   PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
                     reinterpret_cast<WPARAM>(ActionKillThread),
@@ -2617,8 +2557,8 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam,
 
     } else if (conf.UniKeyHoldMenu && (fhwnd = GetForegroundWindow()) &&
                !IsFullScreenBL(fhwnd) &&
-               !blacklisted(fhwnd, &BlkLst.Processes) &&
-               !blacklisted(fhwnd, &BlkLst.Windows)) {
+               !blacklisted(fhwnd, BlkLst.Processes) &&
+               !blacklisted(fhwnd, BlkLst.Windows)) {
       // Key lists used below...
       static const UCHAR ctrlaltwinkeys[] = {VK_CONTROL, VK_MENU, VK_LWIN,
                                              VK_RWIN, 0};
@@ -2701,12 +2641,12 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam,
 static int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
   // Get window and foreground window
   HWND hwnd = WindowFromPoint(pt);
-  if (!hwnd || blacklisted(hwnd, &BlkLst.IScroll)) return 0;
+  if (!hwnd || blacklisted(hwnd, BlkLst.IScroll)) return 0;
 
   HWND foreground = GetForegroundWindow();
 
   // Return if foreground window is blacklisted
-  if (foreground && blacklisted(foreground, &BlkLst.Windows)) return 0;
+  if (foreground && blacklisted(foreground, BlkLst.Windows)) return 0;
 
   // If it's a groupbox, grab the real window
   LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -2774,7 +2714,7 @@ static int IsAltTabAble(HWND window) {
          (conf.MenuShowEmptyLabelWin ||
           (GetWindowText(window, txt, std::size(txt)) && txt[0])) &&
          !blacklisted(window,
-                      &BlkLst.Bottommost);  // Exclude bottommost windows
+                      BlkLst.Bottommost);  // Exclude bottommost windows
 }
 static int IsToolWindow(HWND hwnd) {
   return GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW;
@@ -2850,7 +2790,7 @@ static HWND MDIorNOT(HWND hwnd, HWND* mdiclient_) {
   HWND mdiclient = nullptr;
   HWND root = GetAncestor(hwnd, GA_ROOT);
 
-  if (conf.MDI && !blacklisted(root, &BlkLst.MDIs)) {
+  if (conf.MDI && !blacklisted(root, BlkLst.MDIs)) {
     while (hwnd != root) {
       HWND parent = GetParent(hwnd);
       if (!parent) return root;
@@ -3028,7 +2968,7 @@ static void ActionVolume(int delta) {
 /////////////////////////////////////////////////////////////////////////////
 // Windows 2000+ Only
 static int ActionTransparency(HWND hwnd, short delta) {
-  if (blacklisted(hwnd, &BlkLst.Windows)) return 0;  // Spetial
+  if (blacklisted(hwnd, BlkLst.Windows)) return 0;  // Spetial
   if (state.action.ac && MOUVEMENT(state.action))
     SetWindowTrans(reinterpret_cast<HWND>(-1));
 
@@ -3073,13 +3013,13 @@ static void ActionTransparency2(HWND hwnd, action_t action) {
 static void SetBottomMost(HWND hwnd) {
   HWND lowhwnd = HWND_BOTTOM;  // Lowest hwnd to consider.
 
-  if (!blacklisted(hwnd, &BlkLst.Bottommost)) {
+  if (!blacklisted(hwnd, BlkLst.Bottommost)) {
     // Ignore bottommost list if the lowered windows is also part of it.
     HWND tmph = hwnd;
     int i = 0;
     while ((tmph = GetNextWindow(tmph, GW_HWNDNEXT)) && i++ < 1024) {
       if (IsVisible(tmph) && !IsIconic(tmph) &&
-          blacklisted(tmph, &BlkLst.Bottommost)) {
+          blacklisted(tmph, BlkLst.Bottommost)) {
         lowhwnd = GetNextWindow(tmph, GW_HWNDPREV);
         break;
       }
@@ -4602,7 +4542,7 @@ static void SClickActions(HWND hwnd, action_t action) {
 static int DoWheelActions(HWND hwnd, action_t action) {
   state.sactiondone = action;
   // Return if in the scroll blacklist.
-  if (blacklisted(hwnd, &BlkLst.Scroll)) {
+  if (blacklisted(hwnd, BlkLst.Scroll)) {
     return 0;  // Next hook!
   }
   int ret = 1;
@@ -4760,9 +4700,9 @@ static int init_movement_and_actions(POINT pt, HWND hwnd, action_t action,
   // or if the window is fullscreen.
   // state.hwnd == GetDesktopWindow()
   // state.hwnd == GetShellWindow()
-  if (blacklisted(state.hwnd, &BlkLst.Processes) ||
+  if (blacklisted(state.hwnd, BlkLst.Processes) ||
       !lstrcmp(state.classname, APP_NAME L"-Pin") ||
-      (blacklisted(state.hwnd, &BlkLst.Windows) && !state.hittest &&
+      (blacklisted(state.hwnd, BlkLst.Windows) && !state.hittest &&
        (button <
         BT_WHEELD /* || BT_HWHEELU > button*/))  // does not apply in titlebar,
                                                  // nor for the wheel action...
@@ -4895,7 +4835,7 @@ static int InTitlebar(POINT pt, action_t action, enum button button) {
     HWND nhwnd = WindowFromPoint(pt);
     if (!nhwnd) return 0;  // Next hook!
     // HWND hwnd = MDIorNOT(nhwnd, &state.mdiclient);
-    // if (blacklisted(hwnd, &BlkLst.Windows)) return 0; // Next hook
+    // if (blacklisted(hwnd, BlkLst.Windows)) return 0; // Next hook
 
     // Hittest to see if we are in a caption!
     // Only accept caption buttons as a titlebar for the buttons that are
@@ -5999,99 +5939,15 @@ void WINAPI Unload() {
   CloseHandle(g_WorkerThreadHANDLE);
 }
 /////////////////////////////////////////////////////////////////////////////
-// blacklist is coma separated and title and class are | separated.
-// valid items are: exename.exe:title|class, title|class, exename:title, title
-static void readblacklist(const wchar_t* section, blacklist_t* blacklist,
-                          const char* bl_str) {
-  const wchar_t* txt = GetSectionOptionCStr(section, bl_str, nullptr);
-  if (!txt || !*txt) {
-    return;
-  }
-  blacklist->data.assign(txt, txt + lstrlen(txt) + 1);
-  wchar_t* pos = blacklist->data.data();
-
-  while (pos) {
-    wchar_t* exenm = pos;
-
-    // Move pos to next item (if any)
-    pos = lstrchr(pos, L',');
-    // Zero out the coma and eventual spaces
-    if (pos) {
-      do {
-        *pos++ = '\0';
-      } while (*pos == ' ');
-    }  // No more changes to pos.
-
-    wchar_t* title = lstrchr(exenm, L':');  // go to the :
-    // Look for the klass
-    wchar_t* klass = lstrchr(exenm, L'|');  // go to the next |
-
-    // Split the item with NULL
-    if (title) {
-      // if klass we are in the exename:title|class, format?
-      if (klass) {
-        if (klass < title) {
-          // if a ':' comes after a '|' the there is a ':' in the class
-          // and exename is not specified ie: title|class format.
-          // We do this because there can be no '|' in a filename
-          title = exenm;
-          exenm = nullptr;
-        } else {
-          // we are in the exename:title(|klass), format
-          *title = '\0';  // zero out the ':'
-          title++;
-        }
-        *klass++ = '\0';  // zero out the '|'
-      }
-    } else if (klass) {
-      // We did not find the ':' but we found a '|'
-      // => we are in the title|class format !
-      // => no exe name specified.
-      *klass = '\0';  // Split the item with NULL
-      klass++;
-      title = exenm;
-      exenm = nullptr;
-    } else {
-      // We found no ':' nor '|'
-      // We are in the exename only format.
-    }
-
-    // Add blacklist item
-    if (title && title[0] == '*' && title[1] == '\0') {
-      title = nullptr;  // Title is a single *
-    }
-    if (klass && klass[0] == '*' && klass[1] == '\0') {
-      klass = nullptr;  // class is a single *
-    }
-    if (exenm && exenm[0] == '*' && exenm[1] == '\0') {
-      exenm = nullptr;  // exename is a single *
-    }
-    LOG("%ls:%ls|%ls", exenm, title, klass);
-    blacklist->items.push_back({title, klass, exenm});
-  }  // end while
-}
-// Read all the blacklitsts
-static void readallblacklists(const wchar_t* inipath) {
-  enum { blacklist_section_length = 32767 };
-  BlkLst = {};
-
-  const std::vector<wchar_t> section_buffer =
-      ReadIniSection(L"Blacklist", inipath, blacklist_section_length);
-  static const wchar_t kEmptySection[2] = {};
-  const wchar_t* const section =
-      section_buffer.empty() ? kEmptySection : section_buffer.data();
-
-  const auto lists = BlkLst.All();
-  for (size_t i = 0; i < lists.size(); i++) {
-    readblacklist(section, lists[i], BlackListStrings[i]);
-  }
-}
-
 ///////////////////////////////////////////////////////////////////////////
 // Used to read Hotkeys and Hotclicks
-unsigned readhotkeys(const wchar_t* inisection, const char* name,
+// Reads a list of hexadecimal key codes ("A4 A5") into `keys` and
+// zero-terminates it, so `keys` needs room for `max_keys + 1` entries.
+// Returns the number of keys read.
+// Upstream: readhotkeys
+unsigned ReadHotkeys(const IniSection& section, const char* name,
                      const wchar_t* def, UCHAR* keys, unsigned MaxKeys) {
-  const wchar_t* txt = GetSectionOptionCStr(inisection, name, def);
+  const wchar_t* txt = section.GetString(name, def);
   size_t i = 0;
   if (!txt || !*txt) return i;
   const wchar_t* pos = txt;
@@ -6106,15 +5962,30 @@ unsigned readhotkeys(const wchar_t* inisection, const char* name,
   keys[i] = 0;
   return i;
 }
+// Reads up to `count` (at most 4) hexadecimal bytes ("RR GG BB [AA]") packed
+// little-endian into one value, e.g. a COLORREF.
+static uint32_t ReadPackedBytes(const IniSection& section, const char* key,
+                                const wchar_t* def, unsigned count) {
+  UCHAR bytes[MAXKEYS + 1];
+  ReadHotkeys(section, key, def, bytes, count);
+  uint32_t value = 0;
+  for (unsigned i = 0; i < count; i++) value |= uint32_t{bytes[i]} << (8 * i);
+  return value;
+}
+uint32_t ReadColor(const IniSection& section, const char* key,
+                   const wchar_t* def, unsigned count) {
+  return ReadPackedBytes(section, key, def, count);
+}
+
 /* TOTO: IMPLEMENT action parameters */
-static action_t readaction(const wchar_t* section, const char* key) {
-  const wchar_t* txt = GetSectionOptionCStr(section, key, L"Nothing");
+static action_t readaction(const IniSection& section, const char* key) {
+  const wchar_t* txt = section.GetString(key, L"Nothing");
   if (!txt || !*txt) return k_action_none;
 
   return MapActionW(txt);
 }
 // Read all buttons actions from inipath
-static void readbuttonactions(const wchar_t* inputsection) {
+static void readbuttonactions(const IniSection& inputsection) {
   static const char* buttons[] = {
       "LMB",         "RMB",    "MMB",      "MB4",      "MB5",     "MB6",
       "MB7",         "MB8",    "MB9",      "MB10",     "MB11",    "MB12",
@@ -6191,17 +6062,15 @@ static HWND KreateMsgWin(WNDPROC proc, const wchar_t* name, LONG_PTR userdata) {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-static void CreateTransWin(const wchar_t* inisection) {
-  int color[2];
+static void CreateTransWin(const IniSection& section) {
   // Read the color for the TransWin from ini file
-  readhotkeys(inisection, "FrameColor", L"80 00 80",
-              reinterpret_cast<UCHAR*>(&color[0]), 3);
+  const COLORREF color = ReadColor(section, "FrameColor", L"80 00 80", 3);
   WNDCLASS wnd;
   ZeroObject(wnd);
   //    wnd.style = CS_SAVEBITS;
   wnd.lpfnWndProc = DefWindowProc;
   wnd.hInstance = hinstDLL;
-  wnd.hbrBackground = CreateSolidBrush(color[0]);
+  wnd.hbrBackground = CreateSolidBrush(color);
   wnd.lpszClassName = APP_NAME L"-Trans";
   RegisterClass(&wnd);
   g_transhwnd[0] = nullptr;
@@ -6235,19 +6104,17 @@ static void registerAllHotkeys(const wchar_t* inipath) {
   // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
   // RegisterHotKey(g_mainhwnd, 0xC000 + AC_KILL,   MOD_ALT|MOD_CONTROL, VK_F4);
   // // F4=73h Read All shortcuts in the [KBShortcuts] section.
-  wchar_t inisection[1800];
-  GetPrivateProfileSection(L"KBShortcuts", inisection, std::size(inisection),
-                           inipath);
+  const IniSection section = IniSection::Read(inipath, L"KBShortcuts");
 
-  conf.UsePtWindow = GetSectionOptionInt(inisection, "UsePtWindow", 0);
+  conf.UsePtWindow = section.GetInt("UsePtWindow", 0);
 
 #define ACVALUE(a, b, c) (#b),
   static const char* action_names[] = {ACTION_MAP};
 #undef ACVALUE
 
   size_t idx = 0;
-  for (const wchar_t* p = inisection;
-       *p && idx < std::size(conf.KBShortcutsList); p += lstrlen(p) + 1) {
+  for (const wchar_t* p : section.lines()) {
+    if (idx >= std::size(conf.KBShortcutsList)) break;
     if (*p == ';') continue;
 
     action_t action = MapActionW(p);
@@ -6282,17 +6149,16 @@ static void registerAllHotkeys(const wchar_t* inipath) {
   }
   LOG("registerAllHotkeys END");
 }
-static void readalluchars(const wchar_t* const inisection,
+static void readalluchars(const IniSection& section,
                           const struct OptionListItem* optlist,
                           size_t listlen) {
   // Read all one-byte options straight into their `conf` fields.
   auto* const bytes = reinterpret_cast<UCHAR*>(&conf);
   for (size_t i = 0; i < listlen; i++) {
-    bytes[optlist[i].offset] =
-        GetSectionOptionInt(inisection, optlist[i].name, optlist[i].def);
+    bytes[optlist[i].offset] = section.GetInt(optlist[i].name, optlist[i].def);
   }
 }
-static void readallinputSequences(const wchar_t* inisection) {
+static void readallinputSequences(const IniSection& section) {
   UCHAR buf[512];
   char shrtN[6] = "Shrt0";
 
@@ -6301,7 +6167,7 @@ static void readallinputSequences(const wchar_t* inisection) {
   for (size_t i = 0; i < g_inputSequences.size(); i++) {
     shrtN[4] = i < 10 ? '0' + i : 'A' - 10 + i;
     unsigned len =
-        readhotkeys(inisection, shrtN, L"\0", buf + 1, std::size(buf) - 4) / 2;
+        ReadHotkeys(section, shrtN, L"\0", buf + 1, std::size(buf) - 4) / 2;
     buf[0] = len;  // We store the amount of input, not characters; the input
                    // includes up or down.
     if (len) g_inputSequences[i].assign(buf, buf + len * 2 + 1);
@@ -6338,13 +6204,9 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   conf.dbclickX = GetSystemMetrics(SM_CXDOUBLECLK);
   conf.dbclickY = GetSystemMetrics(SM_CYDOUBLECLK);
 
-  std::vector<wchar_t> inisection_buffer(8192);
-  wchar_t* const inisection = inisection_buffer.data();
-  const size_t inisectionlen = inisection_buffer.size();
-
   // [General]
-  GetPrivateProfileSection(L"General", inisection, inisectionlen, inipath);
-  readalluchars(inisection, General_uchars, std::size(General_uchars));
+  readalluchars(IniSection::Read(inipath, L"General"), General_uchars,
+                std::size(General_uchars));
 
   // [General] consistency checks
   conf.CenterFraction = std::min<UCHAR>(conf.CenterFraction, 100);
@@ -6356,22 +6218,20 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   state.snap = conf.AutoSnap;
 
   // [Advanced]
-  GetPrivateProfileSection(L"Advanced", inisection, inisectionlen, inipath);
-  readalluchars(inisection, Advanced_uchars, std::size(Advanced_uchars));
+  const IniSection advanced = IniSection::Read(inipath, L"Advanced");
+  readalluchars(advanced, Advanced_uchars, std::size(Advanced_uchars));
 
   conf.ZoomFrac = std::max<UCHAR>(2, conf.ZoomFrac);
   conf.ZoomFracShift = std::max<UCHAR>(2, conf.ZoomFracShift);
-  conf.BLCapButtons = GetSectionOptionInt(inisection, "BLCapButtons", 3);
-  conf.BLUpperBorder = GetSectionOptionInt(inisection, "BLUpperBorder", 3);
-  conf.AeroMaxSpeed =
-      GetSectionOptionInt(inisection, "AeroMaxSpeed", MAX_SNAP_SPEED);
-  conf.LongClickMoveDelay =
-      GetSectionOptionInt(inisection, "LongClickMoveDelay", 0);
+  conf.BLCapButtons = advanced.GetInt("BLCapButtons", 3);
+  conf.BLUpperBorder = advanced.GetInt("BLUpperBorder", 3);
+  conf.AeroMaxSpeed = advanced.GetInt("AeroMaxSpeed", MAX_SNAP_SPEED);
+  conf.LongClickMoveDelay = advanced.GetInt("LongClickMoveDelay", 0);
   if (conf.LongClickMoveDelay == 0)
     conf.LongClickMoveDelay = GetDoubleClickTime();
 
-  GetPrivateProfileSection(L"Performance", inisection, inisectionlen, inipath);
-  readalluchars(inisection, Performance_uchars, std::size(Performance_uchars));
+  readalluchars(IniSection::Read(inipath, L"Performance"), Performance_uchars,
+                std::size(Performance_uchars));
   conf.MoveRate = std::max<UCHAR>(1, conf.MoveRate);
   conf.ResizeRate = std::max<UCHAR>(1, conf.ResizeRate);
 
@@ -6397,19 +6257,16 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
     conf.FullWin = drag_full_win;
   }
 
-  GetPrivateProfileSection(L"Input", inisection, inisectionlen, inipath);
-  readalluchars(inisection, Input_uchars, std::size(Input_uchars));
-  readbuttonactions(inisection);
+  const IniSection input = IniSection::Read(inipath, L"Input");
+  readalluchars(input, Input_uchars, std::size(Input_uchars));
+  readbuttonactions(input);
 
   if (conf.TopmostIndicator) {
-    int color[2];
-    readhotkeys(inisection, "PinColor", L"FF FF 00 54",
-                reinterpret_cast<UCHAR*>(&color[0]), 4);
-    conf.PinColor = color[0];
+    conf.PinColor = ReadColor(input, "PinColor", L"FF FF 00 54", 4);
   }
   // Prepare the transparent window
   if (!conf.FullWin) {
-    CreateTransWin(inisection);
+    CreateTransWin(input);
   }
 
   // Same order than in the conf struct
@@ -6428,14 +6285,14 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
       {"ESCKeys", L"1B", conf.ESCkeys},        // VK_ESCAPE = 1B
   };
   for (const auto& i : hklst) {
-    readhotkeys(inisection, i.name, i.def, i.dst, MAXKEYS);
+    ReadHotkeys(input, i.name, i.def, i.dst, MAXKEYS);
   }
   UCHAR eHKs[MAXKEYS + 1];  // Key to be sent at the end of a movment.
-  readhotkeys(inisection, "EndSendKey", L"11", eHKs, MAXKEYS);
+  ReadHotkeys(input, "EndSendKey", L"11", eHKs, MAXKEYS);
   conf.EndSendKey = eHKs[0];
 
   // Window List accelerator map
-  int nb = readhotkeys(inisection, "MenuAccelMap", nullptr, conf.MenuAccelMap,
+  int nb = ReadHotkeys(input, "MenuAccelMap", nullptr, conf.MenuAccelMap,
                        std::size(conf.MenuAccelMap) - 1);
 
   // Fill the rest with usual accelerators
@@ -6448,24 +6305,24 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   conf.MenuAccelMap[std::size(conf.MenuAccelMap) - 1] = 0;
 
   // Read User Shortcuts/InputSequences
-  readallinputSequences(inisection);
+  readallinputSequences(input);
 
   // Read all the BLACKLITSTS
-  readallblacklists(inipath);
+  BlkLst = Blacklists::Read(IniSection::Read(inipath, L"Blacklist"));
 
   ResetDB();  // Zero database of restore info (snap.c)
 
-  GetPrivateProfileSection(L"Zones", inisection, inisectionlen, inipath);
-  readalluchars(inisection, Zones_uchars, std::size(Zones_uchars));
+  const IniSection zones = IniSection::Read(inipath, L"Zones");
+  readalluchars(zones, Zones_uchars, std::size(Zones_uchars));
 
   if (conf.UseZones & 1) {  // We are using Zones
     conf.MaxLayouts = CLAMP(0, conf.MaxLayouts, 10);
     if (conf.UseZones & 2) {  // Grid Mode
-      ReadGrids(inisection);
+      ReadGrids(zones);
     } else {
-      ReadZones(inisection);
+      ReadZones(zones);
     }
-    SnapLayoutPreviewCreateDestroy(inisection /*CREATE*/);
+    SnapLayoutPreviewCreateDestroy(&zones /*CREATE*/);
   }
 
   conf.keepMousehook = ((conf.TTBActions & 1)    // titlebar action w/o Alt

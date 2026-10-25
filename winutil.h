@@ -1,5 +1,6 @@
+/* Upstream: unfuck.h -- Win32 helpers shared by hooks.dll and AltSnap.exe. */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * Compatibility layer for old NT OSes                                   *
+ * Win32 helpers (no longer a compat layer)                                *
  * Written by Raymond Gillibert in 2021                                  *
  * THIS FILE IS NOT UNDER GPL but under the WTFPL.                       *
  * DO WHAT THE FUCK YOU WANT WITH THIS CODE!                             *
@@ -36,9 +37,6 @@
 inline constexpr DWORD kDwmaUseImmersiveDarkModePre20H1 = 19;
 // Values from the Windows SDK that older MinGW headers do not define yet.
 inline constexpr DWORD kDwmaUseImmersiveDarkMode = 20;
-inline constexpr DWORD kDwmaWindowCornerPreference = 33;
-inline constexpr int kDwmwcpDefault = 0;
-inline constexpr int kDwmwcpDoNotRound = 1;
 
 using DorQWORD = UINT_PTR;  // Pointer-sized unsigned integer.
 
@@ -180,33 +178,6 @@ inline void PathStripPathL(wchar_t* p) {
   p[j] = '\0';
 }
 
-inline BOOL HaveProc(const char* const DLLname, const char* const PROCname) {
-  HINSTANCE hdll = LoadLibraryA(DLLname);
-  BOOL ret = FALSE;
-  if (hdll) {
-    if (GetProcAddress(hdll, PROCname)) {
-      ret = TRUE;
-    }
-    FreeLibrary(hdll);
-  }
-  return ret;
-}
-
-inline FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
-  HINSTANCE hdll = nullptr;
-  auto ret = static_cast<FARPROC>(nullptr);
-
-  if ((hdll = GetModuleHandleA(DLLname))) {
-    return GetProcAddress(hdll, PROCname);
-  }
-  hdll = LoadLibraryA(DLLname);
-  if (hdll) {
-    ret = GetProcAddress(hdll, PROCname);
-    if (!ret) FreeLibrary(hdll);
-  }
-  return ret;
-}
-
 // Sleeps for `duration_ms`, temporarily raising the system timer resolution
 // for short sleeps so that Sleep() is accurate to ~1.5 ms instead of ~15 ms.
 inline void ASleep(DWORD duration_ms) {
@@ -218,12 +189,6 @@ inline void ASleep(DWORD duration_ms) {
   timeBeginPeriod(tc.wPeriodMin);
   Sleep(duration_ms);
   timeEndPeriod(tc.wPeriodMin);
-}
-
-inline BOOL FreeDLLByName(const char* const DLLname) {
-  HINSTANCE hdll = nullptr;
-  if ((hdll = GetModuleHandleA(DLLname))) return FreeLibrary(hdll);
-  return FALSE;
 }
 
 /* On Windows Vista we have to use this one that applies process wide. */
@@ -371,27 +336,8 @@ inline int RGTac(RGTICTAC* tt) {
 
 /* Needed on Windows 8+ to recive the WM_POWERBROADCAST mesage */
 
-inline COLORREF GetSysColorizationColor() {
-  DWORD color = 0;
-  BOOL b = FALSE;
-  if (S_OK == DwmGetColorizationColor(&color, &b)) {
-    /* Re orde- bytes because
-     * COLORREF:  0x00BBGGRR and not 0xAARRGGBB */
-    return (color & 0x000000FF) << 16    /* blue */
-           | (color & 0x0000FF00)        /* green */
-           | (color & 0x00FF0000) >> 16; /* red */
-  }
-  return 0;
-}
-
 [[nodiscard]] inline long average(long a, long b) {
   return (a >> 1) + (b >> 1) + (((a & 1) + (b & 1)) >> 1);
-}
-[[nodiscard]] inline long averageX(const RECT* rc) {
-  return average(rc->left, rc->right);
-}
-[[nodiscard]] inline long averageY(const RECT* rc) {
-  return average(rc->top, rc->bottom);
 }
 
 /* #define DwmGetWindowAttribute DwmGetWindowAttribute */
@@ -540,15 +486,6 @@ inline LONG NtSuspendProcess(HANDLE process) {
 }
 inline LONG NtResumeProcess(HANDLE process) {
   return CallNtProcessFunction("NtResumeProcess", process);
-}
-
-inline BOOL HaveDWM() {
-  static int first = 1;
-  static BOOL have_dwm = FALSE;
-  if (first) DwmIsCompositionEnabled(&have_dwm);
-  first = 0;
-
-  return have_dwm;
 }
 
 /* PSAPI.DLL */
@@ -874,10 +811,6 @@ inline void CropOutRectFromSeg(RECT* seg, const RECT* cover) {
 inline int IsInRangeT(int x, int a, int b, int T) {
   return (a - T <= x) & (x <= b + T);
 }
-[[nodiscard]] inline int EqualRectT(const RECT* a, const RECT* b, const int T) {
-  return IsEqualT(a->left, b->left, T) && IsEqualT(a->right, b->right, T) &&
-         IsEqualT(a->top, b->top, T) && IsEqualT(a->bottom, b->bottom, T);
-}
 [[nodiscard]] inline unsigned AreRectsAlignedOutT(const RECT* a, const RECT* b,
                                                   const int tol) {
   return IsEqualT(a->left, b->right, tol) << 2 |
@@ -891,10 +824,6 @@ inline int IsInRangeT(int x, int a, int b, int T) {
          IsEqualT(a->top, b->top, tol) << 4 |
          IsEqualT(a->right, b->right, tol) << 3 |
          IsEqualT(a->bottom, b->bottom, tol) << 5;
-}
-[[nodiscard]] inline unsigned AreRectsAligned2T(const RECT* a, const RECT* b,
-                                                const int tol) {
-  return AreRectsAlignedOutT(a, b, tol) | (AreRectsAlignedInT(b, a, tol) << 16);
 }
 
 inline int InRange(int x, int a, int b) {
@@ -941,95 +870,8 @@ inline void ClampPointInRect(const RECT* rc, POINT* __restrict__ pt) {
   pt->x = CLAMP(rc->left, pt->x, rc->right - 1);
   pt->y = CLAMP(rc->top, pt->y, rc->bottom - 1);
 }
-inline void RectFromPts(RECT* rc, const POINT a, const POINT b) {
-  rc->left = std::min(a.x, b.x);
-  rc->top = std::min(a.y, b.y);
-  rc->right = std::max(a.x, b.x);
-  rc->bottom = std::max(a.y, b.y);
-}
 
 /* DownlevelLCIDToLocaleName in NLSDL.DLL */
 /* LCIDToLocaleName  in KERNEL32.DLL*/
-
-// Reads a whole ini section as "key=value\0key=value\0\0", growing the buffer
-// until the section fits. Returns an empty vector if the section is missing.
-[[nodiscard]] inline std::vector<wchar_t> ReadIniSection(
-    const wchar_t* section, const wchar_t* ini_path,
-    size_t initial_size = 8192) {
-  std::vector<wchar_t> buffer;
-  size_t size = initial_size / 2;
-  DWORD copied = 0;
-  do {  // GetPrivateProfileSection() returns size - 2 when it truncates.
-    size *= 2;
-    buffer.assign(size, L'\0');
-    copied = GetPrivateProfileSection(section, buffer.data(),
-                                      static_cast<DWORD>(size), ini_path);
-  } while (copied == size - 2);
-  if (copied == 0) buffer.clear();
-  return buffer;
-}
-
-// Reads a string value of any length from an ini file.
-[[nodiscard]] inline std::wstring ReadIniString(const wchar_t* section,
-                                                const wchar_t* key,
-                                                const wchar_t* default_value,
-                                                const wchar_t* ini_path) {
-  std::wstring value(1024, L'\0');
-  for (;;) {
-    const DWORD copied =
-        GetPrivateProfileString(section, key, default_value, value.data(),
-                                static_cast<DWORD>(value.size()), ini_path);
-    if (copied + 1 < value.size()) {  // Not truncated.
-      value.resize(copied);
-      return value;
-    }
-    value.assign(value.size() * 2, L'\0');
-  }
-}
-
-// Looks up `oname` in a section returned by GetPrivateProfileSection() (a
-// double-NUL-terminated list of "key=value" strings). Returns a pointer to the
-// value inside `section`, or `def` if the key is missing. Keys are ASCII and
-// compared case-insensitively.
-inline const wchar_t* GetSectionOptionCStr(const wchar_t* section,
-                                           const char* const oname,
-                                           const wchar_t* const def) {
-  if (section) {
-    std::wstring key(oname, oname + std::strlen(oname));
-    key += L'=';
-    for (const wchar_t* p = section; *p; p += lstrlen(p) + 1) {
-      if (!lstrcmpi_samestart(p, key.c_str())) return p + key.size();
-    }
-  }
-  return def;
-}
-/* Get the int inside the section returned by GetPrivateProfileSection */
-inline int GetSectionOptionInt(const wchar_t* section, const char* const oname,
-                               const int def) {
-  const wchar_t* val = GetSectionOptionCStr(section, oname, nullptr);
-  if (val) return strtoi(val);
-  /* Default to the provided def value */
-  return def;
-}
-
-/* MAP Ini file section to a table of strings
- * TODO: use hash map instead of linear search */
-inline void RGIniMapSection(const wchar_t* section, /*OUT*/ wchar_t const** map,
-                            char const* const* const ini_mapping,
-                            size_t maplen) {
-  char key[64];
-  ZeroRange(map, maplen); /* Always zero out */
-  for (const wchar_t* p = section; *p; p += lstrlen(p) + 1) {
-    char* pk = key;
-    while (*p && *p != L'=' && pk < key + 63)
-      *pk++ = *p++; /* Copy key to char, stop at '=' sign */
-    *pk = '\0';
-    p++;
-    /* GetIniMapping_Index(key, ini_mapping, maplen); */
-    for (size_t i = 0; i < maplen; i++) {
-      if (!lstrcmpiA(key, ini_mapping[i])) map[i] = p;
-    }
-  }
-}
 
 #endif

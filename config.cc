@@ -14,6 +14,7 @@
 
 #include "altsnap.h"
 #include "hooks.h"
+#include "ini_section.h"
 #include "languages.h"
 #include "resource.h"
 #include "tray.h"
@@ -461,8 +462,8 @@ using dialogstring_t = dialogstring;
 static void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
                                 size_t size) {
   for (size_t i = 0; i < size; i++) {
-    SetDlgItemText(hwnd, strlst[i].idc, L10NSTR(strlst[i].l10nidx));
-    CreateInfoTip(hwnd, strlst[i].idc, L10NSTR(strlst[i].l10nidx + 1));
+    SetDlgItemText(hwnd, strlst[i].idc, l10n->Get(strlst[i].l10nidx));
+    CreateInfoTip(hwnd, strlst[i].idc, l10n->Get(strlst[i].l10nidx + 1));
   }
 }
 // Options to bead or written...
@@ -526,8 +527,8 @@ static void ShowContextHelp(const dialogstring_t sl[], size_t len, HWND hwnd,
   if (hi->iContextType == HELPINFO_WINDOW) {
     int id = FindIDCStrIDX(sl, len, hi->iCtrlId);
     if (id >= 0) {
-      SetDlgItemText(hwnd, IDC_HELPPANNEL, L10NSTR(id));
-      // MessageBox(hwnd, L10NSTR(id), NULL, 0);
+      SetDlgItemText(hwnd, IDC_HELPPANNEL, l10n->Get(id));
+      // MessageBox(hwnd, l10n->Get(id), NULL, 0);
     }
   }
 }
@@ -552,28 +553,28 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
 #undef V
 
   static const dialogstring_t strlst[] = {
-      {IDC_GENERAL_BOX, L10NIDX(GeneralBox)},
-      {IDC_AUTOFOCUS, L10NIDX(GeneralAutoFocus)},
-      {IDC_AERO, L10NIDX(GeneralAero)},
-      {IDC_SMARTAERO, L10NIDX(GeneralSmartAero)},
-      {IDC_SMARTERAERO, L10NIDX(GeneralSmarterAero)},
-      {IDC_STICKYRESIZE, L10NIDX(GeneralStickyResize)},
-      {IDC_INACTIVESCROLL, L10NIDX(GeneralInactiveScroll)},
-      {IDC_MDI, L10NIDX(GeneralMDI)},
-      {IDC_AUTOSNAP_HEADER, L10NIDX(GeneralAutoSnap)},
-      {IDC_LANGUAGE_HEADER, L10NIDX(GeneralLanguage)},
-      {IDC_USEZONES, L10NIDX(GeneralUseZones)},
-      {IDC_PIERCINGCLICK, L10NIDX(GeneralPiercingClick)},
-      {IDC_RESIZEALL, L10NIDX(GeneralResizeAll)},
-      {IDC_RESIZECENTER, L10NIDX(GeneralResizeCenter)},
-      {IDC_RZCENTER_NORM, L10NIDX(GeneralResizeCenterNorm)},
-      {IDC_RZCENTER_BR, L10NIDX(GeneralResizeCenterBr)},
-      {IDC_RZCENTER_MOVE, L10NIDX(GeneralResizeCenterMove)},
-      {IDC_RZCENTER_CLOSE, L10NIDX(GeneralResizeCenterClose)},
-      {IDC_AUTOSTART_BOX, L10NIDX(GeneralAutostartBox)},
-      {IDC_AUTOSTART, L10NIDX(GeneralAutostart)},
-      {IDC_AUTOSTART_HIDE, L10NIDX(GeneralAutostartHide)},
-      {IDC_AUTOSTART_ELEVATE, L10NIDX(GeneralAutostartElevate)}};
+      {IDC_GENERAL_BOX, L10nId::GeneralBox},
+      {IDC_AUTOFOCUS, L10nId::GeneralAutoFocus},
+      {IDC_AERO, L10nId::GeneralAero},
+      {IDC_SMARTAERO, L10nId::GeneralSmartAero},
+      {IDC_SMARTERAERO, L10nId::GeneralSmarterAero},
+      {IDC_STICKYRESIZE, L10nId::GeneralStickyResize},
+      {IDC_INACTIVESCROLL, L10nId::GeneralInactiveScroll},
+      {IDC_MDI, L10nId::GeneralMDI},
+      {IDC_AUTOSNAP_HEADER, L10nId::GeneralAutoSnap},
+      {IDC_LANGUAGE_HEADER, L10nId::GeneralLanguage},
+      {IDC_USEZONES, L10nId::GeneralUseZones},
+      {IDC_PIERCINGCLICK, L10nId::GeneralPiercingClick},
+      {IDC_RESIZEALL, L10nId::GeneralResizeAll},
+      {IDC_RESIZECENTER, L10nId::GeneralResizeCenter},
+      {IDC_RZCENTER_NORM, L10nId::GeneralResizeCenterNorm},
+      {IDC_RZCENTER_BR, L10nId::GeneralResizeCenterBr},
+      {IDC_RZCENTER_MOVE, L10nId::GeneralResizeCenterMove},
+      {IDC_RZCENTER_CLOSE, L10nId::GeneralResizeCenterClose},
+      {IDC_AUTOSTART_BOX, L10nId::GeneralAutostartBox},
+      {IDC_AUTOSTART, L10nId::GeneralAutostart},
+      {IDC_AUTOSTART_HIDE, L10nId::GeneralAutostartHide},
+      {IDC_AUTOSTART_ELEVATE, L10nId::GeneralAutostartElevate}};
 
   int updatestrings = 0;
   static int have_to_apply = 0;
@@ -834,7 +835,7 @@ static void FillActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
   for (j = 0; actions[j].action; j++) {
     wchar_t action_name[256];
     lstrcpy_noaccel(action_name, std::size(action_name),
-                    L10NSTR(actions[j].l10nidx));
+                    l10n->Get(actions[j].l10nidx));
     CB_AddString(control, action_name);
     if (inioption && !lstrcmpi(txt, actions[j].action)) {
       sel = j;
@@ -904,44 +905,43 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
        {L"ResizeUp", L"ResizeUpB", L"ResizeUpT", L"ResizeUp", L"ResizeUp"}},
   };
 
-#define COMMON_ACTIONS                                                        \
-  {L"Close", L10NIDX(InputActionClose)}, {L"Kill", L10NIDX(InputActionKill)}, \
-      {L"Minimize", L10NIDX(InputActionMinimize)},                            \
-      {L"Maximize", L10NIDX(InputActionMaximize)},                            \
-      {L"Lower", L10NIDX(InputActionLower)},                                  \
-      {L"Focus", L10NIDX(InputActionFocus)},                                  \
-      {L"NStacked", L10NIDX(InputActionNStacked)},                            \
-      {L"PStacked", L10NIDX(InputActionPStacked)},                            \
-      {L"StackList", L10NIDX(InputActionStackList)},                          \
-      {L"StackList2", L10NIDX(InputActionStackList2)},                        \
-      {L"AltTabList", L10NIDX(InputActionAltTabList)},                        \
-      {L"AltTabFullList", L10NIDX(InputActionAltTabFullList)},                \
-      {L"Roll", L10NIDX(InputActionRoll)},                                    \
-      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},                      \
-      {L"Borderless", L10NIDX(InputActionBorderless)},                        \
-      {L"Center", L10NIDX(InputActionCenter)},                                \
-      {L"Center2", L10NIDX(InputActionCenter2)},                              \
-      {L"MaximizeHV", L10NIDX(InputActionMaximizeHV)},                        \
-      {L"SideSnap", L10NIDX(InputActionSideSnap)},                            \
-      {L"ExtendSnap", L10NIDX(InputActionExtendSnap)},                        \
-      {L"ExtendTNEdge", L10NIDX(InputActionExtendTNEdge)},                    \
-      {L"MoveTNEdge", L10NIDX(InputActionMoveTNEdge)},                        \
-      {L"NLayout", L10NIDX(InputActionNLayout)},                              \
-      {L"PLayout", L10NIDX(InputActionPLayout)},                              \
-      {L"MinAllOther", L10NIDX(InputActionMinAllOther)},                      \
-      {L"Mute", L10NIDX(InputActionMute)},                                    \
-      {L"Menu", L10NIDX(InputActionMenu)},
+#define COMMON_ACTIONS                                                      \
+  {L"Close", L10nId::InputActionClose}, {L"Kill", L10nId::InputActionKill}, \
+      {L"Minimize", L10nId::InputActionMinimize},                           \
+      {L"Maximize", L10nId::InputActionMaximize},                           \
+      {L"Lower", L10nId::InputActionLower},                                 \
+      {L"Focus", L10nId::InputActionFocus},                                 \
+      {L"NStacked", L10nId::InputActionNStacked},                           \
+      {L"PStacked", L10nId::InputActionPStacked},                           \
+      {L"StackList", L10nId::InputActionStackList},                         \
+      {L"StackList2", L10nId::InputActionStackList2},                       \
+      {L"AltTabList", L10nId::InputActionAltTabList},                       \
+      {L"AltTabFullList", L10nId::InputActionAltTabFullList},               \
+      {L"Roll", L10nId::InputActionRoll},                                   \
+      {L"AlwaysOnTop", L10nId::InputActionAlwaysOnTop},                     \
+      {L"Borderless", L10nId::InputActionBorderless},                       \
+      {L"Center", L10nId::InputActionCenter},                               \
+      {L"Center2", L10nId::InputActionCenter2},                             \
+      {L"MaximizeHV", L10nId::InputActionMaximizeHV},                       \
+      {L"SideSnap", L10nId::InputActionSideSnap},                           \
+      {L"ExtendSnap", L10nId::InputActionExtendSnap},                       \
+      {L"ExtendTNEdge", L10nId::InputActionExtendTNEdge},                   \
+      {L"MoveTNEdge", L10nId::InputActionMoveTNEdge},                       \
+      {L"NLayout", L10nId::InputActionNLayout},                             \
+      {L"PLayout", L10nId::InputActionPLayout},                             \
+      {L"MinAllOther", L10nId::InputActionMinAllOther},                     \
+      {L"Mute", L10nId::InputActionMute}, {L"Menu", L10nId::InputActionMenu},
 
   static const actiondl_t mouse_actions[] = {
       // Specific to the Primary/Alternate/Titlebar
       // And not available for the MoveUp/ResizeUp
-      {L"Move", L10NIDX(InputActionMove)},
-      {L"Resize", L10NIDX(InputActionResize)},
-      {L"Restore", L10NIDX(InputActionRestore)},
+      {L"Move", L10nId::InputActionMove},
+      {L"Resize", L10nId::InputActionResize},
+      {L"Restore", L10nId::InputActionRestore},
       // Common mouse actions
       COMMON_ACTIONS
 
-      {L"Nothing", L10NIDX(InputActionNothing)},
+      {L"Nothing", L10nId::InputActionNothing},
       {nullptr, 0}};
 
   // Actions on MoveUp/ResizeUP
@@ -952,12 +952,12 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   //    static const actiondl_t mouse_actionsWMR[] = {
   //        // Spetial actions first
-  //        {L"ZoneSnapTogg", L10NIDX(input_actions_zonesnaptog) },
-  //        {L"SnapTogg",     L10NIDX(input_actions_snaptogg) },
+  //        {L"ZoneSnapTogg", L10nId::input_actions_zonesnaptog },
+  //        {L"SnapTogg",     L10nId::input_actions_snaptogg },
   //        // Then the common mouse actions
   //        COMMON_ACTIONS
   //
-  //        {L"Nothing",     L10NIDX(input_actions_nothing) },
+  //        {L"Nothing",     L10nId::input_actions_nothing },
   //        {NULL, 0}
   //    };
 
@@ -971,19 +971,19 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
        {L"HScroll", L"HScrollB", L"HScrollT", L"HScrollM", L"HScrollR"}}};
 
   static const actiondl_t scroll_actions[] = {
-      {L"AltTab", L10NIDX(InputActionAltTab)},
-      {L"Volume", L10NIDX(InputActionVolume)},
-      {L"Transparency", L10NIDX(InputActionTransparency)},
-      {L"Zoom", L10NIDX(InputActionZoom)},
-      {L"Zoom2", L10NIDX(InputActionZoom2)},
-      {L"Lower", L10NIDX(InputActionLower)},
-      {L"Roll", L10NIDX(InputActionRoll)},
-      {L"Maximize", L10NIDX(InputActionMaximize)},
-      {L"NPStacked", L10NIDX(InputActionNStacked)},
-      {L"NPStacked2", L10NIDX(InputActionNStacked2)},
-      {L"HScroll", L10NIDX(InputActionHScroll)},
-      {L"NPLayout", L10NIDX(InputActionNPLayout)},
-      {L"Nothing", L10NIDX(InputActionNothing)},
+      {L"AltTab", L10nId::InputActionAltTab},
+      {L"Volume", L10nId::InputActionVolume},
+      {L"Transparency", L10nId::InputActionTransparency},
+      {L"Zoom", L10nId::InputActionZoom},
+      {L"Zoom2", L10nId::InputActionZoom2},
+      {L"Lower", L10nId::InputActionLower},
+      {L"Roll", L10nId::InputActionRoll},
+      {L"Maximize", L10nId::InputActionMaximize},
+      {L"NPStacked", L10nId::InputActionNStacked},
+      {L"NPStacked2", L10nId::InputActionNStacked2},
+      {L"HScroll", L10nId::InputActionHScroll},
+      {L"NPLayout", L10nId::InputActionNPLayout},
+      {L"Nothing", L10nId::InputActionNothing},
       {nullptr, 0}};
 
   // Hotkeys
@@ -1030,32 +1030,32 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     // Update text
     static const dialogstring_t strlst[] = {
-        {IDC_MOUSE_BOX, L10NIDX(InputMouseBox)},
-        {IDC_MBA1, L10NIDX(InputMouseBtAc1)},
-        {IDC_MBA2, L10NIDX(InputMouseBtAc2)},
-        {IDC_INTTB, L10NIDX(InputMouseINTTB)},
-        {IDC_WHILEM, L10NIDX(InputMouseWhileM)},
-        {IDC_WHILER, L10NIDX(InputMouseWhileR)},
+        {IDC_MOUSE_BOX, L10nId::InputMouseBox},
+        {IDC_MBA1, L10nId::InputMouseBtAc1},
+        {IDC_MBA2, L10nId::InputMouseBtAc2},
+        {IDC_INTTB, L10nId::InputMouseINTTB},
+        {IDC_WHILEM, L10nId::InputMouseWhileM},
+        {IDC_WHILER, L10nId::InputMouseWhileR},
 
-        {IDC_LMB_HEADER, L10NIDX(InputMouseLMB)},
-        {IDC_MMB_HEADER, L10NIDX(InputMouseMMB)},
-        {IDC_RMB_HEADER, L10NIDX(InputMouseRMB)},
-        {IDC_MB4_HEADER, L10NIDX(InputMouseMB4)},
-        {IDC_MB5_HEADER, L10NIDX(InputMouseMB5)},
-        {IDC_SCROLL_HEADER, L10NIDX(InputMouseScroll)},
-        {IDC_HSCROLL_HEADER, L10NIDX(InputMouseHScroll)},
-        {IDC_MOVEUP_HEADER, L10NIDX(InputMouseMoveUp)},
-        {IDC_RESIZEUP_HEADER, L10NIDX(InputMouseResizeUp)},
-        {IDC_TTBACTIONS_BOX, L10NIDX(InputMouseTTBActionBox)},
-        {IDC_TTBACTIONSNA, L10NIDX(InputMouseTTBActionNA)},
-        {IDC_TTBACTIONSWA, L10NIDX(InputMouseTTBActionWA)},
+        {IDC_LMB_HEADER, L10nId::InputMouseLMB},
+        {IDC_MMB_HEADER, L10nId::InputMouseMMB},
+        {IDC_RMB_HEADER, L10nId::InputMouseRMB},
+        {IDC_MB4_HEADER, L10nId::InputMouseMB4},
+        {IDC_MB5_HEADER, L10nId::InputMouseMB5},
+        {IDC_SCROLL_HEADER, L10nId::InputMouseScroll},
+        {IDC_HSCROLL_HEADER, L10nId::InputMouseHScroll},
+        {IDC_MOVEUP_HEADER, L10nId::InputMouseMoveUp},
+        {IDC_RESIZEUP_HEADER, L10nId::InputMouseResizeUp},
+        {IDC_TTBACTIONS_BOX, L10nId::InputMouseTTBActionBox},
+        {IDC_TTBACTIONSNA, L10nId::InputMouseTTBActionNA},
+        {IDC_TTBACTIONSWA, L10nId::InputMouseTTBActionWA},
 
-        {IDC_HOTCLICKS_BOX, L10NIDX(InputHotclicksBox)},
-        {IDC_HOTCLICKS_MORE, L10NIDX(InputHotclicksMore)},
-        {IDC_MMB_HC, L10NIDX(InputMouseMMBHC)},
-        {IDC_MB4_HC, L10NIDX(InputMouseMB4HC)},
-        {IDC_MB5_HC, L10NIDX(InputMouseMB5HC)},
-        {IDC_LONGCLICKMOVE, L10NIDX(InputMouseLongClickMove)},
+        {IDC_HOTCLICKS_BOX, L10nId::InputHotclicksBox},
+        {IDC_HOTCLICKS_MORE, L10nId::InputHotclicksMore},
+        {IDC_MMB_HC, L10nId::InputMouseMMBHC},
+        {IDC_MB4_HC, L10nId::InputMouseMB4HC},
+        {IDC_MB5_HC, L10nId::InputMouseMB5HC},
+        {IDC_LONGCLICKMOVE, L10nId::InputMouseLongClickMove},
     };
     UpdateDialogStrings(hwnd, strlst, std::size(strlst));
   };
@@ -1224,10 +1224,10 @@ static const char* action_fl_param1_maps[ACPARAM_LAST] = {
     /* ACPARAM_UPDOWNSETTOGGLE */ "0UDST",  // 0 Up, Down, Set to, Toggle
 };
 static const short action_fl_strings_direction[] = {
-    0, L10NIDX(WayLeft), L10NIDX(WayUp), L10NIDX(WayRight), L10NIDX(WayDown),
+    0, L10nId::WayLeft, L10nId::WayUp, L10nId::WayRight, L10nId::WayDown,
 };
 static const short action_fl_strings_updown_set_toggle[] = {
-    0, L10NIDX(WayUp), L10NIDX(WayDown), L10NIDX(KwdSetTo), L10NIDX(KwdToggle),
+    0, L10nId::WayUp, L10nId::WayDown, L10nId::KwdSetTo, L10nId::KwdToggle,
 };
 static const struct {
   size_t num;
@@ -1317,7 +1317,7 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
             CB_ResetContent(ctrl);
             for (size_t i = 0; i < action_fl_l10n_maps[param1_type].num; i++) {
               short l10nIdx = action_fl_l10n_maps[param1_type].l10nIdx[i];
-              const wchar_t* str = l10nIdx == 0 ? L"---" : L10NSTR(l10nIdx);
+              const wchar_t* str = l10nIdx == 0 ? L"---" : l10n->Get(l10nIdx);
               CB_AddString(ctrl, str);
             }
           }
@@ -1387,80 +1387,80 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
                                              {IDC_RIGHTCTRL, VK_RCONTROL},
                                              {0, 0}};
   static const actiondl_t kb_actions[] = {
-      {L"Move", L10NIDX(InputActionMove)},
-      {L"Resize", L10NIDX(InputActionResize)},
-      {L"Close", L10NIDX(InputActionClose)},
-      {L"Minimize", L10NIDX(InputActionMinimize)},
-      {L"Maximize", L10NIDX(InputActionMaximize)},
-      {L"Lower", L10NIDX(InputActionLower)},
-      {L"Roll", L10NIDX(InputActionRoll)},
-      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},
-      {L"Borderless", L10NIDX(InputActionBorderless)},
-      {L"Center", L10NIDX(InputActionCenter)},
-      {L"Center2", L10NIDX(InputActionCenter2)},
-      {L"MaximizeHV", L10NIDX(InputActionMaximizeHV)},
-      {L"MinAllOther", L10NIDX(InputActionMinAllOther)},
-      {L"Menu", L10NIDX(InputActionMenu)},
-      {L"Nothing", L10NIDX(InputActionNothing)},
+      {L"Move", L10nId::InputActionMove},
+      {L"Resize", L10nId::InputActionResize},
+      {L"Close", L10nId::InputActionClose},
+      {L"Minimize", L10nId::InputActionMinimize},
+      {L"Maximize", L10nId::InputActionMaximize},
+      {L"Lower", L10nId::InputActionLower},
+      {L"Roll", L10nId::InputActionRoll},
+      {L"AlwaysOnTop", L10nId::InputActionAlwaysOnTop},
+      {L"Borderless", L10nId::InputActionBorderless},
+      {L"Center", L10nId::InputActionCenter},
+      {L"Center2", L10nId::InputActionCenter2},
+      {L"MaximizeHV", L10nId::InputActionMaximizeHV},
+      {L"MinAllOther", L10nId::InputActionMinAllOther},
+      {L"Menu", L10nId::InputActionMenu},
+      {L"Nothing", L10nId::InputActionNothing},
       {nullptr, 0}};
   static const actiondl_t kbshortcut_actions[] = {
-      {L"Kill", L10NIDX(InputActionKill)},
-      {L"Pause", L10NIDX(InputActionPause)},
-      {L"Resume", L10NIDX(InputActionResume)},
-      {L"ASOnOff", L10NIDX(InputActionASOnOff)},
-      {L"Close", L10NIDX(InputActionClose)},
-      {L"Minimize", L10NIDX(InputActionMinimize)},
-      {L"Maximize", L10NIDX(InputActionMaximize)},
-      {L"Lower", L10NIDX(InputActionLower)},
-      {L"Roll", L10NIDX(InputActionRoll), ACPARAM_UPDOWN},
-      {L"Transparency", L10NIDX(InputActionTransparency),
+      {L"Kill", L10nId::InputActionKill},
+      {L"Pause", L10nId::InputActionPause},
+      {L"Resume", L10nId::InputActionResume},
+      {L"ASOnOff", L10nId::InputActionASOnOff},
+      {L"Close", L10nId::InputActionClose},
+      {L"Minimize", L10nId::InputActionMinimize},
+      {L"Maximize", L10nId::InputActionMaximize},
+      {L"Lower", L10nId::InputActionLower},
+      {L"Roll", L10nId::InputActionRoll, ACPARAM_UPDOWN},
+      {L"Transparency", L10nId::InputActionTransparency,
        ACPARAM_UPDOWNSETTOGGLE, ACPARAM_NUMBER},
-      {L"AlwaysOnTop", L10NIDX(InputActionAlwaysOnTop)},
-      {L"Borderless", L10NIDX(InputActionBorderless)},
-      {L"Center", L10NIDX(InputActionCenter)},
-      {L"Center2", L10NIDX(InputActionCenter2)},
-      {L"Mute", L10NIDX(InputActionMute)},
-      {L"Menu", L10NIDX(InputActionMenu)},
+      {L"AlwaysOnTop", L10nId::InputActionAlwaysOnTop},
+      {L"Borderless", L10nId::InputActionBorderless},
+      {L"Center", L10nId::InputActionCenter},
+      {L"Center2", L10nId::InputActionCenter2},
+      {L"Mute", L10nId::InputActionMute},
+      {L"Menu", L10nId::InputActionMenu},
 
-      {L"NStacked", L10NIDX(InputActionNStacked)},
-      {L"NStacked2", L10NIDX(InputActionNStacked2)},
-      {L"PStacked", L10NIDX(InputActionPStacked)},
-      {L"PStacked2", L10NIDX(InputActionPStacked2)},
-      {L"StackList", L10NIDX(InputActionStackList)},
-      {L"StackList2", L10NIDX(InputActionStackList2)},
-      {L"AltTabList", L10NIDX(InputActionAltTabList)},
-      {L"AltTabFullList", L10NIDX(InputActionAltTabFullList)},
+      {L"NStacked", L10nId::InputActionNStacked},
+      {L"NStacked2", L10nId::InputActionNStacked2},
+      {L"PStacked", L10nId::InputActionPStacked},
+      {L"PStacked2", L10nId::InputActionPStacked2},
+      {L"StackList", L10nId::InputActionStackList},
+      {L"StackList2", L10nId::InputActionStackList2},
+      {L"AltTabList", L10nId::InputActionAltTabList},
+      {L"AltTabFullList", L10nId::InputActionAltTabFullList},
 
-      {L"ExtendTNEdge", L10NIDX(InputActionExtendTNEdge), ACPARAM_DIRECTION, 0},
-      {L"MoveTNEdge", L10NIDX(InputActionMoveTNEdge), ACPARAM_DIRECTION, 0},
+      {L"ExtendTNEdge", L10nId::InputActionExtendTNEdge, ACPARAM_DIRECTION, 0},
+      {L"MoveTNEdge", L10nId::InputActionMoveTNEdge, ACPARAM_DIRECTION, 0},
 
-      {L"MZone", L10NIDX(InputActionMZone), ACPARAM_DIRECTION, 0},
-      {L"XZone", L10NIDX(InputActionXZone), ACPARAM_DIRECTION, 0},
+      {L"MZone", L10nId::InputActionMZone, ACPARAM_DIRECTION, 0},
+      {L"XZone", L10nId::InputActionXZone, ACPARAM_DIRECTION, 0},
 
-      {L"Step", L10NIDX(InputActionStep), ACPARAM_DIRECTION, ACPARAM_NUMBER},
+      {L"Step", L10nId::InputActionStep, ACPARAM_DIRECTION, ACPARAM_NUMBER},
 
-      {L"Focus", L10NIDX(InputActionFocus), ACPARAM_DIRECTION, 0},
+      {L"Focus", L10nId::InputActionFocus, ACPARAM_DIRECTION, 0},
 
-      {L"NLayout", L10NIDX(InputActionNLayout)},
-      {L"PLayout", L10NIDX(InputActionPLayout)},
+      {L"NLayout", L10nId::InputActionNLayout},
+      {L"PLayout", L10nId::InputActionPLayout},
 
       {nullptr, 0}};
 
   // Hotkeys
   static const actiondl_t togglekeys[] = {
-      {L"", L10NIDX(InputActionNothing)},
-      {L"A4 A5", L10NIDX(InputHotkeysAlt)},
-      {L"5B 5C", L10NIDX(InputHotkeysWinkey)},
-      {L"A2 A3", L10NIDX(InputHotkeysCtrl)},
-      {L"A0 A1", L10NIDX(InputHotkeysShift)},
-      {L"A4", L10NIDX(InputHotkeysLeftAlt)},
-      {L"A5", L10NIDX(InputHotkeysRightAlt)},
-      {L"5B", L10NIDX(InputHotkeysLeftWinkey)},
-      {L"5C", L10NIDX(InputHotkeysRightWinkey)},
-      {L"A2", L10NIDX(InputHotkeysLeftCtrl)},
-      {L"A3", L10NIDX(InputHotkeysRightCtrl)},
-      {L"A0", L10NIDX(InputHotkeysLeftShift)},
-      {L"A1", L10NIDX(InputHotkeysRightShift)},
+      {L"", L10nId::InputActionNothing},
+      {L"A4 A5", L10nId::InputHotkeysAlt},
+      {L"5B 5C", L10nId::InputHotkeysWinkey},
+      {L"A2 A3", L10nId::InputHotkeysCtrl},
+      {L"A0 A1", L10nId::InputHotkeysShift},
+      {L"A4", L10nId::InputHotkeysLeftAlt},
+      {L"A5", L10nId::InputHotkeysRightAlt},
+      {L"5B", L10nId::InputHotkeysLeftWinkey},
+      {L"5C", L10nId::InputHotkeysRightWinkey},
+      {L"A2", L10nId::InputHotkeysLeftCtrl},
+      {L"A3", L10nId::InputHotkeysRightCtrl},
+      {L"A0", L10nId::InputHotkeysLeftShift},
+      {L"A1", L10nId::InputHotkeysRightShift},
       {nullptr, 0},
   };
   static const optlst_t optlst[] = {
@@ -1684,7 +1684,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       for (j = 0; j < std::size(togglekeys) - 1; j++) {
         wchar_t key_name[256];
         lstrcpy_noaccel(key_name, std::size(key_name),
-                        L10NSTR(togglekeys[j].l10nidx));
+                        l10n->Get(togglekeys[j].l10nidx));
         CB_AddString(control, key_name);
         if (!lstrcmpi(txt, togglekeys[j].action)) {
           sel = j;
@@ -1699,31 +1699,31 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
 
       // Update text
       static const dialogstring_t strlst[] = {
-          {IDC_KEYBOARD_BOX, L10NIDX(ConfigTabKeyboard)},
-          {IDC_SCROLLLOCKSTATE, L10NIDX(InputScrollLockState)},
-          {IDC_UNIKEYHOLDMENU, L10NIDX(InputUniKeyHoldMenu)},
-          {IDC_HOTKEYS_BOX, L10NIDX(InputHotkeysBox)},
-          {IDC_MODKEY_H, L10NIDX(InputHotkeysModKey)},
+          {IDC_KEYBOARD_BOX, L10nId::ConfigTabKeyboard},
+          {IDC_SCROLLLOCKSTATE, L10nId::InputScrollLockState},
+          {IDC_UNIKEYHOLDMENU, L10nId::InputUniKeyHoldMenu},
+          {IDC_HOTKEYS_BOX, L10nId::InputHotkeysBox},
+          {IDC_MODKEY_H, L10nId::InputHotkeysModKey},
 
-          {IDC_ALT, L10NIDX(InputHotkeysAlt)},
-          {IDC_SHIFT, L10NIDX(InputHotkeysShift)},
-          {IDC_CONTROL, L10NIDX(InputHotkeysCtrl)},
-          {IDC_WINKEY, L10NIDX(InputHotkeysWinkey)},
-          {IDC_SHORTCUTS_H, L10NIDX(InputHotkeysShortcuts)},
-          {IDC_SHORTCUTS_PICK, L10NIDX(InputHotkeysShortcutsPick)},
-          {IDC_SHORTCUTS_CLEAR, L10NIDX(InputHotkeysShortcutsClear)},
-          {IDC_SHORTCUTS_SET, L10NIDX(InputHotkeysShortcutsSet)},
-          {IDC_USEPTWINDOW, L10NIDX(InputHotkeysUsePtWindow)},
-          {IDC_LEFTALT, L10NIDX(InputHotkeysLeftAlt)},
-          {IDC_RIGHTALT, L10NIDX(InputHotkeysRightAlt)},
-          {IDC_LEFTWINKEY, L10NIDX(InputHotkeysLeftWinkey)},
-          {IDC_RIGHTWINKEY, L10NIDX(InputHotkeysRightWinkey)},
-          {IDC_LEFTCTRL, L10NIDX(InputHotkeysLeftCtrl)},
-          {IDC_RIGHTCTRL, L10NIDX(InputHotkeysRightCtrl)},
-          {IDC_HOTKEYS_MORE, L10NIDX(InputHotkeysMore)},
-          {IDC_KEYCOMBO, L10NIDX(InputKeyCombo)},
-          {IDC_GRABWITHALT_H, L10NIDX(InputGrabWithAlt)},
-          {IDC_GRABWITHALTB_H, L10NIDX(InputGrabWithAltB)}};
+          {IDC_ALT, L10nId::InputHotkeysAlt},
+          {IDC_SHIFT, L10nId::InputHotkeysShift},
+          {IDC_CONTROL, L10nId::InputHotkeysCtrl},
+          {IDC_WINKEY, L10nId::InputHotkeysWinkey},
+          {IDC_SHORTCUTS_H, L10nId::InputHotkeysShortcuts},
+          {IDC_SHORTCUTS_PICK, L10nId::InputHotkeysShortcutsPick},
+          {IDC_SHORTCUTS_CLEAR, L10nId::InputHotkeysShortcutsClear},
+          {IDC_SHORTCUTS_SET, L10nId::InputHotkeysShortcutsSet},
+          {IDC_USEPTWINDOW, L10nId::InputHotkeysUsePtWindow},
+          {IDC_LEFTALT, L10nId::InputHotkeysLeftAlt},
+          {IDC_RIGHTALT, L10nId::InputHotkeysRightAlt},
+          {IDC_LEFTWINKEY, L10nId::InputHotkeysLeftWinkey},
+          {IDC_RIGHTWINKEY, L10nId::InputHotkeysRightWinkey},
+          {IDC_LEFTCTRL, L10nId::InputHotkeysLeftCtrl},
+          {IDC_RIGHTCTRL, L10nId::InputHotkeysRightCtrl},
+          {IDC_HOTKEYS_MORE, L10nId::InputHotkeysMore},
+          {IDC_KEYCOMBO, L10nId::InputKeyCombo},
+          {IDC_GRABWITHALT_H, L10nId::InputGrabWithAlt},
+          {IDC_GRABWITHALTB_H, L10nId::InputGrabWithAltB}};
       UpdateDialogStrings(hwnd, strlst, std::size(strlst));
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
@@ -1796,13 +1796,13 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {
-          {IDC_BLACKLIST_BOX, L10NIDX(BlacklistBox)},
-          {IDC_PROCESSBLACKLIST_HEADER, L10NIDX(BlacklistProcessBlacklist)},
-          {IDC_BLACKLIST_HEADER, L10NIDX(BlacklistBlacklist)},
-          {IDC_SCROLLLIST_HEADER, L10NIDX(BlacklistScrolllist)},
-          {IDC_MDISBL_HEADER, L10NIDX(BlacklistMDIs)},
-          {IDC_PAUSEBL_HEADER, L10NIDX(BlacklistPause)},
-          {IDC_FINDWINDOW_BOX, L10NIDX(BlacklistFindWindowBox)}};
+          {IDC_BLACKLIST_BOX, L10nId::BlacklistBox},
+          {IDC_PROCESSBLACKLIST_HEADER, L10nId::BlacklistProcessBlacklist},
+          {IDC_BLACKLIST_HEADER, L10nId::BlacklistBlacklist},
+          {IDC_SCROLLLIST_HEADER, L10nId::BlacklistScrolllist},
+          {IDC_MDISBL_HEADER, L10nId::BlacklistMDIs},
+          {IDC_PAUSEBL_HEADER, L10nId::BlacklistPause},
+          {IDC_FINDWINDOW_BOX, L10nId::BlacklistFindWindowBox}};
       UpdateDialogStrings(hwnd, strlst, std::size(strlst));
       for (const auto& i : optlst)
         CreateInfoTip(hwnd, i.idc, l10n->BlacklistFormat);
@@ -2436,29 +2436,29 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {
-          {IDC_METRICS_BOX, L10NIDX(AdvancedMetricsBox)},
-          {IDC_CENTERFRACTION_H, L10NIDX(AdvancedCenterFraction)},
-          {IDC_AEROHOFFSET_H, L10NIDX(AdvancedAeroHoffset)},
-          {IDC_AEROVOFFSET_H, L10NIDX(AdvancedAeroVoffset)},
-          {IDC_SNAPTHRESHOLD_H, L10NIDX(AdvancedSnapThreshold)},
-          {IDC_AEROTHRESHOLD_H, L10NIDX(AdvancedAeroThreshold)},
-          {IDC_SNAPGAP_H, L10NIDX(AdvancedSnapGap)},
-          {IDC_AEROSPEED_H, L10NIDX(AdvancedAeroSpeed)},
-          {IDC_MOVETRANS_H, L10NIDX(AdvancedMoveTrans)},
-          {IDC_TESTWINDOW, L10NIDX(AdvancedTestWindow)},
+          {IDC_METRICS_BOX, L10nId::AdvancedMetricsBox},
+          {IDC_CENTERFRACTION_H, L10nId::AdvancedCenterFraction},
+          {IDC_AEROHOFFSET_H, L10nId::AdvancedAeroHoffset},
+          {IDC_AEROVOFFSET_H, L10nId::AdvancedAeroVoffset},
+          {IDC_SNAPTHRESHOLD_H, L10nId::AdvancedSnapThreshold},
+          {IDC_AEROTHRESHOLD_H, L10nId::AdvancedAeroThreshold},
+          {IDC_SNAPGAP_H, L10nId::AdvancedSnapGap},
+          {IDC_AEROSPEED_H, L10nId::AdvancedAeroSpeed},
+          {IDC_MOVETRANS_H, L10nId::AdvancedMoveTrans},
+          {IDC_TESTWINDOW, L10nId::AdvancedTestWindow},
 
-          {IDC_BEHAVIOR_BOX, L10NIDX(AdvancedBehaviorBox)},
-          {IDC_MULTIPLEINSTANCES, L10NIDX(AdvancedMultipleInstances)},
-          {IDC_AUTOREMAXIMIZE, L10NIDX(AdvancedAutoRemaximize)},
-          {IDC_AEROTOPMAXIMIZES, L10NIDX(AdvancedAeroTopMaximizes)},
-          {IDC_AERODBCLICKSHIFT, L10NIDX(AdvancedAeroDBClickShift)},
-          {IDC_MAXWITHLCLICK, L10NIDX(AdvancedMaxWithLClick)},
-          {IDC_RESTOREONCLICK, L10NIDX(AdvancedRestoreOnClick)},
-          {IDC_FULLSCREEN, L10NIDX(AdvancedFullScreen)},
-          {IDC_BLMAXIMIZED, L10NIDX(AdvancedBLMaximized)},
-          {IDC_FANCYZONE, L10NIDX(AdvancedFancyZone)},
-          {IDC_NORESTORE, L10NIDX(AdvancedNoRestore)},
-          {IDC_TOPMOSTINDICATOR, L10NIDX(AdvancedTopmostIndicator)},
+          {IDC_BEHAVIOR_BOX, L10nId::AdvancedBehaviorBox},
+          {IDC_MULTIPLEINSTANCES, L10nId::AdvancedMultipleInstances},
+          {IDC_AUTOREMAXIMIZE, L10nId::AdvancedAutoRemaximize},
+          {IDC_AEROTOPMAXIMIZES, L10nId::AdvancedAeroTopMaximizes},
+          {IDC_AERODBCLICKSHIFT, L10nId::AdvancedAeroDBClickShift},
+          {IDC_MAXWITHLCLICK, L10nId::AdvancedMaxWithLClick},
+          {IDC_RESTOREONCLICK, L10nId::AdvancedRestoreOnClick},
+          {IDC_FULLSCREEN, L10nId::AdvancedFullScreen},
+          {IDC_BLMAXIMIZED, L10nId::AdvancedBLMaximized},
+          {IDC_FANCYZONE, L10nId::AdvancedFancyZone},
+          {IDC_NORESTORE, L10nId::AdvancedNoRestore},
+          {IDC_TOPMOSTINDICATOR, L10nId::AdvancedTopmostIndicator},
       };
       UpdateDialogStrings(hwnd, strlst, std::size(strlst));
 

@@ -11,6 +11,7 @@
 #include "altsnap.h"
 #include "config.h"
 #include "hooks.h"
+#include "ini_section.h"
 #include "tray.h"
 
 // Definitions of the tables declared in languages.h.
@@ -26,12 +27,11 @@ const struct strings en_US = {LANGUAGE_MAP};
 
 // Strings of the currently loaded translation file. `l10n_ini_strings` holds
 // pointers into `l10n_storage`, which owns the characters (one slot per
-// struct member; the slots are never moved after construction).
-static std::array<std::wstring, sizeof(struct strings) / sizeof(const wchar_t*)>
-    l10n_storage;
-static struct strings l10n_ini_strings = {};
-static struct strings* l10n_ini = nullptr;  // &l10n_ini_strings once loaded.
-const struct strings* l10n = &en_US;
+// string, in L10nId order; the slots are never moved after construction).
+static std::array<std::wstring, std::size(kL10nMembers)> l10n_storage;
+static strings l10n_ini_strings = {};
+static strings* l10n_ini = nullptr;  // &l10n_ini_strings once loaded.
+const strings* l10n = &en_US;
 
 /////////////////////////////////////////////////////////////////////////////
 // Copies and remove the accelerators & sign. and txt between ( ).
@@ -52,19 +52,6 @@ size_t lstrcpy_noaccel(wchar_t* dest, size_t destlen, const wchar_t* source) {
   dest[j] = '\0';
   return j;
 }
-/////////////////////////////////////////////////////////////////////////////
-[[nodiscard]] static size_t lstrlen_resolved(const wchar_t* str) {
-  // Return the length of str, having resolved escape sequences
-  const wchar_t* ptr = nullptr;
-  int num_escape_sequences = 0;
-  for (ptr = str; *ptr != '\0'; ptr++) {
-    if (*ptr == '\\' && *(ptr + 1) != '\0') {
-      ptr++;
-      num_escape_sequences++;
-    }
-  }
-  return ptr - str - num_escape_sequences;
-}
 
 static void lstrcpy_resolve(wchar_t* dest, size_t dstlen,
                             const wchar_t* source) {
@@ -80,63 +67,38 @@ static void lstrcpy_resolve(wchar_t* dest, size_t dstlen,
   *dest = '\0';
 }
 
-static void lstrcpy_encode(wchar_t* dst, size_t dstlen, const wchar_t* src) {
-  // Copy from source to dest, encoding '\n' to '\' 'n'
-  for (; --dstlen && *src != '\0'; src++, dst++) {
-    if (dstlen && *src == '\n') {
-      *dst++ = '\\';
-      *dst = 'n';
-      --dstlen;
-    } else {
-      *dst = *src;
-    }
-  }
-  *dst = '\0';
-}
 /////////////////////////////////////////////////////////////////////////////
 //
+// Loads the strings (offset 0, [Translation]) or the tooltips (offset 1,
+// [ToolTips]) of a translation file; strings it lacks stay English.
 static void LoadTranslationOrTT(const wchar_t* ini, const wchar_t* section_name,
                                 int offset) {
-  // if english is not seleced then we have to allocate l10_ini strings struct
-  // and we have to read the ini file...
-  // RGTICTAC tt; RGTic(&tt);
-  const std::vector<wchar_t> section = ReadIniSection(section_name, ini, 32768);
-  if (section.empty() || !section[0]) return;
-  const wchar_t* const tsection = section.data();
+  const IniSection section = IniSection::Read(ini, section_name);
+  if (section.lines().empty()) return;
 
   if (!l10n_ini) l10n_ini = &l10n_ini_strings;
 
-  wchar_t const* ini_map[std::size(l10n_inimapping)];
-  RGIniMapSection(tsection, ini_map, l10n_inimapping,
-                  std::size(l10n_inimapping));
-
   for (size_t i = 0; i < std::size(l10n_inimapping); i++) {
-    // Get pointer to default English string to be used if ini entry doesn't
-    // exist
-    const wchar_t* const def_val =
-        (reinterpret_cast<const wchar_t* const*>(&en_US))[i * 2 + offset];
-    const wchar_t* txt = ini_map[i] ? ini_map[i] : def_val;
-    if (!txt) continue;  // default value may be NULL...
-
-    wchar_t buf[128];
     const size_t slot = i * 2 + offset;
-    const wchar_t** deststr =
-        &reinterpret_cast<const wchar_t**>(l10n_ini)[slot];
-    if (deststr == reinterpret_cast<const wchar_t**>(&l10n_ini->AboutVersion)) {
-      // Append version number to version....
-      lstrcpy_s(buf, std::size(buf), txt);
-      lstrcat_s(buf, std::size(buf), L" " APP_VERSION);
-      txt = static_cast<const wchar_t*>(buf);
+    // The English string is used if the ini entry does not exist.
+    const wchar_t* txt = section.GetString(l10n_inimapping[i],
+                                           en_US.Get(static_cast<short>(slot)));
+    if (!txt) continue;  // The English tooltip may be null.
+
+    wchar_t with_version[128];
+    if (slot == L10nId::AboutVersion) {
+      // Append the version number to the about text.
+      lstrcpy_s(with_version, std::size(with_version), txt);
+      lstrcat_s(with_version, std::size(with_version), L" " APP_VERSION);
+      txt = with_version;
     }
-    const size_t destlen = lstrlen(txt) + 1;
     std::wstring& owned = l10n_storage[slot];
-    owned.assign(destlen, L'\0');
-    lstrcpy_resolve(owned.data(), destlen, txt);
+    owned.assign(lstrlen(txt) + 1, L'\0');
+    lstrcpy_resolve(owned.data(), owned.size(), txt);
     owned.resize(lstrlen(owned.c_str()));
-    *deststr = owned.c_str();
+    (l10n_ini->*kL10nMembers[slot]) = owned.c_str();
   }
   l10n = l10n_ini;
-  // LOGA("LoadTranslationOrTT in %u us", (unsigned)RGTac(&tt));
 }
 
 void LoadTranslation(const wchar_t* ini) {
@@ -175,50 +137,18 @@ void ListAllTranslations() {
   do {
     const std::wstring path = directory + ffd.cFileName;
 
-    // Preload the start of the Translation section.
-    wchar_t tsection[512];
-    if (!GetPrivateProfileSection(L"Translation", tsection, std::size(tsection),
-                                  path.c_str())) {
-      continue;
-    }
+    const IniSection translation =
+        IniSection::Read(path.c_str(), L"Translation");
+    if (translation.lines().empty()) continue;
     langinfoitem item;
-    item.code = GetSectionOptionCStr(tsection, "Code", L"");
-    item.lang_english = GetSectionOptionCStr(tsection, "LangEnglish", L"");
-    item.lang = GetSectionOptionCStr(tsection, "Lang", L"");
-    item.author = GetSectionOptionCStr(tsection, "Author", L"");
+    item.code = translation.GetString("Code", L"");
+    item.lang_english = translation.GetString("LangEnglish", L"");
+    item.lang = translation.GetString("Lang", L"");
+    item.author = translation.GetString("Author", L"");
     item.fn = path;
     langinfo.push_back(std::move(item));
   } while (FindNextFile(hFind, &ffd));
   FindClose(hFind);
-}
-
-static void Generate_en_US_base_txt() {
-  HANDLE h = CreateFileA("en_US.txt", GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (h == INVALID_HANDLE_VALUE) return;
-
-  DWORD dummy = 0;
-  wchar_t key[100], val[1000];
-  wchar_t const* const* const def_strings =
-      (reinterpret_cast<wchar_t const* const*>(&en_US));
-  WriteFile(h, "\xFF\xFE", 2, &dummy, nullptr);  // UTF-16 LE BOM
-  WriteFile(h, L"; Base AltSnap Translation\r\n[Translation]\r\n",
-            43 * sizeof(wchar_t), &dummy, nullptr);
-
-  for (size_t i = 0; i < std::size(l10n_inimapping); i++) {
-    wchar_t* k = key;
-    const char* p = l10n_inimapping[i];
-    while ((*k++ = *p++));
-
-    const wchar_t* vv = def_strings[i * 2];
-    lstrcpy_encode(val, std::size(val), vv);
-
-    WriteFile(h, key, lstrlen(key) * sizeof(wchar_t), &dummy, nullptr);
-    WriteFile(h, L"=", sizeof(wchar_t), &dummy, nullptr);
-    WriteFile(h, val, lstrlen(val) * sizeof(wchar_t), &dummy, nullptr);
-    WriteFile(h, L"\r\n", 2 * sizeof(wchar_t), &dummy, nullptr);
-  }
-  CloseHandle(h);
 }
 
 #ifdef UNICODE

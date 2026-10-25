@@ -101,6 +101,10 @@ set(ALTSNAP_LINK_FLAGS
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
     hooks.cc
+    blacklist.cc
+    blacklist.h
+    ini_section.cc
+    ini_section.h
     snap.cc
     zones.cc
     hooks.h
@@ -109,7 +113,7 @@ add_library(hooks SHARED
     zones.h
 )
 altsnap_add_rc(hooks hooks.rc)
-target_sources(hooks PRIVATE unfuck.h strutil.h)
+target_sources(hooks PRIVATE winutil.h strutil.h)
 
 set_target_properties(hooks PROPERTIES
     PREFIX ""
@@ -129,6 +133,8 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     altsnap.cc
+    ini_section.cc
+    ini_section.h
     config.cc
     languages.cc
     tray.cc
@@ -152,7 +158,7 @@ set_source_files_properties(
     window.rc AltSnap.exe.manifest resource.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
 target_sources(AltSnap PRIVATE
-    unfuck.h strutil.h
+    winutil.h strutil.h
     window.rc AltSnap.exe.manifest resource.h)
 
 set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")
@@ -200,3 +206,17 @@ add_custom_target(stage ALL
         ${CMAKE_SOURCE_DIR}/Themes ${ALTSNAP_STAGE_DIR}/Themes
 )
 add_dependencies(stage AltSnap hooks)
+
+# --- Unit tests ---------------------------------------------------------------
+# cmake -DALTSNAP_BUILD_TESTS=ON ... && cmake --build build && ctest --test-dir build
+# When cross-compiling (e.g. llvm-mingw on Linux) set CMAKE_CROSSCOMPILING_EMULATOR
+# to wine64 to run them.
+option(ALTSNAP_BUILD_TESTS "Build the unit tests" OFF)
+if(ALTSNAP_BUILD_TESTS)
+  enable_testing()
+  add_executable(unit_tests tests/unit_tests.cc ini_section.cc blacklist.cc)
+  target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(unit_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  add_test(NAME unit_tests COMMAND unit_tests)
+endif()

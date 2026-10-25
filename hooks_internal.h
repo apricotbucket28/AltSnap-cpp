@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "hooks.h"
+#include "ini_section.h"
 
 // Timer messages
 enum {
@@ -365,7 +366,10 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h);
 void SetOriginFromRestoreData(HWND hwnd, action_t action);
 VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                               DWORD dwTime);
-unsigned readhotkeys(const wchar_t* inisection, const char* name,
-                     const wchar_t* def, UCHAR* keys, unsigned MaxKeys);
+unsigned ReadHotkeys(const IniSection& section, const char* name,
+                     const wchar_t* def, UCHAR* keys, unsigned max_keys);
+// Reads `count` hex bytes ("RR GG BB") as a packed little-endian COLORREF.
+uint32_t ReadColor(const IniSection& section, const char* key,
+                   const wchar_t* def, unsigned count);
 
 #endif  // ALTSNAP_HOOKS_INTERNAL_H_

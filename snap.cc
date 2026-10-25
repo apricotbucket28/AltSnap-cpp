@@ -193,29 +193,6 @@ LONG_PTR ClearBorderlessFlag(HWND hwnd) {
   return reinterpret_cast<LONG_PTR>(RemoveProp(hwnd, APP_PRBDLESS));
 }
 
-static void SetSquareCorners(HWND hwnd) {
-  int cornerPref = kDwmwcpDefault;
-  HRESULT ok = DwmGetWindowAttribute(hwnd, kDwmaWindowCornerPreference,
-                                     &cornerPref, sizeof(cornerPref));
-  if (SUCCEEDED(ok)) {  // DwmGetWindowAttribute() returns S_OK (0) on success.
-    SetProp(hwnd, APP_OWDMCP,
-            reinterpret_cast<HANDLE>(
-                static_cast<UINT_PTR>(cornerPref + 1)));  // Do not store Zero.
-    cornerPref = kDwmwcpDoNotRound;
-    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &cornerPref,
-                          sizeof(cornerPref));
-  }
-}
-static void RestoreOldCorners(HWND hwnd) {
-  int cp =
-      static_cast<int>(reinterpret_cast<UINT_PTR>(GetProp(hwnd, APP_OWDMCP)));
-  RemoveProp(hwnd, APP_OWDMCP);
-  if (cp) {
-    cp--;
-    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &cp, sizeof(cp));
-  }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 //// Roll unroll stuff
 // static int GetRolledHeight(HWND hwnd)
