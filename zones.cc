@@ -10,41 +10,32 @@ static void MouseMove(POINT pt);
 static void ShowSnapLayoutPreview(unsigned char yep);
 
 enum { MAX_ZONES = 2048, MAX_LAYOUTS = 10 };
-#define INVALID_ZONE_IDX 0xffffffffU
+enum { INVALID_ZONE_IDX = 0xffffffffU };
 
-typedef struct RectList {
-  RECT* it;
-  size_t num;
-  size_t cap;
-} RECTs_t;
-
-static RECTs_t Zones[MAX_LAYOUTS] = {};
+static std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
 static DWORD Grids[MAX_LAYOUTS] = {};
 
 enum { ZONES_PREV_HIDE = 0, ZONES_PREV_SHOW = 1 };
 
 static void freezones() {
-  for (size_t i = 0; i < ARR_SZ(Zones); i++) {
-    ListFree(&Zones[i]);
-  }
-  mem00(Zones, sizeof(Zones));
+  for (auto& layout : Zones) layout = {};  // Also releases the memory.
 }
 
 static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
                            const TCHAR* inisection) {
   if (idx > MAX_ZONES) return 0;
 
-  long* ZONE = (long*)zone;
+  long* ZONE = reinterpret_cast<long*>(zone);
   char zname[32];
   zname[0] = '\0';
   TCHAR zaschii[128];
 
-  LPCTSTR txt = GetSectionOptionCStr(inisection,
-                                     ZidxToZonestrA(laynum, idx, zname), NULL);
+  LPCTSTR txt = GetSectionOptionCStr(
+      inisection, ZidxToZonestrA(laynum, idx, zname), nullptr);
   if (!txt || !txt[0]) return 0;
-  // LOGA("Zone(%u, %u) = %S", laynum, idx, txt);
+  // LOGA("Zone(%u, %u) = %ls", laynum, idx, txt);
   //  Copy to modifyable buffer.
-  lstrcpy_s(zaschii, ARR_SZ(zaschii), txt);
+  lstrcpy_s(zaschii, std::size(zaschii), txt);
   TCHAR *oldptr, *newptr;
   oldptr = &zaschii[0];
   for (size_t i = 0; i < 4; i++) {
@@ -59,38 +50,37 @@ static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
   return 1;
 }
 static void ReadZonesFromLayout(const TCHAR* inisection, unsigned laynum) {
-  mem00(&Zones[laynum], sizeof(Zones[laynum]));
+  Zones[laynum].clear();
   RECT tmpzone;
-  while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].num, inisection)) {
-    ListAppend(&Zones[laynum], &tmpzone, sizeof(tmpzone));
+  while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].size(), inisection)) {
+    Zones[laynum].push_back(tmpzone);
   }
 }
 // Load all zones from ini file
 static void ReadZones(const TCHAR* inisection) {
-  for (size_t i = 0; i < ARR_SZ(Zones); i++) ReadZonesFromLayout(inisection, i);
+  for (size_t i = 0; i < std::size(Zones); i++)
+    ReadZonesFromLayout(inisection, i);
 }
 
 // Generate a grid if asked
 static void GenerateGridZones(unsigned layout, unsigned short Nx,
                               unsigned short Ny) {
   // Enumerate monitors
-  monitors.num = 0;
-  EnumDisplayMonitors(NULL, NULL, EnumMonitorsProc, 0);
-  Zones[layout].num = 0;
-  // ListSetCap(&Zones[layout], monitors.num * Nx * Ny,
-  // sizeof(*Zones[layout].it));
+  monitors.clear();
+  EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsProc, 0);
+  Zones[layout].clear();
+  Zones[layout].reserve(monitors.size() * Nx * Ny);
 
   // Loop on all monitors
-  for (size_t m = 0; m < monitors.num; m++) {
-    const RECT* mon = &monitors.it[m];
+  for (size_t m = 0; m < monitors.size(); m++) {
+    const RECT* mon = &monitors[m];
     for (size_t i = 0; i < Nx; i++) {    // Horizontal
       for (size_t j = 0; j < Ny; j++) {  // Vertical
-        RECT* elem = (RECT*)ListAppend(&Zones[layout], NULL, sizeof(*elem));
-        if (!elem) return;
-        elem->left = mon->left + ((i) * (mon->right - mon->left)) / Nx;
-        elem->top = mon->top + ((j) * (mon->bottom - mon->top)) / Ny;
-        elem->right = mon->left + ((i + 1) * (mon->right - mon->left)) / Nx;
-        elem->bottom = mon->top + ((j + 1) * (mon->bottom - mon->top)) / Ny;
+        RECT& elem = Zones[layout].emplace_back();
+        elem.left = mon->left + ((i) * (mon->right - mon->left)) / Nx;
+        elem.top = mon->top + ((j) * (mon->bottom - mon->top)) / Ny;
+        elem.right = mon->left + ((i + 1) * (mon->right - mon->left)) / Nx;
+        elem.bottom = mon->top + ((j + 1) * (mon->bottom - mon->top)) / Ny;
       }
     }
   }
@@ -98,11 +88,11 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
 static void ReadGrids(const TCHAR* inisection) {
   char gnamex[8];
   char gnamey[8];
-  lstrcpy_sA(gnamex, ARR_SZ(gnamex), "GridNx");
-  lstrcpy_sA(gnamey, ARR_SZ(gnamex), "GridNy");
+  lstrcpy_s(gnamex, std::size(gnamex), "GridNx");
+  lstrcpy_s(gnamey, std::size(gnamex), "GridNy");
   gnamex[7] = '\0';
   gnamey[7] = '\0';
-  for (size_t i = 0; i < ARR_SZ(Grids); i++) {
+  for (size_t i = 0; i < std::size(Grids); i++) {
     Grids[i] = 0;
     unsigned short GridNx = GetSectionOptionInt(inisection, gnamex, 0);
     unsigned short GridNy = GetSectionOptionInt(inisection, gnamey, 0);
@@ -118,28 +108,29 @@ static void ReadGrids(const TCHAR* inisection) {
 // Recalculate the zones from the Grid info.
 // Needed in case resolution changes.
 static void RecalculateZonesFromGrids() {
-  for (size_t i = 0; i < ARR_SZ(Grids); i++) {
+  for (size_t i = 0; i < std::size(Grids); i++) {
     unsigned short GridNx = LOWORD(Grids[i]);
     unsigned short GridNy = HIWORD(Grids[i]);
     if (GridNx && GridNy) GenerateGridZones(i, GridNx, GridNy);
   }
 }
 
-static xpure unsigned long PtDist2(POINT pt, POINT Zpt) {
+[[nodiscard]] static unsigned long PtDist2(POINT pt, POINT Zpt) {
   long dx = (pt.x - Zpt.x) >> 1;
   long dy = (pt.y - Zpt.y) >> 1;
 
   return dx * dx + dy * dy;
 }
 
-static xpure unsigned long ClacPtRectDist(const POINT pt, const RECT* zone) {
+[[nodiscard]] static unsigned long ClacPtRectDist(const POINT pt,
+                                                  const RECT* zone) {
   POINT Zpt = {(zone->left + zone->right) / 2, (zone->top + zone->bottom) / 2};
   return PtDist2(pt, Zpt);
 }
 
 static unsigned GetNearestZoneDist(POINT pt, unsigned long* dist_) {
-  RECT* const lZones = Zones[conf.LayoutNumber].it;
-  size_t numzones = Zones[conf.LayoutNumber].num;
+  RECT* const lZones = Zones[conf.LayoutNumber].data();
+  size_t numzones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
   unsigned long dist = 0xffffffff;
   unsigned idx = 0;
@@ -155,8 +146,8 @@ static unsigned GetNearestZoneDist(POINT pt, unsigned long* dist_) {
 }
 
 static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
-  RECT* const lZones = Zones[conf.LayoutNumber].it;
-  size_t numzones = Zones[conf.LayoutNumber].num;
+  RECT* const lZones = Zones[conf.LayoutNumber].data();
+  size_t numzones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
   unsigned i, ret = 0;
   SetRectEmpty(urc);
@@ -184,8 +175,8 @@ static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
 }
 
 static unsigned GetZoneContainingPoint(POINT pt, RECT* urc, int extend) {
-  RECT* const lZones = Zones[conf.LayoutNumber].it;
-  size_t numzones = Zones[conf.LayoutNumber].num;
+  RECT* const lZones = Zones[conf.LayoutNumber].data();
+  size_t numzones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
   unsigned i, ret = 0;
   SetRectEmpty(urc);
@@ -216,7 +207,7 @@ static unsigned GetZoneFromPoint(POINT pt, RECT* urc, int extend) {
   // Invalid Snap mode!
   return 0;
 }
-static int pure IsResizable(HWND hwnd);
+[[nodiscard]] static int IsResizable(HWND hwnd);
 
 static void ActionToggleSnapToZoneMode() {
   if (conf.UseZones & 1 && state.action.ac == AC_MOVE) {
@@ -262,7 +253,7 @@ static void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width,
   *height = rc.bottom - rc.top;
 }
 
-static xpure int IsPtInCone(POINT pt, POINT op, UCHAR direction) {
+[[nodiscard]] static int IsPtInCone(POINT pt, POINT op, UCHAR direction) {
   const long dx = pt.x - op.x, dy = pt.y - op.y;
   switch (direction) {
     case 0:  // LEFT
@@ -282,8 +273,8 @@ static xpure int IsPtInCone(POINT pt, POINT op, UCHAR direction) {
 static unsigned GetNearestZoneFromPointInDirection(const RECT* rc, RECT* out,
                                                    UCHAR direction) {
   unsigned idx = INVALID_ZONE_IDX;
-  RECT* const lZones = Zones[conf.LayoutNumber].it;
-  size_t nZones = Zones[conf.LayoutNumber].num;
+  RECT* const lZones = Zones[conf.LayoutNumber].data();
+  size_t nZones = Zones[conf.LayoutNumber].size();
   if (!lZones) return 0;
 
   POINT opt = {(rc->left + rc->right) / 2, (rc->top + rc->bottom) / 2};
@@ -394,14 +385,14 @@ static void UnionMultiRect(RECT* urc, const RECT* rcs, unsigned N) {
     urc->bottom = std::max(urc->bottom, rcs->bottom);
   }
 }
-static pure DWORD GetLayoutRez(int laynum) {
-  laynum = CLAMP(0, laynum, ARR_SZ(Zones) - 1);
+[[nodiscard]] static DWORD GetLayoutRez(int laynum) {
+  laynum = CLAMP(0, laynum, std::size(Zones) - 1);
   if (conf.UseZones & 2) {
     // In Grid mode we return the grid dimentions!
     return Grids[laynum];
   }
-  size_t nz = Zones[laynum].num;
-  const RECT* zone = Zones[laynum].it;
+  size_t nz = Zones[laynum].size();
+  const RECT* zone = Zones[laynum].data();
   if (!zone || !nz) return 0;
   RECT urc;
   UnionMultiRect(&urc, zone, nz);
@@ -411,10 +402,10 @@ static pure DWORD GetLayoutRez(int laynum) {
 // the work area of every monitors.
 static DWORD GetFullMonitorsRez() {
   // Enumerate monitors
-  EnumDisplayMonitors(NULL, NULL, EnumMonitorsProc, 0);
-  if (!monitors.it || !monitors.num) return 0;  // ERROR! do nothing
+  EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsProc, 0);
+  if (monitors.empty()) return 0;  // ERROR! do nothing
   RECT urc;
-  UnionMultiRect(&urc, monitors.it, monitors.num);
+  UnionMultiRect(&urc, monitors.data(), static_cast<unsigned>(monitors.size()));
 
   // Return dimentions width:height
   return (urc.right - urc.left) | (urc.bottom - urc.top) << 16;
@@ -440,7 +431,7 @@ static int GetBestLayoutFromMonitors() {
 
   // Check if the current Layout is good for the current monitor
   DWORD monRZ;
-  if (monitors.num <= 1) {
+  if (monitors.size() <= 1) {
     RECT mrc;
     SystemParametersInfo(SPI_GETWORKAREA, 0, &mrc, 0);
     monRZ = (mrc.right - mrc.left) | (mrc.bottom - mrc.top) << 16;
@@ -455,7 +446,7 @@ static int GetBestLayoutFromMonitors() {
     return -1;  // Current layout is good!
   }
 
-  for (size_t i = 0; i < ARR_SZ(Zones); i++) {
+  for (size_t i = 0; i < std::size(Zones); i++) {
     DWORD rez = GetLayoutRez(i);
     if (rez == monRZ) return i;
   }
@@ -463,14 +454,14 @@ static int GetBestLayoutFromMonitors() {
   return -1;
 }
 
-static HWND g_zphwnd = NULL;
+static HWND g_zphwnd = nullptr;
 COLORREF g_ZPrevBDCol = RGB(0, 0, 0);
 LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  static HPEN pen = NULL;
+  static HPEN pen = nullptr;
 
   switch (msg) {
     case WM_CREATE: {
-      pen = (HPEN)CreatePen(PS_INSIDEFRAME, 4, g_ZPrevBDCol);
+      pen = CreatePen(PS_INSIDEFRAME, 4, g_ZPrevBDCol);
     } break;
 
     case WM_PAINT: {
@@ -485,13 +476,13 @@ LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       POINT opt = {0, 0};
       ScreenToClient(hwnd, &opt);
       BeginPaint(hwnd, &ps);
-      HPEN oldpen = (HPEN)SelectObject(ps.hdc, pen);
+      HPEN oldpen = static_cast<HPEN>(SelectObject(ps.hdc, pen));
       //        HFONT oldfont = (HFONT)SelectObject(ps.hdc, font);
       // PaintDesktop(ps.hdc);
-      HBRUSH oldBrush =
-          (HBRUSH)SelectObject(ps.hdc, GetStockObject(HOLLOW_BRUSH));
-      for (size_t i = 0; i < Zones[conf.LayoutNumber].num; i++) {
-        RECT* rc = &Zones[conf.LayoutNumber].it[i];
+      HBRUSH oldBrush = static_cast<HBRUSH>(
+          SelectObject(ps.hdc, GetStockObject(HOLLOW_BRUSH)));
+      for (size_t i = 0; i < Zones[conf.LayoutNumber].size(); i++) {
+        RECT* rc = &Zones[conf.LayoutNumber][i];
         if (!AreRectsTouchingT(rc, &ps.rcPaint, 0)) {
           //                TCHAR buf[16]; SIZE sz;
           //                const TCHAR *num = Int2lStr(buf, i);
@@ -545,9 +536,9 @@ static void ZonesPrevResetRegion() {
   GetWindowRect(g_zphwnd, &wrc);
   ScreenToClient(g_zphwnd, &opt);
   HRGN hregion = CreateRectRgn(0, 0, 0, 0);
-  for (size_t i = 0; i < Zones[conf.LayoutNumber].num; i++) {
+  for (size_t i = 0; i < Zones[conf.LayoutNumber].size(); i++) {
     RECT rc;
-    CopyRect(&rc, &Zones[conf.LayoutNumber].it[i]);
+    CopyRect(&rc, &Zones[conf.LayoutNumber][i]);
     OffsetRect(&rc, opt.x, opt.y);
     HRGN tmpr =
         CreateRectRgn(rc.left, rc.top, rc.right, rc.top + 4);  // top  ^^^^
@@ -576,9 +567,9 @@ static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
   if (inisection) {
     int bgcol[2], bdcol[2];
     readhotkeys(inisection, "ZonesPrevwBGCol", TEXT("FF FF FF"),
-                (UCHAR*)&bgcol[0], 3);
+                reinterpret_cast<UCHAR*>(&bgcol[0]), 3);
     readhotkeys(inisection, "ZonesPrevwBDCol", TEXT("00 00 00"),
-                (UCHAR*)&bdcol[0], 3);
+                reinterpret_cast<UCHAR*>(&bdcol[0]), 3);
     g_ZPrevBDCol = bdcol[0];
     const UCHAR opacity = conf.ZonesPrevwOpacity;
     const UCHAR usetrans = opacity != 0 && opacity != 255;
@@ -586,8 +577,8 @@ static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
     const HBRUSH wbrush =
         opacity == 0 ? CreateSolidBrush(bdcol[0]) : CreateSolidBrush(bgcol[0]);
     const WNDCLASS wnd = {
-        0,    wproc, 0,      0,    hinstDLL,
-        NULL, NULL,  wbrush, NULL, APP_NAME TEXT("-ZonesPreview")};
+        0,       wproc,   0,      0,       hinstDLL,
+        nullptr, nullptr, wbrush, nullptr, APP_NAME TEXT("-ZonesPreview")};
     RegisterClass(&wnd);
 
     int left = 0, top = 0, width, height;
@@ -602,10 +593,10 @@ static void SnapLayoutPreviewCreateDestroy(const TCHAR* inisection) {
     }
     g_zphwnd = CreateWindowEx(
         usetrans ? WS_EX_TOOLWINDOW | WS_EX_LAYERED : WS_EX_TOOLWINDOW,
-        wnd.lpszClassName, NULL, WS_POPUP, left, top, width, height, g_mainhwnd,
-        NULL, hinstDLL, NULL);
+        wnd.lpszClassName, nullptr, WS_POPUP, left, top, width, height,
+        g_mainhwnd, nullptr, hinstDLL, nullptr);
     SetWindowLevel(g_zphwnd, state.hwnd);  // Behind
-    if (usetrans) SetLayeredWindowAttributesL(g_zphwnd, 0, opacity, LWA_ALPHA);
+    if (usetrans) SetLayeredWindowAttributes(g_zphwnd, 0, opacity, LWA_ALPHA);
 
     // Set Window Region to only show outlines if needed...
     ZonesPrevResetRegion();
@@ -628,7 +619,7 @@ static void SetLayoutNumber(WPARAM number) {
     ShowSnapLayoutPreview(1);
     UINT id =
         SetTimer(g_mainhwnd, HIDELAYOUT_TIMER, conf.ShowZonesOnChange * 100,
-                 (TIMERPROC)TimerWindowProc);
+                 static_cast<TIMERPROC>(TimerWindowProc));
     state.forcelayoutdisplay = !!id;
   }
 }

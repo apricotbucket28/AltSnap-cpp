@@ -1,40 +1,28 @@
 #ifndef ALTDRAG_RPC_H
 #define ALTDRAG_RPC_H
 
-// #define UNICODE
-// #define _UNICODE
-#ifndef _WIN32_WINN
-#define _WIN32_WINNT 0x0600
-#define WINVER 0x0600
-#endif
 #include <windows.h>
 
 #include "unfuck.h"
 
-#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600 || \
-    defined(__MINGW32__) &&                            \
-        (!defined(__MINGW64_VERSION_MAJOR) || __MINGW64_VERSION_MAJOR < 2)
-// Old version of MINGW64 header or MINGW32 only!
-// Unable to use endpointvolume.h !
-#define NO_OLEAPI
-#endif
-
 // MainWindow commands
-#define CMD_TOGGLE (401)
-#define CMD_HIDE (402)
-#define CMD_ELEVATE (403)
-#define CMD_CONFIG (404)
-#define CMD_ABOUT (405)
-#define CMD_EXIT (406)
-#define CMD_FIND (407)
-#define CMD_HELP (408)
-#define CMD_SAVEZONES (409)
-#define CMD_TESTWIN (410)
-#define CMD_OPENINIFILE (411)
-#define CMD_SNAPLAYOUT (412)
-#define CMD_SNAPLAYOUTEND (422)
-#define CMD_EDITLAYOUT (430)
-#define CMD_CLOSEZONES (431)
+enum {
+  CMD_TOGGLE = (401),
+  CMD_HIDE = (402),
+  CMD_ELEVATE = (403),
+  CMD_CONFIG = (404),
+  CMD_ABOUT = (405),
+  CMD_EXIT = (406),
+  CMD_FIND = (407),
+  CMD_HELP = (408),
+  CMD_SAVEZONES = (409),
+  CMD_TESTWIN = (410),
+  CMD_OPENINIFILE = (411),
+  CMD_SNAPLAYOUT = (412),
+  CMD_SNAPLAYOUTEND = (422),
+  CMD_EDITLAYOUT = (430),
+  CMD_CLOSEZONES = (431)
+};
 
 #ifndef LOW_LEVEL_KB_PROC
 #ifndef DECORATED_HOOKS_DLL_PROCS
@@ -49,13 +37,15 @@
 #endif
 
 // Extra messages for Action Menu
-#define LP_CURSORPOS (1 << 0)
-#define LP_TOPMOST (1 << 1)
-#define LP_BORDERLESS (1 << 2)
-#define LP_MAXIMIZED (1 << 3)
-#define LP_ROLLED (1 << 4)
-#define LP_MOVEONOFF (1 << 5)
-#define LP_NOALTACTION (1 << 6)
+enum {
+  LP_CURSORPOS = (1 << 0),
+  LP_TOPMOST = (1 << 1),
+  LP_BORDERLESS = (1 << 2),
+  LP_MAXIMIZED = (1 << 3),
+  LP_ROLLED = (1 << 4),
+  LP_MOVEONOFF = (1 << 5),
+  LP_NOALTACTION = (1 << 6)
+};
 
 // App
 #define APP_NAME TEXT("AltSnap")
@@ -156,11 +146,12 @@
 enum action { ACTION_MAP AC_MAXVALUE, AC_ORICLICK };
 #undef ACVALUE
 
-typedef struct rgTagAction {
+struct rgTagAction {
   BYTE ac;
   BYTE fl;
   short wp;
-} action_t;
+};
+using action_t = rgTagAction;
 
 static const action_t k_action_none = {AC_NONE, 0, 0};
 static const action_t k_action_move = {AC_MOVE, 0, 0};
@@ -183,7 +174,7 @@ enum {
 };
 
 // Helper function to get extra action info
-static xpure UCHAR ActionInfo(action_t action) {
+[[nodiscard]] static UCHAR ActionInfo(action_t action) {
   enum {
     MV = ACINFO_MOVE,
     RZ = ACINFO_RESIZE,
@@ -212,7 +203,8 @@ enum {
 
 ///////////////////////////////////////////////////////////////////////////
 // Check if key is assigned in the HKlist
-static int pure IsHotkeyy(unsigned char key, const unsigned char* HKlist) {
+[[nodiscard]] static int IsHotkeyy(unsigned char key,
+                                   const unsigned char* HKlist) {
   const UCHAR* pos = &HKlist[0];
   while (*pos) {
     if (key == *pos) {
@@ -222,7 +214,8 @@ static int pure IsHotkeyy(unsigned char key, const unsigned char* HKlist) {
   }
   return 0;
 }
-static int pure IsActionInList(const enum action ac, const enum action* aclst) {
+[[nodiscard]] static int IsActionInList(const enum action ac,
+                                        const enum action* aclst) {
   do {
     if (ac == *aclst) return 1;
   } while (*aclst++ != AC_NONE);
@@ -230,9 +223,9 @@ static int pure IsActionInList(const enum action ac, const enum action* aclst) {
   return 0;
 }
 // Convert zone number to ini name entry
-static TCHAR* ZidxToZonestr(int laynum, int idx, TCHAR zname[AT_LEAST 32]) {
-  if (laynum > 9) return NULL;
-  TCHAR txt[UINT_DIGITS + 1];
+static TCHAR* ZidxToZonestr(int laynum, int idx, TCHAR zname[32]) {
+  if (laynum > 9) return nullptr;
+  TCHAR txt[kUintDigits + 1];
   zname[0] = !laynum ? TEXT('\0') : TEXT('A') + laynum - 1;
   zname[1] = '\0';
   lstrcat_s(zname, 32, TEXT("Zone"));
@@ -240,23 +233,23 @@ static TCHAR* ZidxToZonestr(int laynum, int idx, TCHAR zname[AT_LEAST 32]) {
 
   return zname;
 }
-static char* ZidxToZonestrA(int laynum, int idx, char zname[AT_LEAST 32]) {
-  if (laynum > 9) return NULL;
+static char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
+  if (laynum > 9) return nullptr;
   char txt[16];
   zname[0] = !laynum ? '\0' : 'A' + laynum - 1;
   zname[1] = '\0';
-  lstrcat_sA(zname, 32, "Zone");
-  lstrcat_sA(zname, 32, Uint2lStrA(txt, idx));  // Zone Name from zone number
+  lstrcat_s(zname, 32, "Zone");
+  lstrcat_s(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
 
   return zname;
 }
 
-static pure TCHAR* is_base_action(const TCHAR* a, const char* b) {
+[[nodiscard]] static TCHAR* is_base_action(const TCHAR* a, const char* b) {
   while (*a && *a != '=' && *a != '_' && *a == *b) {
     b++;
     a++;
   }
-  return (*a == '_' || *a == '=' || *a == *b) ? (TCHAR*)a : NULL;
+  return (*a == '_' || *a == '=' || *a == *b) ? const_cast<TCHAR*>(a) : nullptr;
 }
 
 /* Map action string to actual action_t struct
@@ -264,7 +257,7 @@ static pure TCHAR* is_base_action(const TCHAR* a, const char* b) {
  * MyActionName[_XXX][_XXX_YYY]\0 ; ending with a NULL
  * MyActionName[_XXX][_XXX_YYY]=  ; Or with an equal
  */
-static pure action_t MapActionW(const TCHAR* txt) {
+[[nodiscard]] static action_t MapActionW(const TCHAR* txt) {
   action_t action = {AC_NONE};
   if (!txt || !*txt) return action;
 #define ACVALUE(a, b, c) (#b),
@@ -283,7 +276,7 @@ static pure action_t MapActionW(const TCHAR* txt) {
     return action;
   }
 
-  for (ac = 0; ac < ARR_SZ(action_map); ac++) {
+  for (ac = 0; ac < std::size(action_map); ac++) {
     TCHAR* params;
     if ((params = is_base_action(txt, action_map[ac]))) {
       BYTE flagparam = 0;
@@ -335,7 +328,7 @@ static pure action_t MapActionW(const TCHAR* txt) {
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-void assertions(void) {
+void assertions() {
   // static_assert(sizeof(action_t) == 4, "sizeof(action_t) should be 4!");
   static_assert(AC_ORICLICK <= 127,
                 "Maximal action number should be 127 or less!");

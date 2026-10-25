@@ -31,7 +31,7 @@
 #define PureBottom(flag) ((flag & SNBOTTOM) && !(flag & (SNLEFT | SNRIGHT)))
 
 /////////////////////////////////////////////////////////////////////////////
-#define NUMWNDDB 16
+enum { NUMWNDDB = 16 };
 struct wnddata {
   unsigned restore;
   HWND hwnd;
@@ -49,12 +49,12 @@ static struct wnddata wnddb[NUMWNDDB];
 static void ResetDB() {
   int i;
   for (i = 0; i < NUMWNDDB; i++) {
-    wnddb[i].hwnd = NULL;
+    wnddb[i].hwnd = nullptr;
     wnddb[i].restore = 0;
   }
 }
 // Return the entry if it was already in db. Or NULL otherwise
-static pure int GetWindowInDB(HWND hwndd) {
+[[nodiscard]] static int GetWindowInDB(HWND hwndd) {
   // Check if window is already in the wnddb database
   // And set it in the current state
   unsigned i;
@@ -84,7 +84,7 @@ static void DelWindowFromDB(HWND hwnd) {
   unsigned i;
   for (i = 0; i < NUMWNDDB; i++) {
     if (wnddb[i].hwnd == hwnd) {
-      wnddb[i].hwnd = NULL;
+      wnddb[i].hwnd = nullptr;
       wnddb[i].restore = 0;
     }
   }
@@ -97,26 +97,30 @@ static void DelWindowFromDB(HWND hwnd) {
 // There is a lot of cast because of annoying warnings...
 // There is also a fallback to a database for some spetial windows.
 static unsigned GetRestoreData(HWND hwnd, int* width, int* height) {
-  DorQWORD WH = (DorQWORD)GetProp(hwnd, APP_PROPPT);
+  DorQWORD WH = reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPPT));
   if (WH) {
-    *width = (int)LOWORDPTR(WH);
-    *height = (int)HIWORDPTR(WH);
+    *width = static_cast<int>(LOWORDPTR(WH));
+    *height = static_cast<int>(HIWORDPTR(WH));
     UINT dpi = GetDpiForWindow(hwnd);
     UINT odpi;
-    if (dpi && (odpi = (UINT)(DorQWORD)GetProp(hwnd, APP_PRODPI)) &&
+    if (dpi &&
+        (odpi = static_cast<UINT>(
+             reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PRODPI)))) &&
         odpi != dpi) {
       // The current dpi is different for the window, We must scale the content.
       *width = MulDiv(*width, dpi, odpi);
       *height = MulDiv(*height, dpi, odpi);
     }
-    return (unsigned)(DorQWORD)GetProp(hwnd, APP_PROPFL);
+    return static_cast<unsigned>(
+        reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPFL)));
     ;
 
 #ifdef _WIN64  // Try fancy zone flag only in 64bit mode!
-  } else if (conf.FancyZone && (WH = (DorQWORD)GetProp(hwnd, FZ_PROPPT))) {
+  } else if (conf.FancyZone &&
+             (WH = reinterpret_cast<DorQWORD>(GetProp(hwnd, FZ_PROPPT)))) {
     // It seems FancyZones stores size info in points, not pixels.
-    *width = (int)LOWORDPTR(WH);
-    *height = (int)HIWORDPTR(WH);
+    *width = static_cast<int>(LOWORDPTR(WH));
+    *height = static_cast<int>(HIWORDPTR(WH));
     if (conf.FancyZone != 2) {
       int dpi = GetDpiForWindow(hwnd);
       if (dpi) {
@@ -154,17 +158,20 @@ static void ClearRestoreData(HWND hwnd) {
 // Sets width, height and restore flag in a hwnd
 static void SetRestoreData(HWND hwnd, int width, int height, unsigned restore) {
   BOOL ret;
-  ret = SetProp(hwnd, APP_PROPFL, (HANDLE)(DorQWORD)restore);
-  ret &= SetProp(hwnd, APP_PROPPT, (HANDLE)MAKELONGPTR(width, height));
+  ret = SetProp(hwnd, APP_PROPFL,
+                reinterpret_cast<HANDLE>(static_cast<DorQWORD>(restore)));
+  ret &= SetProp(hwnd, APP_PROPPT,
+                 reinterpret_cast<HANDLE>(MAKELONGPTR(width, height)));
   UINT dpi = 0;
   if ((dpi = GetDpiForWindow(hwnd)))
-    ret &= SetProp(hwnd, APP_PRODPI, (HANDLE)(DorQWORD)dpi);
+    ret &= SetProp(hwnd, APP_PRODPI,
+                   reinterpret_cast<HANDLE>(static_cast<DorQWORD>(dpi)));
 
   if (!ret) AddWindowToDB(hwnd, width, height, restore);
 }
 
 static unsigned GetRestoreFlag(HWND hwnd) {
-  unsigned flag = (DorQWORD)GetProp(hwnd, APP_PROPFL);
+  unsigned flag = reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPFL));
 
 #ifdef _WIN64
   if (conf.FancyZone && GetProp(hwnd, FZ_PROPPT)) flag |= SNAPPED | SNZONE;
@@ -177,7 +184,8 @@ static unsigned GetRestoreFlag(HWND hwnd) {
   return flag;
 }
 static void SetRestoreFlag(HWND hwnd, unsigned flag) {
-  BOOL ret = SetProp(hwnd, APP_PROPFL, (HANDLE)(DorQWORD)flag);
+  BOOL ret = SetProp(hwnd, APP_PROPFL,
+                     reinterpret_cast<HANDLE>(static_cast<DorQWORD>(flag)));
   int idx;
   if (!ret && ((idx = GetWindowInDB(hwnd)) >= 0)) {
     wnddb[idx].restore = flag;
@@ -196,34 +204,35 @@ static int IsAnySnapped(HWND hwnd) {
 /////////////////////////////////////////////////////////////////////////////
 // borderless flag (saving old GWL_STYLE)
 static void SetBorderlessFlag(HWND hwnd, LONG_PTR flag) {
-  SetProp(hwnd, APP_PRBDLESS, (HANDLE)flag);
+  SetProp(hwnd, APP_PRBDLESS, reinterpret_cast<HANDLE>(flag));
 }
 static LONG_PTR GetBorderlessFlag(HWND hwnd) {
-  return (LONG_PTR)GetProp(hwnd, APP_PRBDLESS);
+  return reinterpret_cast<LONG_PTR>(GetProp(hwnd, APP_PRBDLESS));
 }
 static LONG_PTR ClearBorderlessFlag(HWND hwnd) {
-  return (LONG_PTR)RemoveProp(hwnd, APP_PRBDLESS);
+  return reinterpret_cast<LONG_PTR>(RemoveProp(hwnd, APP_PRBDLESS));
 }
 
 static void SetSquareCorners(HWND hwnd) {
-  int cornerPref = DWMWCP_DEFAULT;
-  HRESULT ok = DwmGetWindowAttributeL(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-                                      &cornerPref, sizeof(cornerPref));
-  if (ok) {
+  int cornerPref = kDwmwcpDefault;
+  HRESULT ok = DwmGetWindowAttribute(hwnd, kDwmaWindowCornerPreference,
+                                     &cornerPref, sizeof(cornerPref));
+  if (SUCCEEDED(ok)) {  // DwmGetWindowAttribute() returns S_OK (0) on success.
     SetProp(hwnd, APP_OWDMCP,
-            (HANDLE)(UINT_PTR)(cornerPref + 1));  // Do not store Zero.
-    cornerPref = DWMWCP_DONOTROUND;
-    DwmSetWindowAttributeL(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPref,
-                           sizeof(cornerPref));
+            reinterpret_cast<HANDLE>(
+                static_cast<UINT_PTR>(cornerPref + 1)));  // Do not store Zero.
+    cornerPref = kDwmwcpDoNotRound;
+    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &cornerPref,
+                          sizeof(cornerPref));
   }
 }
 static void RestoreOldCorners(HWND hwnd) {
-  int cp = (int)(UINT_PTR)GetProp(hwnd, APP_OWDMCP);
+  int cp =
+      static_cast<int>(reinterpret_cast<UINT_PTR>(GetProp(hwnd, APP_OWDMCP)));
   RemoveProp(hwnd, APP_OWDMCP);
   if (cp) {
     cp--;
-    DwmSetWindowAttributeL(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &cp,
-                           sizeof(cp));
+    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &cp, sizeof(cp));
   }
 }
 

@@ -23,11 +23,11 @@
 #define L10NSTR(i) (((const TCHAR* const*)l10n)[i])
 
 struct langinfoitem {
-  TCHAR code[8];
-  const TCHAR* lang_english;
-  const TCHAR* lang;
-  const TCHAR* author;
-  const TCHAR* fn;
+  std::basic_string<TCHAR> code;  // Short code such as en-US, fr-FR.
+  std::basic_string<TCHAR> lang_english;
+  std::basic_string<TCHAR> lang;  // Name in the language itself.
+  std::basic_string<TCHAR> author;
+  std::basic_string<TCHAR> fn;  // Full path of the .ini; empty for built-in.
 };
 
 #define LANGUAGE_MAP                                                           \

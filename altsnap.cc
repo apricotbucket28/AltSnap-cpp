@@ -9,24 +9,22 @@
 #include "hooks.h"
 
 // Boring stuff
-static HINSTANCE g_hinst = NULL;
-static HWND g_hwnd = NULL;
+static HINSTANCE g_hinst = nullptr;
+static HWND g_hwnd = nullptr;
 static UINT WM_TASKBARCREATED = 0;
 static TCHAR inipath[MAX_PATH];
 
-static WNDPROC G_HooksWinProc = NULL;
+static WNDPROC G_HooksWinProc = nullptr;
 
 // Cool stuff
-HINSTANCE hinstDLL = NULL;
+HINSTANCE hinstDLL = nullptr;
 static DWORD ACMenuItems = -1;
 static unsigned char elevated = 0;
 static unsigned char ScrollLockState = 0;
 static char SnapGap = 0;
 static BYTE WinVer = 0;
 
-#define WIN2K 5
-#define VISTA 6
-#define WIN10 10
+enum { WIN2K = 5, VISTA = 6, WIN10 = 10 };
 
 #define ENABLED() (!!G_HooksWinProc)
 #define GetWindowRectL(hwnd, rect) GetWindowRectLL(hwnd, rect, SnapGap)
@@ -43,17 +41,17 @@ static void UpdateSettings();
 static HINSTANCE LoadHooksDLL() {
   // Load library
   TCHAR path[MAX_PATH];
-  DWORD ret = GetModuleFileName(NULL, path, ARR_SZ(path));
-  if (!ret || ret == ARR_SZ(path)) return NULL;
+  DWORD ret = GetModuleFileName(nullptr, path, std::size(path));
+  if (!ret || ret == std::size(path)) return nullptr;
   PathRemoveFileSpecL(path);
-  lstrcat_s(path, ARR_SZ(path), TEXT("\\hooks.dll"));
+  lstrcat_s(path, std::size(path), TEXT("\\hooks.dll"));
   return LoadLibrary(path);
 }
 static void FreeHooksDLL() {
   if (hinstDLL) {
     BOOL ret = FreeLibrary(hinstDLL);
     if (!ret) LOG("FreeLibrary() FAILED!!!");
-    hinstDLL = NULL;
+    hinstDLL = nullptr;
   }
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -68,8 +66,9 @@ static int HookSystem() {
       return 1;
     }
   }
-  WNDPROC(WINAPI * Load)(HWND, const TCHAR*) =
-      (WNDPROC(WINAPI*)(HWND, const TCHAR*))GetProcAddress(hinstDLL, LOAD_PROC);
+  WNDPROC(WINAPI * Load)
+  (HWND, const TCHAR*) = reinterpret_cast<WNDPROC(WINAPI*)(HWND, const TCHAR*)>(
+      GetProcAddress(hinstDLL, LOAD_PROC));
   if (Load) {
     G_HooksWinProc = Load(g_hwnd, inipath);
   }
@@ -87,20 +86,19 @@ static int HookSystem() {
   return 0;
 }
 /////////////////////////////////////////////////////////////////////////////
-static int showerror = 1;
 static int UnhookSystem() {
-  if (G_HooksWinProc == NULL) return 0;
+  if (G_HooksWinProc == nullptr) return 0;
   LOG("Going to UnHook the system...");
 
   // Tell dll file that we are unloading
   void(WINAPI * Unload)() =
-      (void(WINAPI*)())GetProcAddress(hinstDLL, UNLOAD_PROC);
+      reinterpret_cast<void(WINAPI*)()>(GetProcAddress(hinstDLL, UNLOAD_PROC));
   if (Unload) {
     Unload();
   }
   // FreeHooksDLL();
   // Zero out the message hwnd from DLL.
-  G_HooksWinProc = NULL;
+  G_HooksWinProc = nullptr;
 
   // Success
   UpdateTray();
@@ -133,7 +131,8 @@ void ShowSClickMenu(HWND hwnd, LPARAM param) {
   } else {
     // Use the pointed window
     RECT rc;
-    HWND clickhwnd = (HWND)SendMessage(hwnd, WM_GETCLICKHWND, 0, 0);
+    HWND clickhwnd =
+        reinterpret_cast<HWND>(SendMessage(hwnd, WM_GETCLICKHWND, 0, 0));
     GetWindowRect(clickhwnd, &rc);
     pt.x = rc.left + GetSystemMetricsForWin(SM_CXSIZEFRAME, clickhwnd);
     pt.y = rc.top + GetSystemMetricsForWin(SM_CYSIZEFRAME, clickhwnd) +
@@ -175,16 +174,16 @@ void ShowSClickMenu(HWND hwnd, LPARAM param) {
 #undef CHK
 #undef K
   size_t i;
-  for (i = 0; i < ARR_SZ(mnlst); i++) {
+  for (i = 0; i < std::size(mnlst); i++) {
     if ((ACMenuItems >> i) & 1 &&
         mnlst[i].action != 0xFF) {  // Put the action in the HIWORD of wParam
       const TCHAR* str =
-          mnlst[i].l10nidx >= 0 ? L10NSTR(mnlst[i].l10nidx) : NULL;
+          mnlst[i].l10nidx >= 0 ? L10NSTR(mnlst[i].l10nidx) : nullptr;
       AppendMenu(menu, mnlst[i].mf, mnlst[i].action << 16, str);
     }
   }
   TrackPopupMenu(menu, GetSystemMetrics(SM_MENUDROPALIGNMENT), pt.x, pt.y, 0,
-                 hwnd, NULL);
+                 hwnd, nullptr);
   DestroyMenu(menu);
   PostMessage(hwnd, WM_CLOSE, 0, 0);
 }
@@ -196,8 +195,8 @@ void ShowSClickMenu(HWND hwnd, LPARAM param) {
 static void GetKaretPos(POINT* pt) {
   GUITHREADINFO gui;
   gui.cbSize = sizeof(gui);
-  gui.hwndCaret = NULL;
-  if (GetGUIThreadInfoL(0, &gui)) {
+  gui.hwndCaret = nullptr;
+  if (GetGUIThreadInfo(0, &gui)) {
     pt->x = (gui.rcCaret.right + gui.rcCaret.left) >> 1;
     pt->y = (gui.rcCaret.top + gui.rcCaret.bottom) >> 1;
     if (gui.hwndCaret) {
@@ -236,7 +235,7 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
   UCHAR i;
   for (kl = keylist, i = 'A'; *kl; kl++) {
     if (*kl == L'%') {
-      AppendMenu(menu, MF_SEPARATOR, 0, NULL);
+      AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
       continue;
     }
     TCHAR unichar = *kl;
@@ -244,7 +243,8 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
       kl += 2;
       if (capital) unichar = *kl;
     } else if (capital) {
-      unichar = (TCHAR)(LONG_PTR)CharUpper((TCHAR*)(LONG_PTR)*kl);
+      unichar = static_cast<TCHAR>(reinterpret_cast<LONG_PTR>(
+          CharUpper(reinterpret_cast<TCHAR*>(static_cast<LONG_PTR>(*kl)))));
     }
     if (i > 'Z') i = '1';
     TCHAR mwstr[6];
@@ -253,7 +253,7 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
     mwstr[2] = L'\t';
     DWORD utf16c;
     if (IS_SURROGATE_PAIR(unichar, kl[1])) {
-      utf16c = *(DWORD*)kl;
+      std::memcpy(&utf16c, kl, sizeof(utf16c));  // Two UTF-16 units.
       mwstr[3] = LOWORD(utf16c);
       mwstr[4] = HIWORD(utf16c);
       mwstr[5] = L'\0';
@@ -268,7 +268,7 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
     POINT pt;
     GetKaretPos(&pt);
     TrackPopupMenu(menu, GetSystemMetrics(SM_MENUDROPALIGNMENT), pt.x, pt.y, 0,
-                   hwnd, NULL);
+                   hwnd, nullptr);
   }
   DestroyMenu(menu);
 }
@@ -293,9 +293,9 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       ShowContextMenu(hwnd);
     }
   } else if (msg == WM_SCLICK && wParam) {
-    ShowSClickMenu((HWND)wParam, lParam);
+    ShowSClickMenu(reinterpret_cast<HWND>(wParam), lParam);
   } else if (msg == WM_UNIKEYMENU) {
-    ShowUnikeyMenu((HWND)wParam, lParam);
+    ShowUnikeyMenu(reinterpret_cast<HWND>(wParam), lParam);
   } else if (msg == WM_UPDATESETTINGS) {
     // Reload hooks
     UpdateSettings();
@@ -329,15 +329,16 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     } else if (wmId == CMD_ABOUT) {
       SendMessage(hwnd, WM_OPENCONFIG, 5, 0);
     } else if (wmId == CMD_OPENINIFILE) {
-      ShellExecute(NULL, TEXT("open"), inipath, NULL, NULL, SW_SHOWNORMAL);
+      ShellExecute(nullptr, TEXT("open"), inipath, nullptr, nullptr,
+                   SW_SHOWNORMAL);
     } else if (wmId == CMD_EXIT) {
       DestroyWindow(hwnd);
     } else if (wmId == CMD_SAVEZONES) {
       TCHAR txt[256];
-      lstrcpy_s(txt, ARR_SZ(txt), l10n->MiscZoneConfirmation);
-      lstrcat_s(txt, ARR_SZ(txt), TEXT("\n\n"));
-      catFullLayoutName(txt, ARR_SZ(txt), LayoutNumber);
-      int ret = MessageBox(NULL, txt, TEXT(APP_NAMEA), MB_OKCANCEL);
+      lstrcpy_s(txt, std::size(txt), l10n->MiscZoneConfirmation);
+      lstrcat_s(txt, std::size(txt), TEXT("\n\n"));
+      catFullLayoutName(txt, std::size(txt), LayoutNumber);
+      int ret = MessageBox(nullptr, txt, TEXT(APP_NAMEA), MB_OKCANCEL);
       if (ret == IDOK) {
         UnhookSystem();
         SaveCurrentLayout();
@@ -357,9 +358,9 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       WriteCurrentLayoutNumber();
     } else if (wmId == CMD_EDITLAYOUT) {
       if (G_HooksWinProc) {
-        RECT* zones = NULL;
-        unsigned len =
-            G_HooksWinProc(hwnd, WM_GETZONES, LayoutNumber, (LPARAM)&zones);
+        RECT* zones = nullptr;
+        unsigned len = G_HooksWinProc(hwnd, WM_GETZONES, LayoutNumber,
+                                      reinterpret_cast<LPARAM>(&zones));
         if (!len || !zones) {
           // Empty layout, Let's open a new Test Window
           return !NewTestWindow();
@@ -374,7 +375,6 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
     }
   } else if (msg == WM_QUERYENDSESSION) {
-    showerror = 0;
     UnhookSystem();
   } else if (msg == WM_DESTROY) {
     UnhookSystem();
@@ -389,7 +389,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   } else if (msg == WM_DISPLAYCHANGE ||
              (msg == WM_SETTINGCHANGE && wParam == SPI_SETWORKAREA)) {
     LOG("WM_DISPLAYCHANGE %d:%d, %dbpp in WindowProc", LOWORD(lParam),
-        HIWORD(lParam), wParam);
+        HIWORD(lParam), static_cast<int>(wParam));
     if (G_HooksWinProc) {
       int bestlayout = G_HooksWinProc(hwnd, WM_GETBESTLAYOUT, 0, 0);
       if (bestlayout != LayoutNumber && 0 <= bestlayout &&
@@ -404,42 +404,58 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 /////////////////////////////////////////////////////////////////////////////
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
-                   int iCmdShow) {
+// Returns the part of the process command line that follows the program name.
+// WinMain() only receives the command line as ANSI text, which would lose any
+// non-ASCII characters of a Unicode build (e.g. in the "-l" or "-a" values).
+static const TCHAR* GetCommandLineParams() {
+  const TCHAR* p = GetCommandLine();
+  if (*p == TEXT('"')) {  // Quoted program name: ends at the next quote.
+    for (++p; *p && *p != TEXT('"');) ++p;
+    if (*p) ++p;
+  } else {  // Unquoted: ends at the first whitespace.
+    while (*p && *p != TEXT(' ') && *p != TEXT('\t')) ++p;
+  }
+  while (*p == TEXT(' ') || *p == TEXT('\t')) ++p;
+  return p;
+}
+
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
+                   LPSTR /*ansi_params*/, int iCmdShow) {
   g_hinst = hInst;
+  const TCHAR* const params = GetCommandLineParams();
 
   // Get ini path
   LOG("\n\nALTSNAP STARTED");
-  GetModuleFileName(NULL, inipath, ARR_SZ(inipath));
+  GetModuleFileName(nullptr, inipath, std::size(inipath));
   inipath[MAX_PATH - 1] = '\0';
   size_t inipath_len = lstrlen(inipath) - 3;
   lstrcpy_s(&inipath[inipath_len], 4, TEXT("ini"));
   if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(inipath) &&
-      GetEnvironmentVariable(TEXT("APPDATA"), NULL, 0)) {
+      GetEnvironmentVariable(TEXT("APPDATA"), nullptr, 0)) {
     // .ini file is not in current directorry, and APPDATA exists
     // we should look for %APPDATA%\AltSnap\AltSnap.ini
     TCHAR userini[MAX_PATH];
-    GetEnvironmentVariable(TEXT("APPDATA"), userini, ARR_SZ(userini));
-    lstrcat_s(userini, ARR_SZ(userini), TEXT("\\AltSnap"));
+    GetEnvironmentVariable(TEXT("APPDATA"), userini, std::size(userini));
+    lstrcat_s(userini, std::size(userini), TEXT("\\AltSnap"));
     if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
-      CreateDirectory(userini, NULL);
-      LOG("CreateDirectory(%S)", userini);
+      CreateDirectory(userini, nullptr);
+      LOG("CreateDirectory(%ls)", userini);
     }
     // Full user ini name.
-    // lstrcat_s(userini, ARR_SZ(userini), TEXT("\\AltSnap.ini"));
+    // lstrcat_s(userini, std::size(userini), TEXT("\\AltSnap.ini"));
     const TCHAR* inifilename = inipath + inipath_len - 3;
     while (inifilename >= inipath && *inifilename != '\\') inifilename--;
-    lstrcat_s(userini, ARR_SZ(userini), inifilename);
+    lstrcat_s(userini, std::size(userini), inifilename);
     if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
       // Copy AltSnap.dni (Default ini file) if no ini present
       lstrcpy_s(&inipath[lstrlen(inipath) - 3], 4, TEXT("dni"));
       CopyFile(inipath, userini, FALSE);  // AltSnap.dni -> AltSnap.ini
-      LOG("CopyFile(%S -> %S)", inipath, userini);
+      LOG("CopyFile(%ls -> %ls)", inipath, userini);
     }
 
-    lstrcpy_s(inipath, ARR_SZ(inipath), userini);
+    lstrcpy_s(inipath, std::size(inipath), userini);
   }
-  LOG("ini file: %S", inipath);
+  LOG("ini file: %ls", inipath);
 
   // Read parameters on command line
   int help = !!lstrstr(params, TEXT("-help")) ||
@@ -454,7 +470,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
                         "-afX\tExecute action X for the foreground window\n")
                         TEXT("-apX\tExecute action X for the pointed window\n");
 
-    MessageBox(NULL, txthelp, TEXT(APP_NAMEA) TEXT(" Usage"),
+    MessageBox(nullptr, txthelp, TEXT(APP_NAMEA) TEXT(" Usage"),
                MB_OK | MB_ICONINFORMATION);
     return 0;
   }
@@ -471,7 +487,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   LOG("Running with Windows version %lX", GetVersion());
 #ifndef NO_VISTA
   if (WinVer >= VISTA) {
-    HANDLE token = NULL;
+    HANDLE token = nullptr;
     TOKEN_ELEVATION elevation = {0};
     DWORD len = 0;
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_READ, &token) &&
@@ -536,11 +552,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
     if (elevate) {
       LOG("Elevation requested");
       TCHAR path[MAX_PATH];
-      GetModuleFileName(NULL, path, ARR_SZ(path));
-      HINSTANCE ret =
-          ShellExecute(NULL, TEXT("runas"), path,
-                       (tray_hidden ? TEXT("-h") : NULL), NULL, SW_SHOWNORMAL);
-      if ((DorQWORD)ret > 32) {
+      GetModuleFileName(nullptr, path, std::size(path));
+      HINSTANCE ret = ShellExecute(nullptr, TEXT("runas"), path,
+                                   (tray_hidden ? TEXT("-h") : nullptr),
+                                   nullptr, SW_SHOWNORMAL);
+      if (reinterpret_cast<DorQWORD>(ret) > 32) {
         LOG("Elevation Faild => Not cool NORMAL EXIT");
         return 0;
       }
@@ -554,12 +570,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   LOG("Language updated");
 
   // Create window
-  WNDCLASS wnd = {0,    WindowProc, 0,    0,    hInst,
-                  NULL, NULL,       NULL, NULL, TEXT(APP_NAMEA)};
+  WNDCLASS wnd = {0,       WindowProc, 0,       0,       hInst,
+                  nullptr, nullptr,    nullptr, nullptr, TEXT(APP_NAMEA)};
   RegisterClass(&wnd);
   g_hwnd = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
-                          wnd.lpszClassName, NULL, WS_POPUP, 0, 0, 0, 0, NULL,
-                          NULL, hInst, NULL);
+                          wnd.lpszClassName, nullptr, WS_POPUP, 0, 0, 0, 0,
+                          nullptr, nullptr, hInst, nullptr);
   LOG("Create main APP Window: %s", g_hwnd ? "Sucess" : "Failed");
   if (elevated) {
     // AltSnap was started elevated!
@@ -567,7 +583,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
     // so that user can do AltSnap.exe -c/r/h/l
     UINT i;
     for (i = WM_UPDATETRAY; i <= WM_HIDETRAY; i++)
-      ChangeWindowMessageFilterExL(g_hwnd, i, /*MSGFLT_ALLOW*/ 1, NULL);
+      ChangeWindowMessageFilterEx(g_hwnd, i, /*MSGFLT_ALLOW*/ 1, nullptr);
   }
   // Tray icon
 
@@ -590,7 +606,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   LOG("Starting " APP_NAMEA " message loop...");
   BOOL ret;
   MSG msg;
-  while ((ret = GetMessage(&msg, NULL, 0, 0)) != 0) {
+  while ((ret = GetMessage(&msg, nullptr, 0, 0)) != 0) {
     if (ret == -1) {
       break;
     } else {
@@ -605,5 +621,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInstance, LPSTR params,
   LOG("GOOD NORMAL EXIT");
   FreeAllLangRelated();
 
-  return (int)msg.wParam;
+  return static_cast<int>(msg.wParam);
 }

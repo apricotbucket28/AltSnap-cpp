@@ -9,145 +9,57 @@
 #define _UNFUCK_NT_
 
 #include <oleacc.h>
-#include <stdio.h>
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdarg>
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "nanolibc.h"
+#include "strutil.h"
 
-/* #include <dwmapi.h> */
-enum DWMWINDOWATTRIBUTE {
-  /* Windows Vista+ */
-  DWMWA_NCRENDERING_ENABLED = 1,
-  DWMWA_NCRENDERING_POLICY,
-  DWMWA_TRANSITIONS_FORCEDISABLED,
-  DWMWA_ALLOW_NCPAINT,
-  DWMWA_CAPTION_BUTTON_BOUNDS,
-  DWMWA_NONCLIENT_RTL_LAYOUT,
-  DWMWA_FORCE_ICONIC_REPRESENTATION,
-  DWMWA_FLIP3D_POLICY,
-  DWMWA_EXTENDED_FRAME_BOUNDS,
-  DWMWA_HAS_ICONIC_BITMAP,
-  /* Windows 7+ */
-  DWMWA_DISALLOW_PEEK,
-  DWMWA_EXCLUDED_FROM_PEEK,
-  DWMWA_CLOAK,
-  /* Windows 8+ */
-  DWMWA_CLOAKED, /* 14 */
-  DWMWA_FREEZE_REPRESENTATION,
-  DWMWA_PASSIVE_UPDATE_MODE,
-  DWMWA_USE_HOSTBACKDROPBRUSH, /* Set, *pvAttribute=BOOL */
+// Win32 helpers. Minimum supported OS: Windows 10 version 1607 (build 14393).
+// All APIs are linked directly; there are no runtime fallbacks for older
+// systems.
+#include <dwmapi.h>
+#include <highlevelmonitorconfigurationapi.h>
+#include <physicalmonitorenumerationapi.h>
+#include <psapi.h>
+#include <shellscalingapi.h>
+#include <windowsx.h>
 
-  /* Windows 10 1809 + (17763 <= build < 18985), Undocumented */
-  DWMWA_USE_IMMERSIVE_DARK_MODE_PRE20H1 = 19, /* Set, *pvAttribute=BOOL */
-  /* Windows 10 21H1 + (build >= 18985) */
-  DWMWA_USE_IMMERSIVE_DARK_MODE =
-      20, /* Documented value since Win 11 build 22000 */
+// kDwmaUseImmersiveDarkMode had the value 19 on Windows 10 1809-1909.
+inline constexpr DWORD kDwmaUseImmersiveDarkModePre20H1 = 19;
+// Values from the Windows SDK that older MinGW headers do not define yet.
+inline constexpr DWORD kDwmaUseImmersiveDarkMode = 20;
+inline constexpr DWORD kDwmaWindowCornerPreference = 33;
+inline constexpr int kDwmwcpDefault = 0;
+inline constexpr int kDwmwcpDoNotRound = 1;
 
-  /* Windows 11 Build 22000 + */
-  DWMWA_WINDOW_CORNER_PREFERENCE = 33,
-  DWMWA_BORDER_COLOR,
-  DWMWA_CAPTION_COLOR,
-  DWMWA_TEXT_COLOR,
-  DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
-  /* Windows 11 Build 22621 + */
-  DWMWA_SYSTEMBACKDROP_TYPE,
-  /* Windows 11 Build 26100 + */
-  DWMWA_REDIRECTIONBITMAP_ALPHA,
-  DWMWA_BORDER_MARGINS,
-  DWMWA_LAST,
-};
+using DorQWORD = UINT_PTR;  // Pointer-sized unsigned integer.
 
-enum DWM_WINDOW_CORNER_PREFERENCE {
-  DWMWCP_DEFAULT = 0,
-  DWMWCP_DONOTROUND = 1,
-  DWMWCP_ROUND = 2,
-  DWMWCP_ROUNDSMALL = 3,
-};
+// Pack/unpack two 32-bit values into a pointer-sized integer.
+[[nodiscard]] constexpr DWORD HIWORDPTR(UINT_PTR v) {
+  return static_cast<DWORD>(v >> 32);
+}
+[[nodiscard]] constexpr DWORD LOWORDPTR(UINT_PTR v) {
+  return static_cast<DWORD>(v);
+}
+[[nodiscard]] constexpr UINT_PTR MAKELONGPTR(DWORD lo, DWORD hi) {
+  return static_cast<UINT_PTR>(lo) | static_cast<UINT_PTR>(hi) << 32;
+}
 
-enum MONITOR_DPI_TYPE {
-  MDT_EFFECTIVE_DPI = 0,
-  MDT_ANGULAR_DPI = 1,
-  MDT_RAW_DPI = 2,
-  MDT_DEFAULT = MDT_EFFECTIVE_DPI
-};
+enum { IDAPPLY = 0x3021 };
 
-/* Invalid pointer with which we initialize
- * all dynamically imported functions */
-#define IPTR ((FARPROC)(1))
+// Flag set by Windows in KBDLLHOOKSTRUCT-scancodes of simulated input.
+inline constexpr DWORD SCANCODE_SIMULATED = 0x0200;
 
-#define QWORD unsigned long long
-#ifdef _WIN64
-#define CopyRect(x, y) (*(x) = *(y))
-#define DorQWORD QWORD
-#define HIWORDPTR(ll) ((DWORD)(((QWORD)(ll) >> 32) & 0xFFFFFFFF))
-#define LOWORDPTR(ll) ((DWORD)(ll))
-#define MAKELONGPTR(lo, hi) \
-  ((QWORD)(((DWORD)(lo)) | ((QWORD)((DWORD)(hi))) << 32))
-#else
-#define DorQWORD unsigned long
-#define HIWORDPTR(l) ((WORD)(((DWORD)(l) >> 16) & 0xFFFF))
-#define LOWORDPTR(l) ((WORD)(l))
-#define MAKELONGPTR(lo, hi) \
-  ((DWORD)(((WORD)(lo)) | ((DWORD)((WORD)(hi))) << 16))
-#endif
-
-#ifndef LOBYTE
-#define LOBYTE(w) ((BYTE)(w))
-#endif
-
-#ifndef HIBYTE
-#define HIBYTE(w) ((BYTE)(((WORD)(w) >> 8) & 0xFF))
-#endif
-
-#ifndef GET_X_LPARAM
-#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
-#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
-#endif
-
-#define ARR_SZ(x) (sizeof(x) / sizeof((x)[0]))
-#define IDAPPLY 0x3021
-
-#ifndef IS_SURROGATE_PAIR
-#define IS_HIGH_SURROGATE(wch) (((wch) >= 0xd800) && ((wch) <= 0xdbff))
-#define IS_LOW_SURROGATE(wch) (((wch) >= 0xdc00) && ((wch) <= 0xdfff))
-#define IS_SURROGATE_PAIR(hs, ls) \
-  (IS_HIGH_SURROGATE(hs) && IS_LOW_SURROGATE(ls))
-#endif
-
-#ifndef NIIF_USER
-#define NIIF_USER 0x00000004
-#endif
-
-#ifndef INVALID_FILE_ATTRIBUTES
-#define INVALID_FILE_ATTRIBUTES 0xFFFFFFFF
-#endif
-
-#ifndef STACK_SIZE_PARAM_IS_A_RESERVATION
-#define STACK_SIZE_PARAM_IS_A_RESERVATION 0x10000L
-#endif
-
-#ifndef WPF_ASYNCWINDOWPLACEMENT
-#define WPF_ASYNCWINDOWPLACEMENT 0x0004
-#endif
-#ifndef WM_DPICHANGED
-#define WM_DPICHANGED 0x02E0
-#endif
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#define InterlockedIncrement(x) InterlockedIncrement((LONG*)(x))
-#define InterlockedDecrement(x) InterlockedDecrement((LONG*)(x))
-#endif
-
-#ifndef SCANCODE_SIMULATED
-#define SCANCODE_SIMULATED 0x0200
-#endif
-
-#ifndef EVENT_SYSTEM_MOVESIZESTART
-#define EVENT_SYSTEM_MOVESIZESTART 0x000A
-#define EVENT_SYSTEM_MOVESIZEEND 0x000B
-#endif
+// Exported by user32 but missing from the SDK headers.
+extern "C" HWND WINAPI HungWindowFromGhostWindow(HWND ghost);
 
 #ifndef MSAA_MENU_SIG
 #define MSAA_MENU_SIG 0xAA0DF00D
@@ -158,146 +70,36 @@ typedef struct tagMSAAMENUINFO {
 } MSAAMENUINFO, *LPMSAAMENUINFO;
 #endif
 
-#ifndef GetWindowLongPtr
-#define GetWindowLongPtr GetWindowLong
-#define SetWindowLongPtr SetWindowLong
-#define GetClassLongPtr GetClassLong
-#define SetClassLongPtr SetClassLong
-#define GWLP_WNDPROC (-4)
-#define GWLP_HINSTANCE (-6)
-#define GWLP_HWNDPARENT (-8)
-#define GWLP_USERDATA (-21)
-#define GWLP_ID (-12)
-#endif
-
-#ifndef PROCESS_SUSPEND_RESUME
-#define PROCESS_SUSPEND_RESUME (0x0800)
-#endif
-
-#ifndef WS_EX_LAYERED
-#define WS_EX_LAYERED 0x00080000
-#define WS_EX_NOACTIVATE 0x08000000
-#define LWA_COLORKEY 0x00000001
-#define LWA_ALPHA 0x00000002
-#endif
-
-#ifndef WM_XBUTTONDOWN
-#define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
-#define WM_XBUTTONDOWN 0x020B
-#define WM_XBUTTONUP 0x020C
-#define WM_XBUTTONDBLCLK 0x020D
-#define WM_MOUSEHWHEEL 0x020e
-#define VK_XBUTTON1 0x05
-#define VK_XBUTTON2 0x06
-#define VK_VOLUME_MUTE 0xAD
-#define VK_VOLUME_DOWN 0xAE
-#define VK_VOLUME_UP 0xAF
-#define MOUSEEVENTF_XDOWN 0x0080
-#define MOUSEEVENTF_XUP 0x0100
-#define KEYEVENTF_UNICODE 0x0004
-#define KEYEVENTF_SCANCODE 0x0008
-#endif
-
-#ifndef WM_MENURBUTTONUP
-#define WM_MENURBUTTONUP 0x0122
-#endif
-
-#ifndef IDC_HAND
-#define IDC_HAND MAKEINTRESOURCE(32649)
-#endif
-
-#ifndef HWND_MESSAGE
-#define HWND_MESSAGE ((HWND) - 3)
-#endif
-
-#ifndef GCLP_HCURSOR
-#define GCLP_HCURSOR (-12)
-#define GCLP_HICON (-14)
-#endif
-
-#ifndef GA_ROOT
-#define GA_ROOT 2
-#define GA_ROOTOWNER 3
-#endif
-
-/* Missing Monitor stuffs only availabel on WINVER >= 5 */
-#ifndef MONITOR_DEFAULTTONULL
-#define MONITOR_DEFAULTTONULL 0
-#define MONITOR_DEFAULTTOPRIMARY 1
-#define MONITOR_DEFAULTTONEAREST 2
-
-#define MONITORINFOF_PRIMARY 1
-
-typedef HANDLE HMONITOR;
-typedef BOOL(CALLBACK* MONITORENUMPROC)(HMONITOR, HDC, LPRECT, LPARAM);
-
-typedef struct tagMONITORINFO {
-  DWORD cbSize;
-  RECT rcMonitor;
-  RECT rcWork;
-  DWORD dwFlags;
-} MONITORINFO, *LPMONITORINFO;
-
-#endif /* MONITOR end */
-
-#ifndef SM_XVIRTUALSCREEN
-#define SM_XVIRTUALSCREEN 76
-#define SM_YVIRTUALSCREEN 77
-#define SM_CXVIRTUALSCREEN 78
-#define SM_CYVIRTUALSCREEN 79
-#define SM_CMONITORS 80
-#endif /* SM_XVIRTUALSCREEN */
-
-/* GUITHREADINFO stuff */
-#if !defined(GUI_CARETBLINKING) && WINVER < 0x0500
-#define GUI_CARETBLINKING 0x01
-#define GUI_INMOVESIZE 0x02
-#define GUI_INMENUMODE 0x04
-#define GUI_SYSTEMMENUMODE 0x08
-#define GUI_POPUPMENUMODE 0x10
-typedef struct tagGUITHREADINFO {
-  DWORD cbSize;
-  DWORD flags;
-  HWND hwndActive;
-  HWND hwndFocus;
-  HWND hwndCapture;
-  HWND hwndMenuOwner;
-  HWND hwndMoveSize;
-  HWND hwndCaret;
-  RECT rcCaret;
-} GUITHREADINFO, FAR* LPGUITHREADINFO;
-
-#endif /* GUITHREADINFO end */
-
 /*#define LOGA(X, ...) {DWORD err=GetLastError(); FILE *LOG=fopen("ad.log",
  * "a"); fprintf(LOG, X, ##__VA_ARGS__); fprintf(LOG,", LastError=%lu\n",err);
  * fclose(LOG); SetLastError(0); }*/
 #define LOGA LOGfunk
-/* Cool warpper for wvsprintf */
 static void LOGSimple(const char* str, size_t len) {
   DWORD dummy = 0;
   HANDLE h;
-  h = CreateFileA("ad.log", FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+  h = CreateFileA("ad.log", FILE_APPEND_DATA, FILE_SHARE_READ, nullptr,
                   OPEN_ALWAYS,
-                  FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+                  FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
   if (h == INVALID_HANDLE_VALUE) return;
-  WriteFile(h, str, len, &dummy, NULL);
+  WriteFile(h, str, len, &dummy, nullptr);
   CloseHandle(h);
   SetLastError(0);
 }
-static void LOGfunk(const char* fmt, ...) {
-  va_list arglist;
-  DWORD lerr = GetLastError();
-  char str[512], lerrorstr[16];
+// printf-style logging to "ad.log". The output is truncated to fit the buffer;
+// the compiler checks the format string against the arguments.
+[[gnu::format(printf, 1, 2)]] static void LOGfunk(const char* fmt, ...) {
+  const DWORD last_error = GetLastError();
+  char line[512], error_text[kUintDigits + 1];
 
-  va_start(arglist, fmt);
-  wvsprintfA(str, fmt, arglist);
-  va_end(arglist);
+  va_list args;
+  va_start(args, fmt);
+  std::vsnprintf(line, sizeof(line), fmt, args);
+  va_end(args);
 
-  lstrcat_sA(str, ARR_SZ(str), " (");
-  lstrcat_sA(str, ARR_SZ(str), Uint2lStrA(lerrorstr, lerr));
-  lstrcat_sA(str, ARR_SZ(str), ")\n");
-  LOGSimple(str, lstrlenA(str));
+  lstrcat_s(line, std::size(line), " (");
+  lstrcat_s(line, std::size(line), Uint2lStr(error_text, last_error));
+  lstrcat_s(line, std::size(line), ")\n");
+  LOGSimple(line, lstrlenA(line));
 }
 #ifdef LOG_STUFF
 #define LOG LOGfunk
@@ -320,74 +122,19 @@ static void LOGdummy(const char* fmt, ...) {}
 #define assert(x)
 #endif
 
-/* Stuff missing in MinGW */
-#ifndef WM_MOUSEHWHEEL
-#define WM_MOUSEHWHEEL 0x020E
-#endif
-
-/* on both x64 and x32 */
-#define NtSuspendProcess NtSuspendProcessL
-#define NtResumeProcess NtResumeProcessL
-#ifndef _WIN64
-#define GetLayeredWindowAttributes GetLayeredWindowAttributesL
-#define SetLayeredWindowAttributes SetLayeredWindowAttributesL
-#define GetAncestor GetAncestorL
-#undef GetMonitorInfo
-#define GetMonitorInfo GetMonitorInfoL
-#define EnumDisplayMonitors EnumDisplayMonitorsL
-#define MonitorFromPoint MonitorFromPointL
-#define MonitorFromWindow MonitorFromWindowL
-/*#   define GetGUIThreadInfo GetGUIThreadInfoL (NT4 SP3+/Win98+) */
-#endif
-
 /* Helper function to pop a message bow with error code*/
 static void ErrorBox(const TCHAR* const title) {
   LPVOID lpMsgBuf;
   FormatMessage(
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
           FORMAT_MESSAGE_IGNORE_INSERTS,
-      NULL, GetLastError(),
+      nullptr, GetLastError(),
       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), /* Default language */
-      (TCHAR*)&lpMsgBuf, 0, NULL);
-  MessageBox(NULL, (LPCTSTR)lpMsgBuf, title, MB_OK | MB_ICONWARNING);
+      reinterpret_cast<TCHAR*>(&lpMsgBuf), 0, nullptr);
+  MessageBox(nullptr, static_cast<LPCTSTR>(lpMsgBuf), title,
+             MB_OK | MB_ICONWARNING);
   /* Free the buffer using LocalFree. */
   LocalFree(lpMsgBuf);
-}
-
-/* Helper functiont to strcat variable amount of TCHAR*s */
-static size_t lstrcatM_s(TCHAR* d, size_t dl, ...) {
-  va_list arglist;
-  while (*d && dl--) d++;
-  va_start(arglist, dl);
-
-  while (dl) {
-    const TCHAR* s = (const TCHAR*)va_arg(arglist, const TCHAR*);
-    if (s == NULL) break;
-    /* inline naive strcpy_s */
-    for (; dl && (*d = *s); ++s, ++d, --dl);
-  }
-  *d = TEXT('\0'); /* Ensure NULL termination */
-
-  va_end(arglist);
-
-  return dl; /* Remaining TCHARs */
-}
-
-static int PrintHwndDetails(HWND hwnd,
-                            TCHAR buf[AT_LEAST 512 + 40 + 2 * 8 + 4 * 12 + 1]) {
-  TCHAR klass[256], title[256];
-  RECT rc;
-  klass[0] = title[0] = TEXT('\0');
-
-  GetWindowRect(hwnd, &rc);
-  GetClassName(hwnd, klass, ARR_SZ(klass));
-  GetWindowText(hwnd, title, ARR_SZ(title));
-  return wsprintf(
-      buf, TEXT("Hwnd=%x, %s|%s, style=%x, xstyle=%x, rect=%ld,%ld,%ld,%ld"),
-      (UINT)(UINT_PTR)hwnd, title, klass,
-      (UINT)GetWindowLongPtr(hwnd, GWL_STYLE),
-      (UINT)GetWindowLongPtr(hwnd, GWL_EXSTYLE), rc.left, rc.top, rc.right,
-      rc.bottom);
 }
 
 /* Helper to be able to enable/disable dialog items
@@ -447,7 +194,7 @@ static BOOL HaveProc(const char* const DLLname, const char* const PROCname) {
 
 static FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
   HINSTANCE hdll;
-  FARPROC ret = (FARPROC)NULL;
+  FARPROC ret = static_cast<FARPROC>(nullptr);
 
   if ((hdll = GetModuleHandleA(DLLname))) {
     return GetProcAddress(hdll, PROCname);
@@ -460,49 +207,17 @@ static FARPROC LoadDLLProc(const char* DLLname, const char* PROCname) {
   return ret;
 }
 
-/* Accurate Sleep, needs WINMM.DLL */
+// Sleeps for `duration_ms`, temporarily raising the system timer resolution
+// for short sleeps so that Sleep() is accurate to ~1.5 ms instead of ~15 ms.
 static void ASleep(DWORD duration_ms) {
-  static MMRESULT(WINAPI * mtimeGetDevCaps)(LPTIMECAPS ptc, UINT cbtc) =
-      (MMRESULT(WINAPI*)(LPTIMECAPS ptc, UINT cbtc))IPTR;
-  static MMRESULT(WINAPI * mtimeBeginPeriod)(UINT uPeriod);
-  static MMRESULT(WINAPI * mtimeEndPeriod)(UINT uPeriod);
-
-  if (duration_ms > 15) {
-    /* No need for accurate sleep... */
-    Sleep(duration_ms);
+  TIMECAPS tc;
+  if (duration_ms > 15 || timeGetDevCaps(&tc, sizeof(tc)) != TIMERR_NOERROR) {
+    Sleep(duration_ms);  // No need for an accurate sleep (or not available).
     return;
   }
-  if (mtimeGetDevCaps == (MMRESULT(WINAPI*)(LPTIMECAPS ptc, UINT cbtc))IPTR) {
-    HINSTANCE h = LoadLibraryA("WINMM.DLL");
-    if (h) {
-      mtimeGetDevCaps = (MMRESULT(WINAPI*)(
-          LPTIMECAPS ptc, UINT cbtc))GetProcAddress(h, "timeGetDevCaps");
-      mtimeBeginPeriod =
-          (MMRESULT(WINAPI*)(UINT uPeriod))GetProcAddress(h, "timeBeginPeriod");
-      mtimeEndPeriod =
-          (MMRESULT(WINAPI*)(UINT uPeriod))GetProcAddress(h, "timeEndPeriod");
-      if (!mtimeGetDevCaps || !mtimeBeginPeriod || !mtimeEndPeriod) {
-        mtimeGetDevCaps = NULL;
-        FreeLibrary(h);
-      }
-    }
-  }
-  /* We have winmm functions */
-  /* This absurd code makes Sleep() more accurate
-   * - without it, Sleep() is not even +-10ms accurate
-   * - with it, Sleep is around +-1.5 ms accurate
-   */
-  if (mtimeGetDevCaps) {
-    TIMECAPS tc;
-    mtimeGetDevCaps(&tc, sizeof(tc));
-    mtimeBeginPeriod(tc.wPeriodMin); /* begin accurate sleep */
-
-    Sleep(duration_ms); /* perform The SLEEP */
-
-    mtimeEndPeriod(tc.wPeriodMin); /* end accurate sleep*/
-  } else {
-    Sleep(duration_ms);
-  }
+  timeBeginPeriod(tc.wPeriodMin);
+  Sleep(duration_ms);
+  timeEndPeriod(tc.wPeriodMin);
 }
 
 static BOOL FreeDLLByName(const char* const DLLname) {
@@ -510,102 +225,10 @@ static BOOL FreeDLLByName(const char* const DLLname) {
   if ((hdll = GetModuleHandleA(DLLname))) return FreeLibrary(hdll);
   return FALSE;
 }
-static HWND GetAncestorL(HWND hwnd, UINT gaFlags) {
-  typedef HWND(WINAPI * funk_t)(HWND hwnd, UINT gaFlags);
-  static funk_t funk = (funk_t)IPTR;
-  HWND hlast, hprevious;
-  LONG wlong;
-  if (!hwnd) return NULL;
-  hprevious = hwnd;
-
-  if (funk == (funk_t)IPTR) {
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetAncestor");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, gaFlags);
-  }
-  /* Fallback */
-  while ((hlast = GetParent(hprevious)) != NULL) {
-    wlong = GetWindowLong(hprevious, GWL_STYLE);
-    if (wlong & (WS_POPUP)) break;
-    hprevious = hlast;
-  }
-  return hprevious;
-}
-
-#ifndef MSGFLTINFO_NONE
-
-#define MSGFLTINFO_NONE 0
-#define MSGFLTINFO_ALREADYALLOWED_FORWND 1
-#define MSGFLTINFO_ALREADYDISALLOWED_FORWND 2
-#define MSGFLTINFO_ALLOWED_HIGHER 3
-
-typedef struct tagCHANGEFILTERSTRUCT {
-  DWORD cbSize;
-  DWORD ExtStatus;
-} CHANGEFILTERSTRUCT, *PCHANGEFILTERSTRUCT;
-#endif
 
 /* On Windows Vista we have to use this one that applies process wide. */
-static BOOL ChangeWindowMessageFilterL(UINT msg, DWORD ac) {
-  typedef BOOL(WINAPI * funk_t)(UINT msg, DWORD ac);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) {
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "ChangeWindowMessageFilter");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(msg, ac);
-  }
-  return FALSE;
-}
 
 /* Available only on Windows 7+s */
-static BOOL ChangeWindowMessageFilterExL(HWND hwnd, UINT msg, DWORD ac,
-                                         PCHANGEFILTERSTRUCT pC) {
-  typedef BOOL(WINAPI * funk_t)(HWND hwnd, UINT msg, DWORD ac,
-                                PCHANGEFILTERSTRUCT pC);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) {
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "ChangeWindowMessageFilterEx");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, msg, ac, pC);
-  }
-  /* Process-wide Fallback for Windows Vista! */
-  return ChangeWindowMessageFilterL(msg, ac);
-}
-
-static BOOL GetLayeredWindowAttributesL(HWND hwnd, COLORREF* pcrKey,
-                                        BYTE* pbAlpha, DWORD* pdwFlags) {
-  typedef BOOL(WINAPI * funk_t)(HWND hwnd, COLORREF * pcrKey, BYTE * pbAlpha,
-                                DWORD * pdwFlags);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) {
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetLayeredWindowAttributes");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, pcrKey, pbAlpha, pdwFlags);
-  }
-  return FALSE;
-}
-
-static BOOL SetLayeredWindowAttributesL(HWND hwnd, COLORREF crKey, BYTE bAlpha,
-                                        DWORD dwFlags) {
-  typedef BOOL(WINAPI * funk_t)(HWND hwnd, COLORREF crKey, BYTE bAlpha,
-                                DWORD dwFlags);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) {
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "SetLayeredWindowAttributes");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, crKey, bAlpha, dwFlags);
-  }
-  return FALSE;
-}
 
 /* Helper to set alpha and automatically add/remove WS_EX_LAYERED attrib */
 static void SetWindowAlpha(HWND hwnd, BYTE alpha) {
@@ -622,171 +245,17 @@ static void SetWindowAlpha(HWND hwnd, BYTE alpha) {
   }
 }
 
-static BOOL GetMonitorInfoL(HMONITOR hMonitor, LPMONITORINFO lpmi) {
-  typedef BOOL(WINAPI * funk_t)(HMONITOR hMonitor, LPMONITORINFO lpmi);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) {
-#ifdef _UNICODE
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetMonitorInfoW");
-#else
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetMonitorInfoA");
-#endif
-  }
-  if (funk) { /* We know we have the function */
-    if (hMonitor) return funk(hMonitor, lpmi);
-  }
-  /* Fallback for NT4 */
-  GetClientRect(GetDesktopWindow(), &lpmi->rcMonitor);
-  SystemParametersInfo(SPI_GETWORKAREA, 0, &lpmi->rcWork, 0);
-  lpmi->dwFlags = MONITORINFOF_PRIMARY;
-
-  return TRUE;
-}
-
-static BOOL EnumDisplayMonitorsL(HDC hdc, LPCRECT lprcClip,
-                                 MONITORENUMPROC lpfnEnum, LPARAM dwData) {
-  typedef BOOL(WINAPI * funk_t)(HDC hdc, LPCRECT lprcClip,
-                                MONITORENUMPROC lpfnEnum, LPARAM dwData);
-  static funk_t funk = (funk_t)IPTR;
-
-  MONITORINFO mi;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "EnumDisplayMonitors");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hdc, lprcClip, lpfnEnum, dwData);
-  }
-
-  /* Fallbak */
-  GetMonitorInfoL(NULL, &mi);
-  lpfnEnum(NULL, NULL, &mi.rcMonitor, 0); /* Callback function */
-
-  return TRUE;
-}
-
-static HMONITOR MonitorFromPointL(POINT pt, DWORD dwFlags) {
-  typedef HMONITOR(WINAPI * funk_t)(POINT pt, DWORD dwFlags);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "MonitorFromPoint");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(pt, dwFlags);
-  }
-  return NULL;
-}
-
-static HMONITOR MonitorFromWindowL(HWND hwnd, DWORD dwFlags) {
-  typedef HMONITOR(WINAPI * funk_t)(HWND hwnd, DWORD dwFlags);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "MonitorFromWindow");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, dwFlags);
-  }
-  return NULL;
-}
-
-static BOOL GetGUIThreadInfoL(DWORD pid, GUITHREADINFO* lpgui) {
-  typedef BOOL(WINAPI * funk_t)(DWORD pid, GUITHREADINFO * lpgui);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetGUIThreadInfo");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(pid, lpgui);
-  }
-  return FALSE;
-}
-
-static HRESULT GetDpiForMonitorL(HMONITOR hmonitor, int dpiType, UINT* dpiX,
-                                 UINT* dpiY) {
-  typedef HRESULT(WINAPI * funk_t)(HMONITOR hmonitor, int dpiType, UINT* dpiX,
-                                   UINT* dpiY);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("SHCORE.DLL", "GetDpiForMonitor");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hmonitor, dpiType, dpiX, dpiY);
-  }
-  return 666; /* Fail with 666 error */
-}
-
-static int GetSystemMetricsForDpiL(int nIndex, UINT dpi) {
-  typedef int(WINAPI * funk_t)(int nIndex, UINT dpi);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (dpi) {
-    if (funk == (funk_t)IPTR) { /* First time */
-      funk = (funk_t)LoadDLLProc("USER32.DLL", "GetSystemMetricsForDpi");
-    }
-    if (funk) { /* We know we have the function */
-      return funk(nIndex, dpi);
-    }
-
-    /* Fallback for Windows < 10 build 1607 and >= 8.1
-     * Get Default display hmonitor to get system DPI
-     * so that we can sacle the metric properly.
-     */
-    HMONITOR hmon = MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY);
-    UINT dpiX = 0, systemDpi = 0;
-    if (hmon && 0 == GetDpiForMonitorL(hmon, MDT_DEFAULT, &dpiX, &systemDpi) &&
-        systemDpi > 0) {
-      return MulDiv(GetSystemMetrics(nIndex), dpi, systemDpi);
-    }
-  }
-  /* Use non dpi stuff if dpi == 0 or if it does not exist. */
-  return GetSystemMetrics(nIndex);
-}
-#define GetSystemMetricsForDpi GetSystemMetricsForDpiL
-
 /* Supported wince Windows 10, version 1607 [desktop apps only] */
-static UINT GetDpiForWindow10L(const HWND hwnd) {
-  typedef UINT(WINAPI * funk_t)(const HWND hwnd);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "GetDpiForWindow");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd);
-  }
-
-  return 0; /* Not handled */
-}
 
 /* With an Windows 8 fallback */
-static UINT GetDpiForWindowL(const HWND hwnd) {
-  UINT dpi = GetDpiForWindow10L(hwnd);
-  if (!dpi) {
-    /* Windows 8.1 / Server2012 R2 Fallback */
-    UINT dpiX = 0;
-    UINT dpiY = 0;
-    HMONITOR hmon;
-    if ((hmon = MonitorFromWindowL(hwnd, MONITOR_DEFAULTTONEAREST)) &&
-        S_OK == GetDpiForMonitorL(hmon, MDT_DEFAULT, &dpiX, &dpiY)) {
-      return dpiX;
-    }
-  }
-  return dpi;
-}
-#define GetDpiForWindow GetDpiForWindowL
 
 /* Fallbacks for all windows */
 static UINT ReallyGetDpiForWindow(const HWND hwnd) {
-  UINT dpi = GetDpiForWindowL(hwnd);
+  UINT dpi = GetDpiForWindow(hwnd);
   if (!dpi) {
     HDC hdc = GetDC(hwnd);
     if (hdc) {
-      dpi = (UINT)GetDeviceCaps(hdc, LOGPIXELSY);
+      dpi = static_cast<UINT>(GetDeviceCaps(hdc, LOGPIXELSY));
       ReleaseDC(hwnd, hdc);
       if (!dpi) dpi = 96; /* Default to 96 dpi*/
     } else {
@@ -801,21 +270,8 @@ static UINT ReallyGetDpiForWindow(const HWND hwnd) {
  * (1703) So it is only useful in builds frim 1607 to 1703 To be called in the
  * WM_NCCREATE message handler.
  */
-static BOOL EnableNonClientDpiScalingL(HWND hwnd) {
-  /* For Windows 10 below build 15063 */
-  typedef BOOL(WINAPI * funk_t)(HWND hwnd);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "EnableNonClientDpiScaling");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd);
-  }
-  return FALSE;
-}
 /* Only applies to Windows NT for build number */
-static xpure BOOL OredredWinVer() {
+[[nodiscard]] static BOOL OredredWinVer() {
   DWORD oVer;
   DWORD ver = GetVersion();
   oVer = (ver & 0x000000FF) << 24    /* MAJOR */
@@ -829,7 +285,7 @@ static xpure BOOL OredredWinVer() {
   }
   return oVer;
 }
-static BOOL IsDarkModeEnabled(void) {
+static BOOL IsDarkModeEnabled() {
   DWORD value = 0;
   if (OredredWinVer() >= 0x0A004563) {
     /* In case of Windows 10 build 10.0.17763 or 10.x (future) or 11+ */
@@ -839,8 +295,9 @@ static BOOL IsDarkModeEnabled(void) {
                      TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Themes"
                           "\\Personalize"),
                      0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
-      if (RegQueryValueEx(key, TEXT("AppsUseLightTheme"), NULL, NULL,
-                          (LPBYTE)&value, &len) == ERROR_SUCCESS) {
+      if (RegQueryValueEx(key, TEXT("AppsUseLightTheme"), nullptr, nullptr,
+                          reinterpret_cast<LPBYTE>(&value),
+                          &len) == ERROR_SUCCESS) {
         value = !value;
       }
       RegCloseKey(key);
@@ -855,13 +312,12 @@ static BOOL IsHighContrastEnabled() {
 
   return FALSE;
 }
-/* We can use the DWMWA_USE_IMMERSIVE_DARK_MODE=20 DWM style
+/* We can use the kDwmaUseImmersiveDarkMode=20 DWM style
  * It is documented for Win11 build 22000 but it also appears to work for Win10
  * However from build 1809 to 2004 it the value was =19 and it is =20
  * Since Windows 10 build 20H1 and on Win11
- * DWMWA_USE_IMMERSIVE_DARK_MODE=19 up to Win10 2004
- * DWMWA_USE_IMMERSIVE_DARK_MODE=20 since Win10 20H1 */
-static HRESULT DwmSetWindowAttributeL(HWND hwnd, DWORD a, PVOID b, DWORD c);
+ * kDwmaUseImmersiveDarkMode=19 up to Win10 2004
+ * kDwmaUseImmersiveDarkMode=20 since Win10 20H1 */
 static BOOL AllowDarkTitlebar(HWND hwnd) {
   BOOL DarkMode = FALSE;
   if (IsHighContrastEnabled())
@@ -870,18 +326,18 @@ static BOOL AllowDarkTitlebar(HWND hwnd) {
   DarkMode = IsDarkModeEnabled();
   if (OredredWinVer() >= 0x0A004A29) {
     /* Windows 10 build 10.0.18985 ie 20H1 */
-    DwmSetWindowAttributeL(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &DarkMode,
-                           sizeof(DarkMode));
+    DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode, &DarkMode,
+                          sizeof(DarkMode));
   } else if (OredredWinVer() >= 0x0A004563) {
     /* Windows 10 build 10.0.17763 ie: 1809 or later */
 
     if (OredredWinVer() < 0x0A0047BA) {
       /* Windows 10 build 10.0.18362 ie: before 1903 */
       SetProp(hwnd, TEXT("UseImmersiveDarkModeColors"),
-              (HANDLE)(UINT_PTR)DarkMode);
+              reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(DarkMode)));
     }
-    DwmSetWindowAttributeL(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_PRE20H1,
-                           &DarkMode, sizeof(DarkMode));
+    DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkModePre20H1, &DarkMode,
+                          sizeof(DarkMode));
   }
   /* We must return the actual state of the Dark mode */
   return DarkMode;
@@ -889,61 +345,8 @@ static BOOL AllowDarkTitlebar(HWND hwnd) {
 
 /* Helper function */
 static int GetSystemMetricsForWin(int nIndex, HWND hwnd) {
-  return GetSystemMetricsForDpiL(nIndex, GetDpiForWindowL(hwnd));
+  return GetSystemMetricsForDpi(nIndex, GetDpiForWindow(hwnd));
 }
-static BOOL SystemParametersInfoForDpiL(UINT uiAction, UINT uiParam,
-                                        PVOID pvParam, UINT fWinIni, UINT dpi) {
-  typedef BOOL(WINAPI * funk_t)(UINT uiAction, UINT uiParam, PVOID pvParam,
-                                UINT fWinIni, UINT dpi);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (dpi) {
-    if (funk == (funk_t)IPTR) { /* First time */
-      funk = (funk_t)LoadDLLProc("USER32.DLL", "SystemParametersInfoForDpi");
-    }
-    if (funk) { /* We know we have the function */
-      return funk(uiAction, uiParam, pvParam, fWinIni, dpi);
-    }
-  }
-  /* Not handled Windows 10, version 1607 and below */
-  return SystemParametersInfo(uiAction, uiParam, pvParam, fWinIni);
-}
-#define SystemParametersInfoForDpi SystemParametersInfoForDpiL
-#if defined(WINVER) && WINVER >= 0x0500 && defined(WINEVENT_OUTOFCONTEXT)
-static HWINEVENTHOOK SetWinEventHookL(DWORD eventMin, DWORD eventMax,
-                                      HMODULE hmodWinEventProc,
-                                      WINEVENTPROC pfnWinEventProc,
-                                      DWORD idProcess, DWORD idThread,
-                                      DWORD dwFlags) {
-  typedef HWINEVENTHOOK(WINAPI * funk_t)(DWORD evm, DWORD evM, HMODULE hmod,
-                                         WINEVENTPROC wevp, DWORD idProcess,
-                                         DWORD idThread, DWORD dwFlags);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "SetWinEventHook");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(eventMin, eventMax, hmodWinEventProc, pfnWinEventProc,
-                idProcess, idThread, dwFlags);
-  }
-  /* Failed */
-  return NULL;
-}
-static BOOL UnhookWinEventL(HWINEVENTHOOK hWinEventHook) {
-  typedef BOOL(WINAPI * funk_t)(HWINEVENTHOOK hWinEventHook);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "UnhookWinEvent");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hWinEventHook);
-  }
-  /* Failed */
-  return FALSE;
-}
-#endif /* WINVER >= 0x500 */
 typedef struct tagRgTicTac {
   LARGE_INTEGER sta;
   LARGE_INTEGER end;
@@ -963,106 +366,15 @@ static int RGTac(RGTICTAC* tt) {
 }
 
 #ifndef _WIN64
-static void NotifyWinEventL(DWORD event, HWND hwnd, LONG idObj, LONG idChild) {
-  typedef void(WINAPI * funk_t)(DWORD, HWND, LONG, LONG);
-  static funk_t funk = (funk_t)1;
-  if (funk == (funk_t)1)
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "NotifyWinEvent");
-
-  if (funk) funk(event, hwnd, idObj, idChild);
-}
-#define NotifyWinEvent NotifyWinEventL
+#define NotifyWinEvent NotifyWinEvent
 #endif
 
-static HWND HungWindowFromGhostWindowL(HWND gost) {
-  typedef HWND(WINAPI * funk_t)(HWND hWinEventHook);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("USER32.DLL", "HungWindowFromGhostWindow");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(gost);
-  }
-
-  SetLastError(ERROR_CALL_NOT_IMPLEMENTED /*120*/);
-  /* Failed */
-  return NULL;
-}
-
 /* Needed on Windows 8+ to recive the WM_POWERBROADCAST mesage */
-static HPOWERNOTIFY WINAPI RegisterSuspendResumeNotificationL(HANDLE hRecipient,
-                                                              DWORD flag) {
-  typedef HPOWERNOTIFY(WINAPI * funk_t)(HANDLE hRecipient, DWORD flag);
-  static funk_t funk = (funk_t)1;
-  if (funk == (funk_t)1)
-    funk =
-        (funk_t)LoadDLLProc("USER32.DLL", "RegisterSuspendResumeNotification");
-
-  if (funk) return funk(hRecipient, flag);
-
-  /* Fallback */
-  return NULL;
-}
-static BOOL WINAPI UnregisterSuspendResumeNotificationL(HPOWERNOTIFY handle) {
-  typedef BOOL(WINAPI * funk_t)(HPOWERNOTIFY handle);
-  static funk_t funk = (funk_t)1;
-  if (funk == (funk_t)1)
-    funk = (funk_t)LoadDLLProc("USER32.DLL",
-                               "UnregisterSuspendResumeNotification");
-
-  if (funk) return funk(handle);
-
-  /* Fallback */
-  return FALSE;
-}
-
-static HRESULT DwmGetWindowAttributeL(HWND hwnd, DWORD a, PVOID b, DWORD c) {
-  typedef HRESULT(WINAPI * funk_t)(HWND hwnd, DWORD a, PVOID b, DWORD c);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("DWMAPI.DLL", "DwmGetWindowAttribute");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, a, b, c);
-  }
-  /* DwmGetWindowAttribute return 0 on sucess ! */
-  return 666; /* Here we FAIL with 666 error    */
-}
-
-static HRESULT DwmSetWindowAttributeL(HWND hwnd, DWORD a, PVOID b, DWORD c) {
-  typedef HRESULT(WINAPI * funk_t)(HWND hwnd, DWORD a, PVOID b, DWORD c);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("DWMAPI.DLL", "DwmSetWindowAttribute");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hwnd, a, b, c);
-  }
-  /* myDwmSetWindowAttribute return 0 on sucess ! */
-  return 666; /* Here we FAIL with 666 error    */
-}
-
-static HRESULT DwmGetColorizationColorL(DWORD* a, BOOL* b) {
-  typedef HRESULT(WINAPI * funk_t)(DWORD * a, BOOL * b);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("DWMAPI.DLL", "DwmGetColorizationColor");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(a, b);
-  }
-  /* return 0 on sucess ! */
-  return 666; /* Here we FAIL with 666 error    */
-}
 
 static COLORREF GetSysColorizationColor() {
   DWORD color = 0;
   BOOL b = FALSE;
-  if (S_OK == DwmGetColorizationColorL(&color, &b)) {
+  if (S_OK == DwmGetColorizationColor(&color, &b)) {
     /* Re orde- bytes because
      * COLORREF:  0x00BBGGRR and not 0xAARRGGBB */
     return (color & 0x000000FF) << 16    /* blue */
@@ -1072,17 +384,17 @@ static COLORREF GetSysColorizationColor() {
   return 0;
 }
 
-static long xpure average(long a, long b) {
+[[nodiscard]] static long average(long a, long b) {
   return (a >> 1) + (b >> 1) + (((a & 1) + (b & 1)) >> 1);
 }
-static long xpure averageX(const RECT* rc) {
+[[nodiscard]] static long averageX(const RECT* rc) {
   return average(rc->left, rc->right);
 }
-static long xpure averageY(const RECT* rc) {
+[[nodiscard]] static long averageY(const RECT* rc) {
   return average(rc->top, rc->bottom);
 }
 
-/* #define DwmGetWindowAttribute DwmGetWindowAttributeL */
+/* #define DwmGetWindowAttribute DwmGetWindowAttribute */
 
 static void SubRect(RECT* __restrict__ frame, const RECT* rect) {
   frame->left -= rect->left;
@@ -1115,8 +427,8 @@ static void OffsetPoints(POINT* pts, long dx, long dy, unsigned count) {
 static void FixDWMRectLL(HWND hwnd, RECT* bbb, const int SnapGap) {
   RECT rect, frame;
 
-  if (S_OK == DwmGetWindowAttributeL(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame,
-                                     sizeof(frame)) &&
+  if (S_OK == DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame,
+                                    sizeof(frame)) &&
       GetWindowRect(hwnd, &rect)) {
     SubRect(&frame, &rect);
     CopyRect(bbb, &frame);
@@ -1134,8 +446,8 @@ static void FixDWMRectLL(HWND hwnd, RECT* bbb, const int SnapGap) {
  * We use DWM api when available in order to get the REAL client area
  */
 static BOOL GetWindowRectLL(HWND hwnd, RECT* rect, const int SnapGap) {
-  HRESULT ret = DwmGetWindowAttributeL(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, rect,
-                                       sizeof(*rect));
+  HRESULT ret = DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, rect,
+                                      sizeof(*rect));
   if (ret == S_OK) {
     ret = TRUE;
   } else {
@@ -1156,8 +468,8 @@ static BOOL GetWindowRectLL(HWND hwnd, RECT* rect, const int SnapGap) {
  */
 static int IsWindowCloaked(HWND hwnd) {
   int cloaked = 0;
-  return S_OK == DwmGetWindowAttributeL(hwnd, DWMWA_CLOAKED, &cloaked,
-                                        sizeof(cloaked)) &&
+  return S_OK == DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
+                                       sizeof(cloaked)) &&
          cloaked;
 }
 /* Some windows might have a size of 0x0 (e.g., a 'Setup' window in Windows 11
@@ -1200,8 +512,8 @@ static HWND GetRootOwner(HWND hwnd) {
  * caption buttons. This is usefull to ensure we are not in one of them.
  */
 static BOOL GetCaptionButtonsRect(HWND hwnd, RECT* rc) {
-  int ret = DwmGetWindowAttributeL(hwnd, DWMWA_CAPTION_BUTTON_BOUNDS, rc,
-                                   sizeof(*rc));
+  int ret =
+      DwmGetWindowAttribute(hwnd, DWMWA_CAPTION_BUTTON_BOUNDS, rc, sizeof(*rc));
   /* Convert rectangle to to screen coordinate. */
   if (ret == S_OK) {
     RECT wrc;
@@ -1212,118 +524,34 @@ static BOOL GetCaptionButtonsRect(HWND hwnd, RECT* rc) {
   return 0;
 }
 
-static LONG NtSuspendProcessL(HANDLE ProcessHandle) {
-  typedef HRESULT(NTAPI * funk_t)(HANDLE ProcessHandle);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("NTDLL.DLL", "NtSuspendProcess");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(ProcessHandle);
-  }
-  return 666; /* Here we FAIL with 666 error    */
+// NtSuspendProcess/NtResumeProcess are undocumented ntdll exports that have no
+// import library, so they are resolved once at first use.
+static LONG CallNtProcessFunction(const char* name, HANDLE process) {
+  using NtProcessFn = LONG(NTAPI*)(HANDLE);
+  constexpr LONG kFailure = 666;
+  const HMODULE ntdll = GetModuleHandle(TEXT("ntdll.dll"));
+  if (!ntdll) return kFailure;
+  const auto fn = reinterpret_cast<NtProcessFn>(
+      reinterpret_cast<void*>(GetProcAddress(ntdll, name)));
+  return fn ? fn(process) : kFailure;
 }
-
-static LONG NtResumeProcessL(HANDLE ProcessHandle) {
-  typedef HRESULT(NTAPI * funk_t)(HANDLE ProcessHandle);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("NTDLL.DLL", "NtResumeProcess");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(ProcessHandle);
-  }
-  return 666; /* Here we FAIL with 666 error    */
+static LONG NtSuspendProcess(HANDLE process) {
+  return CallNtProcessFunction("NtSuspendProcess", process);
 }
-
-static HRESULT DwmIsCompositionEnabledL(BOOL* pfEnabled) {
-  typedef HRESULT(WINAPI * funk_t)(BOOL * pfEnabled);
-  funk_t funk;
-
-  HINSTANCE hdll = NULL;
-  HRESULT ret;
-
-  *pfEnabled = FALSE;
-  ret = 666;
-
-  hdll = LoadLibraryA("DWMAPI.DLL");
-  if (hdll) {
-    funk = (funk_t)GetProcAddress(hdll, "DwmIsCompositionEnabled");
-    if (funk) {
-      ret = funk(pfEnabled);
-    } else {
-      *pfEnabled = FALSE;
-      ret = 666;
-    }
-    FreeLibrary(hdll);
-  }
-  return ret;
+static LONG NtResumeProcess(HANDLE process) {
+  return CallNtProcessFunction("NtResumeProcess", process);
 }
 
 static BOOL HaveDWM() {
   static int first = 1;
   static BOOL have_dwm = FALSE;
-  if (first) DwmIsCompositionEnabledL(&have_dwm);
+  if (first) DwmIsCompositionEnabled(&have_dwm);
   first = 0;
 
   return have_dwm;
 }
 
-static BOOL DwmDefWindowProcL(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
-                              LRESULT* plResult) {
-  typedef BOOL(WINAPI * funk_t)(HWND hWnd, UINT msg, WPARAM wParam,
-                                LPARAM lParam, LRESULT * plResult);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-    funk = (funk_t)LoadDLLProc("DWMAPI.DLL", "DwmDefWindowProc");
-  }
-  if (funk) { /* We know we have the function */
-    return funk(hWnd, msg, wParam, lParam, plResult);
-  }
-  return FALSE;
-}
-
 /* PSAPI.DLL */
-static DWORD GetModuleFileNameExL(HANDLE hProcess, HMODULE hModule,
-                                  LPTSTR lpFilename, DWORD nSize) {
-  typedef DWORD(WINAPI * funk_t)(HANDLE hProcess, HMODULE hModule,
-                                 LPTSTR lpFilename, DWORD nSize);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-#ifdef _UNICODE
-    funk = (funk_t)LoadDLLProc("PSAPI.DLL", "GetModuleFileNameExW");
-#else
-    funk = (funk_t)LoadDLLProc("PSAPI.DLL", "GetModuleFileNameExA");
-#endif
-  }
-  if (funk) { /* We have the function */
-    return funk(hProcess, hModule, lpFilename, nSize);
-  }
-  return 0;
-}
-
-static DWORD GetProcessImageFileNameL(HANDLE hProcess, TCHAR* lpImageFileName,
-                                      DWORD nSize) {
-  typedef DWORD(WINAPI * funk_t)(HANDLE hProcess, TCHAR * lpImageFileName,
-                                 DWORD nSize);
-  static funk_t funk = (funk_t)IPTR;
-
-  if (funk == (funk_t)IPTR) { /* First time */
-#ifdef _UNICODE
-    funk = (funk_t)LoadDLLProc("PSAPI.DLL", "GetProcessImageFileNameW");
-#else
-    funk = (funk_t)LoadDLLProc("PSAPI.DLL", "GetProcessImageFileNameA");
-#endif
-  }
-  if (funk) {
-    return funk(hProcess, lpImageFileName, nSize);
-  }
-  return 0;
-}
 
 static DWORD GetWindowProgNameFromPid(DWORD pid, TCHAR* title,
                                       size_t title_len) {
@@ -1332,13 +560,13 @@ static DWORD GetWindowProgNameFromPid(DWORD pid, TCHAR* title,
       OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 
   if (proc)
-    ret = GetModuleFileNameExL(proc, NULL, title, title_len);
+    ret = GetModuleFileNameEx(proc, nullptr, title, title_len);
   else
     proc = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
   if (!proc) return 0;
 
   /* Try other function */
-  if (!ret) ret = GetProcessImageFileNameL(proc, title, title_len);
+  if (!ret) ret = GetProcessImageFileName(proc, title, title_len);
 
   CloseHandle(proc);
 
@@ -1373,7 +601,7 @@ struct pid_pair_struct {
   DWORD child_pid;
 };
 static BOOL CALLBACK GetWindowProgName_subwins_EnumProc(HWND hwnd, LPARAM lp) {
-  struct pid_pair_struct* pids = (struct pid_pair_struct*)lp;
+  struct pid_pair_struct* pids = reinterpret_cast<struct pid_pair_struct*>(lp);
   DWORD hwnd_pid = 0;
   if (GetWindowThreadProcessId(hwnd, &hwnd_pid) && hwnd_pid &&
       hwnd_pid != pids->parent_pid) {
@@ -1394,7 +622,7 @@ static DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
 
   /* Look for a child window with a different PID !*/
   EnumChildWindows(parenthwnd, GetWindowProgName_subwins_EnumProc,
-                   (LPARAM)&pids);
+                   reinterpret_cast<LPARAM>(&pids));
 
   /* if pids.child_pid it means we found a child window tht belongs to another
    * process */
@@ -1412,42 +640,35 @@ static DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
  * we try to get the icon from the window class if everything failed or
  * if the first message timed out (freezing program).
  * Note that ICON_SMALL2 was introduced by Windows XP (I think) */
-#ifndef ICON_SMALL2
-#define ICON_SMALL2 2
-#endif
-#ifndef GCLP_HICON
-#define GCLP_HICON (-14)
-#endif
-#ifndef GCLP_HICONSM
-#define GCLP_HICONSM (-34)
-#endif
 static HICON GetWindowIcon(HWND hwnd) {
 #define TIMEOUT 64
   HICON icon;
   if (SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG,
-                         TIMEOUT, (DWORD_PTR*)&icon)) {
+                         TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon))) {
     /* The message failed without timeout */
     if (icon) return icon; /* Sucess */
 
     /* ICON_SMALL2 exists since Windows XP only */
     if (OredredWinVer() >= 0x05010000 &&
         SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG,
-                           TIMEOUT, (DWORD_PTR*)&icon) &&
+                           TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon)) &&
         icon)
       return icon;
 
     /* Try again with the big icon if we were unable to retreave the small one.
      */
     if (SendMessageTimeout(hwnd, WM_GETICON, ICON_BIG, 0, SMTO_ABORTIFHUNG,
-                           TIMEOUT, (DWORD_PTR*)&icon) &&
+                           TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon)) &&
         icon)
       return icon;
   }
   /* Try the Class icon if nothing can be get */
-  if ((icon = (HICON)GetClassLongPtr(hwnd, GCLP_HICONSM))) return icon;
-  if ((icon = (HICON)GetClassLongPtr(hwnd, GCLP_HICON))) return icon;
+  if ((icon = reinterpret_cast<HICON>(GetClassLongPtr(hwnd, GCLP_HICONSM))))
+    return icon;
+  if ((icon = reinterpret_cast<HICON>(GetClassLongPtr(hwnd, GCLP_HICON))))
+    return icon;
 
-  return LoadIcon(NULL, IDI_WINLOGO); /* Default to generic window icon */
+  return LoadIcon(nullptr, IDI_WINLOGO); /* Default to generic window icon */
 #undef TIMEOUT
 }
 /* Helper function to get the current system menu font.
@@ -1493,7 +714,7 @@ struct NEWNONCLIENTMETRICSAW {
 static BOOL GetNonClientMetricsDpi(struct NEWNONCLIENTMETRICSAW* ncm,
                                    UINT dpi) {
   BOOL ret;
-  mem00(ncm, sizeof(struct NEWNONCLIENTMETRICSAW));
+  ZeroObject(*ncm);
   ncm->cbSize = sizeof(struct NEWNONCLIENTMETRICSAW);
   ret = SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS,
                                    sizeof(struct NEWNONCLIENTMETRICSAW), ncm, 0,
@@ -1534,18 +755,18 @@ static int HitTestTimeoutL(HWND hwnd, LPARAM lParam) {
   DorQWORD area = 0;
 
   /*
-      if(DwmDefWindowProcL(hwnd, WM_NCHITTEST, 0, lParam, (LRESULT*)&area))
+      if(DwmDefWindowProc(hwnd, WM_NCHITTEST, 0, lParam, (LRESULT*)&area))
           return area;
   */
 
   while (hwnd && SendMessageTimeout(hwnd, WM_NCHITTEST, 0, lParam, SMTO_NORMAL,
                                     255, &area)) {
-    if ((int)area == HTTRANSPARENT)
+    if (static_cast<int>(area) == HTTRANSPARENT)
       hwnd = GetParent(hwnd);
     else
       break;
   }
-  return (int)area;
+  return static_cast<int>(area);
 }
 #define HitTestTimeout(hwnd, x, y) HitTestTimeoutL(hwnd, MAKELPARAM(x, y))
 
@@ -1575,7 +796,7 @@ static int IsWindowSnapped(HWND hwnd) {
 static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   MINMAXINFO mmi;
   UINT dpi = GetDpiForWindow(hwnd);
-  mem00(&mmi, sizeof(mmi));
+  ZeroObject(mmi);
   mmi.ptMinTrackSize.x = GetSystemMetricsForDpi(SM_CXMINTRACK, dpi);
   mmi.ptMinTrackSize.y = GetSystemMetricsForDpi(SM_CYMINTRACK, dpi);
   mmi.ptMaxTrackSize.x = GetSystemMetricsForDpi(SM_CXMAXTRACK, dpi);
@@ -1584,34 +805,37 @@ static void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   *Max = mmi.ptMaxTrackSize;
   if ((flags & 3) != 3) {
     DWORD_PTR ret; /* 32ms timeout */
-    SendMessageTimeout(hwnd, WM_GETMINMAXINFO, 0, (LPARAM)&mmi,
-                       SMTO_ABORTIFHUNG, 32, &ret);
+    SendMessageTimeout(hwnd, WM_GETMINMAXINFO, 0,
+                       reinterpret_cast<LPARAM>(&mmi), SMTO_ABORTIFHUNG, 32,
+                       &ret);
     if (!(flags & 1)) *Min = mmi.ptMinTrackSize;
     if (!(flags & 2)) *Max = mmi.ptMaxTrackSize;
   }
 }
 
-static xpure int SamePt(const POINT a, const POINT b) {
+[[nodiscard]] static int SamePt(const POINT a, const POINT b) {
   return (a.x == b.x && a.y == b.y);
 }
 
 /* Limit x between l and h */
-static xpure int CLAMP(int l, int x, int h) {
+[[nodiscard]] static int CLAMP(int l, int x, int h) {
   return (x < l) ? l : ((x > h) ? h : x);
 }
 
 /* Says if a rect is inside another one */
-static pure BOOL RectInRect(const RECT* big, const RECT* wnd) {
+[[nodiscard]] static BOOL RectInRect(const RECT* big, const RECT* wnd) {
   return wnd->left >= big->left && wnd->top >= big->top &&
          wnd->right <= big->right && wnd->bottom <= big->bottom;
 }
 
-static pure BOOL RectInRectT(const RECT* big, const RECT* wnd, const int T) {
+[[nodiscard]] static BOOL RectInRectT(const RECT* big, const RECT* wnd,
+                                      const int T) {
   return wnd->left + T >= big->left && wnd->top + T >= big->top &&
          wnd->right <= big->right + T && wnd->bottom <= big->bottom + T;
 }
 
-static pure unsigned WhichSideRectInRect(const RECT* mon, const RECT* wnd) {
+[[nodiscard]] static unsigned WhichSideRectInRect(const RECT* mon,
+                                                  const RECT* wnd) {
   unsigned flag;
   flag = ((wnd->left == mon->left) & (mon->right - wnd->right > 16)) << 2;
   flag |= ((wnd->right == mon->right) & (wnd->left - mon->left > 16)) << 3;
@@ -1644,40 +868,40 @@ static void CropOutRectFromSeg(RECT* seg, const RECT* cover) {
   }
 }
 
-static xpure int IsEqualT(int a, int b, int th) {
+[[nodiscard]] static int IsEqualT(int a, int b, int th) {
   return (b - th <= a) & (a <= b + th);
 }
 static int IsInRangeT(int x, int a, int b, int T) {
   return (a - T <= x) & (x <= b + T);
 }
-static pure int EqualRectT(const RECT* a, const RECT* b, const int T) {
+[[nodiscard]] static int EqualRectT(const RECT* a, const RECT* b, const int T) {
   return IsEqualT(a->left, b->left, T) && IsEqualT(a->right, b->right, T) &&
          IsEqualT(a->top, b->top, T) && IsEqualT(a->bottom, b->bottom, T);
 }
-static pure unsigned AreRectsAlignedOutT(const RECT* a, const RECT* b,
-                                         const int tol) {
+[[nodiscard]] static unsigned AreRectsAlignedOutT(const RECT* a, const RECT* b,
+                                                  const int tol) {
   return IsEqualT(a->left, b->right, tol) << 2 |
          IsEqualT(a->top, b->bottom, tol) << 4 |
          IsEqualT(a->right, b->left, tol) << 3 |
          IsEqualT(a->bottom, b->top, tol) << 5;
 }
-static pure unsigned AreRectsAlignedInT(const RECT* a, const RECT* b,
-                                        const int tol) {
+[[nodiscard]] static unsigned AreRectsAlignedInT(const RECT* a, const RECT* b,
+                                                 const int tol) {
   return IsEqualT(a->left, b->left, tol) << 2 |
          IsEqualT(a->top, b->top, tol) << 4 |
          IsEqualT(a->right, b->right, tol) << 3 |
          IsEqualT(a->bottom, b->bottom, tol) << 5;
 }
-static pure unsigned AreRectsAligned2T(const RECT* a, const RECT* b,
-                                       const int tol) {
+[[nodiscard]] static unsigned AreRectsAligned2T(const RECT* a, const RECT* b,
+                                                const int tol) {
   return AreRectsAlignedOutT(a, b, tol) | (AreRectsAlignedInT(b, a, tol) << 16);
 }
 
 static int InRange(int x, int a, int b) {
   return (x >= a) && (x <= b);
 }
-static xpure int SegT(long ax, long bx, const long* _ay12, const long* _by12,
-                      int tol) {
+[[nodiscard]] static int SegT(long ax, long bx, const long* _ay12,
+                              const long* _by12, int tol) {
   const long by1 = _by12[0];   /* left/top */
   const long by2 = _by12[2];   /* right/bottom */
   const long ay1 = _ay12[0];   /* left/top */
@@ -1688,22 +912,22 @@ static xpure int SegT(long ax, long bx, const long* _ay12, const long* _by12,
 }
 /* Tells if rect b is touching rect a and on which side
  * 2^X, x=2 for Left, 3 for right, 4 for top and 5 for Bottom*/
-static pure unsigned AreRectsTouchingT(const RECT* a, const RECT* b,
-                                       const int tol) {
+[[nodiscard]] static unsigned AreRectsTouchingT(const RECT* a, const RECT* b,
+                                                const int tol) {
   return SegT(a->left, b->right, &a->top, &b->top, tol) << 2      /* Left */
          | SegT(a->right, b->left, &a->top, &b->top, tol) << 3    /* Right */
          | SegT(a->top, b->bottom, &a->left, &b->left, tol) << 4  /* Top */
          | SegT(a->bottom, b->top, &a->left, &b->left, tol) << 5; /* Bottom */
 }
 #if 0
-static pure unsigned AreRectsTouchingInT(const RECT *a, const RECT *b, const int tol)
+[[nodiscard]] static unsigned AreRectsTouchingInT(const RECT *a, const RECT *b, const int tol)
 {
     return SegT(a->left, b->left, &a->top, &b->bottom, tol) << 2 /* Left */
          | SegT(a->right, b->right, &a->top, &b->bottom, tol) << 3 /* Right */
          | SegT(a->top, b->top, &a->left, &b->right, tol) << 4 /* Top */
          | SegT(a->bottom, b->bottom, &a->left, &b->right, tol) << 5; /* Bottom */
 }
-static pure unsigned AreRectsTouching2T(const RECT *a, const RECT *b, const int tol)
+[[nodiscard]] static unsigned AreRectsTouching2T(const RECT *a, const RECT *b, const int tol)
 {
     return AreRectsTouchingT(a, b, tol) | AreRectsTouchingInT(a, b, tol) << 16;
 }
@@ -1737,30 +961,40 @@ static void RectFromPts(RECT* rc, const POINT a, const POINT b) {
 
 /* DownlevelLCIDToLocaleName in NLSDL.DLL */
 /* LCIDToLocaleName  in KERNEL32.DLL*/
-#ifdef _UNICODE
-static int LCIDToLocaleNameL(LCID Locale, LPWSTR lpName, int cchName,
-                             DWORD dwFlags) {
-  typedef int(WINAPI * funk_t)(LCID Locale, LPWSTR lpName, int cchName,
-                               DWORD dwFlags);
-  funk_t funk = (funk_t)GetProcAddress(GetModuleHandleA("KERNEL32.DLL"),
-                                       "LCIDToLocaleName");
 
-  if (funk) { /* Function in KERNEL32.DLL */
-    return funk(Locale, lpName, cchName, dwFlags);
-  }
-  /* Unable to find KERNEL32.DLL::LCIDToLocaleName
-   * Try with NLSDL.DLL::DownlevelLCIDToLocaleName */
-  HINSTANCE h = LoadLibraryA("NLSDL.DLL");
-  if (h) {
-    int ret = 0;
-    funk = (funk_t)GetProcAddress(h, "DownlevelLCIDToLocaleName");
-    if (funk) ret = funk(Locale, lpName, cchName, dwFlags);
-    FreeLibrary(h);
-    return ret;
-  }
-  return 0;
+// Reads a whole ini section as "key=value\0key=value\0\0", growing the buffer
+// until the section fits. Returns an empty vector if the section is missing.
+[[nodiscard]] static std::vector<TCHAR> ReadIniSection(
+    const TCHAR* section, const TCHAR* ini_path, size_t initial_size = 8192) {
+  std::vector<TCHAR> buffer;
+  size_t size = initial_size / 2;
+  DWORD copied;
+  do {  // GetPrivateProfileSection() returns size - 2 when it truncates.
+    size *= 2;
+    buffer.assign(size, TEXT('\0'));
+    copied = GetPrivateProfileSection(section, buffer.data(),
+                                      static_cast<DWORD>(size), ini_path);
+  } while (copied == size - 2);
+  if (copied == 0) buffer.clear();
+  return buffer;
 }
-#endif /* UNICODE */
+
+// Reads a string value of any length from an ini file.
+[[nodiscard]] static std::basic_string<TCHAR> ReadIniString(
+    const TCHAR* section, const TCHAR* key, const TCHAR* default_value,
+    const TCHAR* ini_path) {
+  std::basic_string<TCHAR> value(1024, TEXT('\0'));
+  for (;;) {
+    const DWORD copied =
+        GetPrivateProfileString(section, key, default_value, value.data(),
+                                static_cast<DWORD>(value.size()), ini_path);
+    if (copied + 1 < value.size()) {  // Not truncated.
+      value.resize(copied);
+      return value;
+    }
+    value.assign(value.size() * 2, TEXT('\0'));
+  }
+}
 
 static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
                                          const char* const oname,
@@ -1769,8 +1003,9 @@ static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
     TCHAR name[64];
     const TCHAR* p;
     size_t plen;
-    str2tchar_s(name, ARR_SZ(name) - 1, oname);
-    lstrcat_s(name, ARR_SZ(name), TEXT("=")); /* Add equal at the end of name */
+    str2tchar_s(name, std::size(name) - 1, oname);
+    lstrcat_s(name, std::size(name),
+              TEXT("=")); /* Add equal at the end of name */
 
     for (p = section; *p; p += plen + 1) { /* Double NULL treminated string */
       if (!lstrcmpi_samestart(p, name)) {
@@ -1785,7 +1020,7 @@ static const TCHAR* GetSectionOptionCStr(const TCHAR* section,
 /* Get the int inside the section returned by GetPrivateProfileSection */
 static int GetSectionOptionInt(const TCHAR* section, const char* const oname,
                                const int def) {
-  const TCHAR* val = GetSectionOptionCStr(section, oname, NULL);
+  const TCHAR* val = GetSectionOptionCStr(section, oname, nullptr);
   if (val) return strtoi(val);
   /* Default to the provided def value */
   return def;
@@ -1797,7 +1032,7 @@ static void RGIniMapSection(const TCHAR* section, /*OUT*/ TCHAR const** map,
                             char const* const* const ini_mapping,
                             size_t maplen) {
   char key[64];
-  mem00(map, sizeof(*map) * maplen); /* Always zero out */
+  ZeroRange(map, maplen); /* Always zero out */
   for (const TCHAR* p = section; *p; p += lstrlen(p) + 1) {
     char* pk = key;
     while (*p && *p != TEXT('=') && pk < key + 63)
@@ -1811,38 +1046,4 @@ static void RGIniMapSection(const TCHAR* section, /*OUT*/ TCHAR const** map,
   }
 }
 
-/* Simple function to append to a simple list */
-struct my_simple_list_ {
-  void* buf;
-  size_t count;
-  size_t cap;
-};
-static void* ListAppend(void* list_p, void* elem, size_t elemsize) {
-  struct my_simple_list_* list = (struct my_simple_list_*)list_p;
-  void* dst = NULL;
-  size_t cap = list->cap;
-
-  if (list->count >= cap) {
-    cap = std::max<size_t>(cap * 2, 8);
-    void* nptr = realloc(list->buf, cap * elemsize);
-    if (!nptr) return NULL;
-    /*LOGA("ListAppend Reallocated = %u elems / %u bytes", (unsigned)cap,
-     * (unsigned)(cap * elemsize)); */
-
-    list->buf = nptr;
-    list->cap = cap; /* Realloc succeeded, increase count. */
-  }
-
-  dst = ((unsigned char*)list->buf) + list->count * elemsize;
-  list->count++;
-  /* Copy element to the end if non null */
-  if (elem) memcpy(dst, elem, elemsize);
-
-  return dst;
-}
-static void ListFree(void* list_p) {
-  struct my_simple_list_* list = (struct my_simple_list_*)list_p;
-  free(list->buf);
-  mem00(list, sizeof(*list));
-}
 #endif

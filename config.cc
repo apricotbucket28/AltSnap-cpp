@@ -28,7 +28,7 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND, UINT, WPARAM, LPARAM);
 static INT_PTR CALLBACK AdvancedPageDialogProc(HWND, UINT, WPARAM, LPARAM);
 static LRESULT CALLBACK FindWindowProc(HWND, UINT, WPARAM, LPARAM);
 
-HWND g_cfgwnd = NULL;
+HWND g_cfgwnd = nullptr;
 
 /////////////////////////////////////////////////////////////////////////////
 // No error reporting since we don't want the user to be interrupted
@@ -42,12 +42,13 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   RegOpenKeyEx(HKEY_CURRENT_USER,
                TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), 0,
                KEY_QUERY_VALUE, &key);
-  RegQueryValueEx(key, TEXT(APP_NAMEA), NULL, NULL, (LPBYTE)value, &len);
+  RegQueryValueEx(key, TEXT(APP_NAMEA), nullptr, nullptr,
+                  reinterpret_cast<LPBYTE>(value), &len);
   RegCloseKey(key);
 
   // Compare to what it should be
   TCHAR compare[MAX_PATH + 20];
-  GetModuleFileName(NULL, &compare[1], MAX_PATH);
+  GetModuleFileName(nullptr, &compare[1], MAX_PATH);
   compare[0] = '\"';
   unsigned ll = lstrlen(compare);
   compare[ll] = '\"';
@@ -58,10 +59,10 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   }
   // Autostart is on, check arguments
   *_on = 1;
-  if (lstrstr(value, TEXT(" -hide")) != NULL) {
+  if (lstrstr(value, TEXT(" -hide")) != nullptr) {
     *_hidden = 1;
   }
-  if (lstrstr(value, TEXT(" -elevate")) != NULL) {
+  if (lstrstr(value, TEXT(" -elevate")) != nullptr) {
     *_elevated = 1;
   }
 }
@@ -73,21 +74,22 @@ static void SetAutostart(int on, int hhide, int eelevate) {
   int error =
       RegCreateKeyEx(HKEY_CURRENT_USER,
                      TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
-                     0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL);
+                     0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
   if (error != ERROR_SUCCESS) return;
   if (on) {
     // Get path
     TCHAR value[MAX_PATH + 20];
-    GetModuleFileName(NULL, &value[1], MAX_PATH);
+    GetModuleFileName(nullptr, &value[1], MAX_PATH);
     value[0] = '\"';
     unsigned ll = lstrlen(value);
     value[ll] = '\"';
     value[++ll] = '\0';
     // Add -hide or -elevate flags
-    if (hhide) lstrcat_s(value, ARR_SZ(value), TEXT(" -hide"));
-    if (eelevate) lstrcat_s(value, ARR_SZ(value), TEXT(" -elevate"));
+    if (hhide) lstrcat_s(value, std::size(value), TEXT(" -hide"));
+    if (eelevate) lstrcat_s(value, std::size(value), TEXT(" -elevate"));
     // Set autostart
-    RegSetValueEx(key, TEXT(APP_NAMEA), 0, REG_SZ, (LPBYTE)value,
+    RegSetValueEx(key, TEXT(APP_NAMEA), 0, REG_SZ,
+                  reinterpret_cast<LPBYTE>(value),
                   (lstrlen(value) + 1) * sizeof(value[0]));
   } else {
     // Remove
@@ -101,19 +103,20 @@ static void SetAutostart(int on, int hhide, int eelevate) {
 // Only used in the case of Vista+
 static BOOL ElevateNow(int showconfig) {
   TCHAR path[MAX_PATH];
-  GetModuleFileName(NULL, path, ARR_SZ(path));
+  GetModuleFileName(nullptr, path, std::size(path));
   INT_PTR ret;
   if (showconfig)
-    ret = (INT_PTR)ShellExecute(NULL, TEXT("runas"), path,
-                                TEXT("-config -multi"), NULL, SW_SHOWNORMAL);
+    ret = reinterpret_cast<INT_PTR>(ShellExecute(nullptr, TEXT("runas"), path,
+                                                 TEXT("-config -multi"),
+                                                 nullptr, SW_SHOWNORMAL));
   else
-    ret = (INT_PTR)ShellExecute(NULL, TEXT("runas"), path, TEXT("-multi"), NULL,
-                                SW_SHOWNORMAL);
+    ret = reinterpret_cast<INT_PTR>(ShellExecute(
+        nullptr, TEXT("runas"), path, TEXT("-multi"), nullptr, SW_SHOWNORMAL));
 
   if (ret > 32) {
     PostMessage(g_hwnd, WM_CLOSE, 0, 0);
   } else {
-    MessageBox(NULL, l10n->GeneralElevationAborted, TEXT(APP_NAMEA),
+    MessageBox(nullptr, l10n->GeneralElevationAborted, TEXT(APP_NAMEA),
                MB_ICONINFORMATION | MB_OK);
   }
   return FALSE;
@@ -131,15 +134,16 @@ static void OpenConfig(int startpage) {
   static const struct {
     WORD pszTemplate;
     DLGPROC pfnDlgProc;
-  } pages[] = {{IDD_GENERALPAGE, (DLGPROC)GeneralPageDialogProc},
-               {IDD_MOUSEPAGE, (DLGPROC)MousePageDialogProc},
-               {IDD_KBPAGE, (DLGPROC)KeyboardPageDialogProc},
-               {IDD_BLACKLISTPAGE, (DLGPROC)BlacklistPageDialogProc},
-               {IDD_ADVANCEDPAGE, (DLGPROC)AdvancedPageDialogProc},
-               {IDD_ABOUTPAGE, (DLGPROC)AboutPageDialogProc}};
-  PROPSHEETPAGE psp[ARR_SZ(pages)];
-  mem00(&psp[0], sizeof(psp));
-  for (size_t i = 0; i < ARR_SZ(pages); i++) {
+  } pages[] = {
+      {IDD_GENERALPAGE, static_cast<DLGPROC>(GeneralPageDialogProc)},
+      {IDD_MOUSEPAGE, static_cast<DLGPROC>(MousePageDialogProc)},
+      {IDD_KBPAGE, static_cast<DLGPROC>(KeyboardPageDialogProc)},
+      {IDD_BLACKLISTPAGE, static_cast<DLGPROC>(BlacklistPageDialogProc)},
+      {IDD_ADVANCEDPAGE, static_cast<DLGPROC>(AdvancedPageDialogProc)},
+      {IDD_ABOUTPAGE, static_cast<DLGPROC>(AboutPageDialogProc)}};
+  PROPSHEETPAGE psp[std::size(pages)];
+  ZeroObject(psp);
+  for (size_t i = 0; i < std::size(pages); i++) {
     psp[i].dwSize = sizeof(*psp);
     psp[i].hInstance = g_hinst;
     psp[i].pszTemplate = MAKEINTRESOURCE(pages[i].pszTemplate);
@@ -148,17 +152,17 @@ static void OpenConfig(int startpage) {
 
   // Define the property sheet
   PROPSHEETHEADER psh;
-  mem00(&psh, sizeof(psh));
+  ZeroObject(psh);
   psh.dwSize = sizeof(psh);
   psh.dwFlags = WinVer >= VISTA
                     ? PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON |
                           PSH_NOCONTEXTHELP
                     : PSH_PROPSHEETPAGE | PSH_USECALLBACK | PSH_USEHICON;
-  psh.hwndParent = NULL;
+  psh.hwndParent = nullptr;
   psh.hInstance = g_hinst;
   psh.hIcon = g_icons[1];  // LoadIcon(g_hinst, iconstr[1]);
   psh.pszCaption = TEXT(APP_NAMEA);
-  psh.nPages = ARR_SZ(psp);
+  psh.nPages = std::size(psp);
   psh.ppsp = psp;
   psh.pfnCallback = PropSheetProc;
   psh.nStartPage = startpage;
@@ -187,7 +191,8 @@ static void UpdateStrings() {
 
   // Update tab titles
   // tc = PropSheet_GetTabControl(g_cfgwnd);
-  HWND tc = (HWND)SendMessage(g_cfgwnd, PSM_GETTABCONTROL, 0, 0);
+  HWND tc =
+      reinterpret_cast<HWND>(SendMessage(g_cfgwnd, PSM_GETTABCONTROL, 0, 0));
   int numrows_prev = TabCtrl_GetRowCount(tc);
   const TCHAR* titles[6];
   titles[0] = l10n->ConfigTabGeneral;
@@ -196,10 +201,10 @@ static void UpdateStrings() {
   titles[3] = l10n->ConfigTabBlacklist;
   titles[4] = l10n->ConfigTabAdvanced;
   titles[5] = l10n->ConfigTabAbout;
-  for (size_t i = 0; i < ARR_SZ(titles); i++) {
+  for (size_t i = 0; i < std::size(titles); i++) {
     TCITEM ti;
     ti.mask = TCIF_TEXT;
-    ti.pszText = (TCHAR*)titles[i];
+    ti.pszText = const_cast<TCHAR*>(titles[i]);
     TabCtrl_SetItem(tc, i, &ti);
   }
 
@@ -207,7 +212,7 @@ static void UpdateStrings() {
   int numrows = TabCtrl_GetRowCount(tc);
   if (numrows_prev != numrows) {
     HWND page = PropSheet_GetCurrentPageHwnd(g_cfgwnd);
-    if (page != NULL) {
+    if (page != nullptr) {
       int diffrows = numrows - numrows_prev;
       WINDOWPLACEMENT wndpl;
       wndpl.length = sizeof(wndpl);
@@ -258,7 +263,7 @@ static void MoveToCorner(HWND hwnd) {
   } else {
     y = mi.rcWork.bottom - h;
   }
-  SetWindowPos(hwnd, NULL, x, y, w, h,
+  SetWindowPos(hwnd, nullptr, x, y, w, h,
                SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_NOSIZE |
                    SWP_ASYNCWINDOWPOS);
 }
@@ -274,7 +279,8 @@ static BOOL CALLBACK PropSheetProc(HWND hwnd, UINT msg, LPARAM lParam) {
     // HICON taskbar_icon = (HICON)LoadImageA(g_hinst,
     // MAKEINTRESOURCEA(APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR);
     HICON taskbar_icon = LoadIcon(g_hinst, MAKEINTRESOURCE(APP_ICON));
-    SendMessage(g_cfgwnd, WM_SETICON, ICON_BIG, (LPARAM)taskbar_icon);
+    SendMessage(g_cfgwnd, WM_SETICON, ICON_BIG,
+                reinterpret_cast<LPARAM>(taskbar_icon));
   }
   return TRUE;
 }
@@ -289,8 +295,8 @@ static DWORD IsUACEnabled() {
         TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"),
         0, KEY_QUERY_VALUE, &key);
 
-    RegQueryValueEx(key, TEXT("EnableLUA"), NULL, NULL, (LPBYTE)&uac_enabled,
-                    &len);
+    RegQueryValueEx(key, TEXT("EnableLUA"), nullptr, nullptr,
+                    reinterpret_cast<LPBYTE>(&uac_enabled), &len);
     RegCloseKey(key);
   }
   return uac_enabled;
@@ -307,7 +313,8 @@ static DWORD IsUACEnabled() {
 #define CB_SetCurSel(hwnd, i) SendMessage(hwnd, CB_SETCURSEL, i, 0)
 #define CB_GetCurSel(hwnd) (int)(DWORD)SendMessage(hwnd, CB_GETCURSEL, 0, 0)
 static int CB_GetCurSelDlgItem(HWND hwnd, UINT id) {
-  return (int)(DWORD)SendMessage(GetDlgItem(hwnd, id), CB_GETCURSEL, 0, 0);
+  return static_cast<int>(static_cast<DWORD>(
+      SendMessage(GetDlgItem(hwnd, id), CB_GETCURSEL, 0, 0)));
 }
 #define CB_GetCurSelId(id) CB_GetCurSelDlgItem(hwnd, id)
 #define CB_GetText(id, txt, txtlen)                                         \
@@ -321,14 +328,15 @@ static LRESULT CB_GetTextAndIdx(HWND hwnd, TCHAR* txt, size_t txtlen) {
   } else {
     size_t itemlen = SendMessage(hwnd, CB_GETLBTEXTLEN, idx, 0);
     if (txtlen > itemlen)  // We have enough space
-      SendMessage(hwnd, CB_GETLBTEXT, idx, (LPARAM)txt);
+      SendMessage(hwnd, CB_GETLBTEXT, idx, reinterpret_cast<LPARAM>(txt));
   }
   return idx;
 }
 
 static LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd, const TCHAR* txt) {
   LRESULT new_index =
-      SendMessage(hwnd, CB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)txt);
+      SendMessage(hwnd, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+                  reinterpret_cast<LPARAM>(txt));
   if (new_index < 0) new_index = CB_AddString(hwnd, txt);
   return new_index;
 }
@@ -344,14 +352,14 @@ static void WriteOptionBoolW(HWND hwnd, WORD id, const TCHAR* section,
   WriteOptionBoolW(hwnd, id, section, name)
 static int WriteOptionBoolBW(HWND hwnd, WORD id, const TCHAR* section,
                              const char* name_s, int bit) {
-  TCHAR txt[UINT_DIGITS + 1];
+  TCHAR txt[kUintDigits + 1];
   TCHAR name[64];
   str2tchar(name, name_s);
   int val = GetPrivateProfileInt(section, name, 0, inipath);
   if (IsDlgButtonChecked(hwnd, id))
-    val = setBit(val, bit);
+    val = SetBit(val, bit);
   else
-    val = clearBit(val, bit);
+    val = ClearBit(val, bit);
 
   WritePrivateProfileString(section, name, Uint2lStr(txt, val), inipath);
   return val;
@@ -362,51 +370,21 @@ static int WriteOptionBoolBW(HWND hwnd, WORD id, const TCHAR* section,
 static void WriteOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
                             const char* name_s) {
   TCHAR name[64];
-  HWND item = GetDlgItem(hwnd, id);
-  int len = GetWindowTextLength(item);
   str2tchar(name, name_s);
-  if (len < 1024) {
-    TCHAR txt[1024];
-    *txt = TEXT('\0');
-    GetWindowText(item, txt, ARR_SZ(txt));
-    WritePrivateProfileString(section, name, txt, inipath);
-  } else {
-    TCHAR* buf = (TCHAR*)calloc((len + 1), sizeof(*buf));
-    GetWindowText(item, buf, len + 1);
-    WritePrivateProfileString(section, name, buf, inipath);
-    free(buf);
-  }
+  HWND item = GetDlgItem(hwnd, id);
+  const int len = GetWindowTextLength(item);
+  std::basic_string<TCHAR> text(static_cast<size_t>(len) + 1, TEXT('\0'));
+  GetWindowText(item, text.data(), len + 1);
+  WritePrivateProfileString(section, name, text.c_str(), inipath);
 }
 #define WriteOptionStr(id, section, name) \
   WriteOptionStrW(hwnd, id, section, name)
 
 static void ReadOptionStrW(HWND hwnd, WORD id, const TCHAR* section,
                            const char* name_s, const TCHAR* def) {
-  TCHAR txt[1024];
   TCHAR name[64];
   str2tchar(name, name_s);
-  DWORD redlen =
-      GetPrivateProfileString(section, name, def, txt, ARR_SZ(txt), inipath);
-  if (redlen < ARR_SZ(txt) - 1) {
-    SetDlgItemText(hwnd, id, txt);
-    return;  // DONE!
-  }
-
-  // Fallback to larger heap buffer.
-  TCHAR* buf = NULL;
-  DWORD buflen = 2048;
-  do {
-    buflen *= 2;
-    TCHAR* tmp = (TCHAR*)realloc(buf, buflen * sizeof(TCHAR));
-    if (!tmp) {
-      free(buf);
-      return;
-    }
-    buf = tmp;
-    redlen = GetPrivateProfileString(section, name, def, buf, buflen, inipath);
-  } while (redlen == buflen - 1);
-  SetDlgItemText(hwnd, id, buf);
-  free(buf);
+  SetDlgItemText(hwnd, id, ReadIniString(section, name, def, inipath).c_str());
 }
 #define ReadOptionStr(id, section, name, def) \
   ReadOptionStrW(hwnd, id, section, name, def)
@@ -433,7 +411,7 @@ static int ReadOptionIntW(HWND hwnd, WORD id, const TCHAR* section,
 //   The handle to the tooltip.
 //
 static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
-  if (!toolID || !hDlg || !pszText || !*pszText) return NULL;
+  if (!toolID || !hDlg || !pszText || !*pszText) return nullptr;
 
   // Get the window of the tool.
   HWND hwndTool = GetDlgItem(hDlg, toolID);
@@ -441,30 +419,32 @@ static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
   // Create the tooltip. g_hInst is the global instance handle.
   // Windows are owned by the dialog box so we do not need
   // to explicitely  destroy them.
-  HWND hwndTip = CreateWindowEx(
-      0, TOOLTIPS_CLASS, NULL, WS_POPUP | TTS_ALWAYSTIP, CW_USEDEFAULT,
-      CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hDlg, NULL, g_hinst, NULL);
+  HWND hwndTip =
+      CreateWindowEx(0, TOOLTIPS_CLASS, nullptr, WS_POPUP | TTS_ALWAYSTIP,
+                     CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                     hDlg, nullptr, g_hinst, nullptr);
 
-  if (!hwndTool || !hwndTip) return NULL;
+  if (!hwndTool || !hwndTip) return nullptr;
 
   // Associate the tooltip with the tool.
   TOOLINFO toolInfo = {0};
   toolInfo.cbSize = sizeof(toolInfo);
   toolInfo.hwnd = hDlg;
   toolInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-  toolInfo.uId = (UINT_PTR)hwndTool;
-  toolInfo.lpszText = (TCHAR* const)pszText;
+  toolInfo.uId = reinterpret_cast<UINT_PTR>(hwndTool);
+  toolInfo.lpszText = const_cast<TCHAR*>(pszText);
 
   TCHAR buf[16];
-  if (GetClassName(hwndTool, buf, ARR_SZ(buf)) > 0 &&
+  if (GetClassName(hwndTool, buf, std::size(buf)) > 0 &&
       !lstrcmpi(TEXT("Static"), buf)) {
     // Use the RECT for STATIC controls
     toolInfo.uFlags = TTF_SUBCLASS;
     GetWindowRect(hwndTool, &toolInfo.rect);
-    MapWindowPoints(NULL, hDlg, (LPPOINT)&toolInfo.rect, 2);
+    MapWindowPoints(nullptr, hDlg, reinterpret_cast<LPPOINT>(&toolInfo.rect),
+                    2);
   }
 
-  SendMessage(hwndTip, TTM_ADDTOOL, 0, (LPARAM)&toolInfo);
+  SendMessage(hwndTip, TTM_ADDTOOL, 0, reinterpret_cast<LPARAM>(&toolInfo));
   SendMessage(hwndTip, TTM_SETDELAYTIME, TTDT_AUTOPOP, MAKELONG(32767, 0));
   RECT rc;
   GetClientRect(hDlg, &rc);
@@ -472,10 +452,11 @@ static HWND CreateInfoTip(HWND hDlg, int toolID, const TCHAR* const pszText) {
 
   return hwndTip;
 }
-typedef struct dialogstring {
+struct dialogstring {
   short idc;
   short l10nidx; /* const TCHAR *const helpstr; */
-} dialogstring_t;
+};
+using dialogstring_t = dialogstring;
 static void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
                                 size_t size) {
   for (size_t i = 0; i < size; i++) {
@@ -485,25 +466,28 @@ static void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
 }
 // Options to bead or written...
 enum opttype { T_BOL = 0, T_BMK = 1, T_STR = 2 };
-typedef struct optlst {
+struct optlst {
   short idc;
   UCHAR type;
   UCHAR bitN;
   const TCHAR* section;
   const char* name;
   const void* def;
-} optlst_t;
+};
+using optlst_t = optlst;
 static void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
   for (size_t i = 0; i < size; i++) {
     if (ol[i].type == T_BOL)
       ReadOptionIntW(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                     (int)(DorQWORD)ol[i].def, -1);
+                     static_cast<int>(reinterpret_cast<DorQWORD>(ol[i].def)),
+                     -1);
     else if (ol[i].type == T_BMK)
       ReadOptionIntW(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                     (int)(DorQWORD)ol[i].def, 1 << ol[i].bitN);
+                     static_cast<int>(reinterpret_cast<DorQWORD>(ol[i].def)),
+                     1 << ol[i].bitN);
     else
       ReadOptionStrW(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                     (TCHAR*)ol[i].def);
+                     static_cast<const TCHAR*>(ol[i].def));
   }
 }
 static void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
@@ -521,10 +505,10 @@ static void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
 // to be used with EnumDesktopWindows()
 static BOOL CALLBACK RefreshTestWin(HWND hwnd, LPARAM lp) {
   TCHAR classn[256];
-  if (GetClassName(hwnd, classn, ARR_SZ(classn)) &&
+  if (GetClassName(hwnd, classn, std::size(classn)) &&
       !lstrcmp(TEXT(APP_NAMEA) TEXT("-Test"), classn)) {
     PostMessage(hwnd, WM_UPDCFRACTION, 0, 0);
-    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOREPOSITION | SWP_NOSIZE);
   }
   return TRUE;
@@ -532,7 +516,7 @@ static BOOL CALLBACK RefreshTestWin(HWND hwnd, LPARAM lp) {
 
 static int FindIDCStrIDX(const dialogstring_t sl[], size_t len, int idc) {
   for (size_t i = 0; i < len; i++) {
-    if (idc == (int)sl[i].idc) return sl[i].l10nidx;
+    if (idc == static_cast<int>(sl[i].idc)) return sl[i].l10nidx;
   }
   return -1;
 }
@@ -553,16 +537,18 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   // Options to bead or written...
   static const optlst_t optlst[] = {
       // dialog id, type, bit number, section name, option name, def val.
-      {IDC_AUTOFOCUS, T_BOL, 0, TEXT("General"), "AutoFocus", V 0},
+      {IDC_AUTOFOCUS, T_BOL, 0, TEXT("General"), "AutoFocus", V nullptr},
       {IDC_AERO, T_BOL, 0, TEXT("General"), "Aero", V 1},
       {IDC_SMARTAERO, T_BMK, 0, TEXT("General"), "SmartAero", V 1},
-      {IDC_SMARTERAERO, T_BMK, 1, TEXT("General"), "SmartAero", V 0},
+      {IDC_SMARTERAERO, T_BMK, 1, TEXT("General"), "SmartAero", V nullptr},
       {IDC_STICKYRESIZE, T_BOL, 0, TEXT("General"), "StickyResize", V 1},
-      {IDC_INACTIVESCROLL, T_BOL, 0, TEXT("General"), "InactiveScroll", V 0},
+      {IDC_INACTIVESCROLL, T_BOL, 0, TEXT("General"), "InactiveScroll",
+       V nullptr},
       {IDC_MDI, T_BOL, 0, TEXT("General"), "MDI", V 1},
       {IDC_RESIZEALL, T_BOL, 0, TEXT("Advanced"), "ResizeAll", V 1},
-      {IDC_USEZONES, T_BMK, 0, TEXT("Zones"), "UseZones", V 0},
-      {IDC_PIERCINGCLICK, T_BOL, 0, TEXT("Advanced"), "PiercingClick", V 0},
+      {IDC_USEZONES, T_BMK, 0, TEXT("Zones"), "UseZones", V nullptr},
+      {IDC_PIERCINGCLICK, T_BOL, 0, TEXT("Advanced"), "PiercingClick",
+       V nullptr},
   };
 #undef V
 
@@ -595,7 +581,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
     int ret;
-    ReadDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+    ReadDialogOptions(hwnd, optlst, std::size(optlst));
 
     ret =
         GetPrivateProfileInt(TEXT("General"), TEXT("ResizeCenter"), 1, inipath);
@@ -609,15 +595,16 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     CB_ResetContent(control);
     EnableWindow(control, TRUE);
 
-    for (size_t i = 0; i < langinfo.num; i++) {
-      CB_AddString(control, langinfo.it[i].lang);
-      if (!lstrcmpi(l10n->Code, langinfo.it[i].code)) {
+    for (size_t i = 0; i < langinfo.size(); i++) {
+      CB_AddString(control, langinfo[i].lang.c_str());
+      if (!lstrcmpi(l10n->Code, langinfo[i].code.c_str())) {
         CB_SetCurSel(control, i);
       }
     }
     EnableDlgItem(hwnd, IDC_ELEVATE, WinVer >= VISTA && !elevated);
     //    } else if (msg == WM_HELP) {
-    //        ShowContextHelp(strlst, ARR_SZ(strlst), hwnd, (LPHELPINFO)lParam);
+    //        ShowContextHelp(strlst, std::size(strlst), hwnd,
+    //        (LPHELPINFO)lParam);
   } else if (msg == WM_COMMAND) {
     int id = LOWORD(wParam);
     int event = HIWORD(wParam);
@@ -640,14 +627,14 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
       }
     } else if (id == IDC_AUTOSTART_ELEVATE) {
       if (val && IsUACEnabled()) {
-        MessageBox(NULL, l10n->GeneralAutostartElevateTip, TEXT(APP_NAMEA),
+        MessageBox(nullptr, l10n->GeneralAutostartElevateTip, TEXT(APP_NAMEA),
                    MB_ICONINFORMATION | MB_OK);
       }
     } else if (id == IDC_ELEVATE) {
       return ElevateNow(1);
     }
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = (LPNMHDR)lParam;
+    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
 
     if (pnmh->code == PSN_SETACTIVE) {
       updatestrings = 1;
@@ -667,9 +654,9 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
         EnableDlgItem(hwnd, IDC_INACTIVESCROLL, IsChecked(IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // all bool options (checkboxes).
-      WriteDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+      WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
-      TCHAR txt[UINT_DIGITS + 1];
+      TCHAR txt[kUintDigits + 1];
       int val = CB_GetCurSelId(IDC_AUTOSNAP);
       WritePrivateProfileString(TEXT("General"), TEXT("AutoSnap"),
                                 Uint2lStr(txt, val), inipath);
@@ -683,9 +670,10 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
 
       // Load selected Language
       int i = CB_GetCurSelId(IDC_LANGUAGE);
-      if (langinfo.it && (size_t)i < langinfo.num &&
-          lstrcmpi(l10n->Code, langinfo.it[i].code)) {
-        LoadTranslation(langinfo.it[i].fn);
+      if (static_cast<size_t>(i) < langinfo.size() &&
+          lstrcmpi(l10n->Code, langinfo[i].code.c_str())) {
+        LoadTranslation(langinfo[i].fn.empty() ? nullptr
+                                               : langinfo[i].fn.c_str());
 #ifdef UNICODE
         wchar_t curlang[16];
         GetCUserLanguage_xx_XX(curlang);
@@ -717,7 +705,7 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
   }
   if (updatestrings) {
     // Update text
-    UpdateDialogStrings(hwnd, strlst, ARR_SZ(strlst));
+    UpdateDialogStrings(hwnd, strlst, std::size(strlst));
     // spetial case...
     // CreateToolTip(IDC_AUTOFOCUS, hwnd, TEXT("String\nExample"));
     SetDlgItemText(hwnd, IDC_ELEVATE,
@@ -732,17 +720,17 @@ static INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg,
     CB_AddString(control, l10n->GeneralAutoSnap3);
     TCHAR txt[8];
     GetPrivateProfileString(TEXT("General"), TEXT("AutoSnap"), TEXT("0"), txt,
-                            ARR_SZ(txt), inipath);
+                            std::size(txt), inipath);
     CB_SetCurSel(control, strtoi(txt));
 
     // Language
     control = GetDlgItem(hwnd, IDC_LANGUAGE);
-    CB_DeleteString(control, langinfo.num);
+    CB_DeleteString(control, langinfo.size());
   }
   return FALSE;
 }
 /////////////////////////////////////////////////////////////////////////////
-static int pure IsKeyInList(TCHAR* keys, unsigned vkey) {
+[[nodiscard]] static int IsKeyInList(TCHAR* keys, unsigned vkey) {
   unsigned temp, numread;
   TCHAR* pos = keys;
   while (*pos != '\0') {
@@ -764,7 +752,7 @@ static void AddvKeytoList(TCHAR keys[32], unsigned vkey) {
   if (*keys != '\0') {
     lstrcat_s(keys, 32, TEXT(" "));
   }
-  TCHAR buf[LPTR_HDIGITS + 1];
+  TCHAR buf[kPtrHexDigits + 1];
   lstrcat_s(keys, 32, LPTR2Hex(buf, vkey));
 }
 static void RemoveKeyFromList(TCHAR keys[32], unsigned vkey) {
@@ -796,7 +784,7 @@ static void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
                         const TCHAR* const name) {
   TCHAR keys[32];
   // Get the current config in case there are some user added keys.
-  GetPrivateProfileString(TEXT("Input"), name, TEXT(""), keys, ARR_SZ(keys),
+  GetPrivateProfileString(TEXT("Input"), name, TEXT(""), keys, std::size(keys),
                           inipath);
   for (size_t i = 0; hotkeys[i].control; i++) {
     if (IsChecked(hotkeys[i].control)) {
@@ -813,7 +801,7 @@ static void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
   // Hotkeys
   unsigned temp;
   TCHAR txt[32];
-  GetPrivateProfileString(TEXT("Input"), hotkeystr, def, txt, ARR_SZ(txt),
+  GetPrivateProfileString(TEXT("Input"), hotkeystr, def, txt, std::size(txt),
                           inipath);
   TCHAR* pos = txt;
   while (*pos != '\0') {
@@ -831,12 +819,13 @@ static void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
   }
 }
 
-typedef struct tagActiondl {
+struct tagActiondl {
   const TCHAR* action;
   short l10nidx;
   BYTE param1_type;
   BYTE param2_type;
-} actiondl_t;
+};
+using actiondl_t = tagActiondl;
 static void FillActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
                                 const actiondl_t* actions) {
   HWND control = GetDlgItem(hwnd, idc);
@@ -846,11 +835,11 @@ static void FillActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
   if (inioption) {
     sel = -1;  // Selection to be made
     GetPrivateProfileString(TEXT("Input"), inioption, TEXT("Nothing"), txt,
-                            ARR_SZ(txt), inipath);
+                            std::size(txt), inipath);
   }
   for (j = 0; actions[j].action; j++) {
     TCHAR action_name[256];
-    lstrcpy_noaccel(action_name, ARR_SZ(action_name),
+    lstrcpy_noaccel(action_name, std::size(action_name),
                     L10NSTR(actions[j].l10nidx));
     CB_AddString(control, action_name);
     if (inioption && !lstrcmpi(txt, actions[j].action)) {
@@ -877,11 +866,12 @@ static int GetActionStringFromDropList(HWND hwnd, int idc,
   }
 
   // User directly Wrote the specified string?
-  int len = (int)(DWORD)SendMessage(control, WM_GETTEXT, obuflen, (LPARAM)obuf);
+  int len = static_cast<int>(static_cast<DWORD>(SendMessage(
+      control, WM_GETTEXT, obuflen, reinterpret_cast<LPARAM>(obuf))));
   if (0 < len && *obuf) {
     // Action was direcly written!
     j = SendMessage(control, CB_FINDSTRINGEXACT, /*start index=*/-1,
-                    (LPARAM)obuf);
+                    reinterpret_cast<LPARAM>(obuf));
     if (j >= 0 && actions[j].action)                // Found index.
       lstrcpy_s(obuf, obuflen, actions[j].action);  // DONE!
 
@@ -893,7 +883,7 @@ static void WriteActionDropListS(HWND hwnd, int idc, const TCHAR* inioption,
                                  const actiondl_t* actions) {
   TCHAR txt[128];
   txt[0] = TEXT('\0');
-  GetActionStringFromDropList(hwnd, idc, actions, txt, ARR_SZ(txt));
+  GetActionStringFromDropList(hwnd, idc, actions, txt, std::size(txt));
   WritePrivateProfileString(TEXT("Input"), inioption, txt, inipath);
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -967,7 +957,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       COMMON_ACTIONS
 
       {TEXT("Nothing"), L10NIDX(InputActionNothing)},
-      {NULL, 0}};
+      {nullptr, 0}};
 
   // Actions on MoveUp/ResizeUP
   const actiondl_t* mouse_actionsUP = &mouse_actions[3];
@@ -1011,22 +1001,22 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       {TEXT("HScroll"), L10NIDX(InputActionHScroll)},
       {TEXT("NPLayout"), L10NIDX(InputActionNPLayout)},
       {TEXT("Nothing"), L10NIDX(InputActionNothing)},
-      {NULL, 0}};
+      {nullptr, 0}};
 
   // Hotkeys
   static const struct hk_struct hotclicks[] = {
       {IDC_MMB_HC, 0x04}, {IDC_MB4_HC, 0x05}, {IDC_MB5_HC, 0X06}, {0, 0}};
 
   static const optlst_t optlst[] = {
-      {IDC_TTBACTIONSNA, T_BMK, 0, TEXT("Input"), "TTBActions", 0},
-      {IDC_TTBACTIONSWA, T_BMK, 1, TEXT("Input"), "TTBActions", 0},
-      {IDC_LONGCLICKMOVE, T_BOL, 0, TEXT("Input"), "LongClickMove", 0}};
+      {IDC_TTBACTIONSNA, T_BMK, 0, TEXT("Input"), "TTBActions", nullptr},
+      {IDC_TTBACTIONSWA, T_BMK, 1, TEXT("Input"), "TTBActions", nullptr},
+      {IDC_LONGCLICKMOVE, T_BOL, 0, TEXT("Input"), "LongClickMove", nullptr}};
 
-  LPNMHDR pnmh = (LPNMHDR)lParam;
+  LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
 
   if (msg == WM_INITDIALOG) {
     // Hotclicks buttons
-    ReadDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+    ReadDialogOptions(hwnd, optlst, std::size(optlst));
     CheckRadioButton(hwnd, IDC_MBA1, IDC_WHILER,
                      IDC_MBA1);  // Check the primary action
     CheckConfigHotKeys(hotclicks, hwnd, TEXT("Hotclicks"), TEXT(""));
@@ -1047,7 +1037,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (pnmh->code == PSN_SETACTIVE) {
       TCHAR txt[8];
       GetPrivateProfileString(TEXT("Input"), TEXT("ModKey"), TEXT(""), txt,
-                              ARR_SZ(txt), inipath);
+                              std::size(txt), inipath);
       EnableDlgItem(hwnd, IDC_MBA2, txt[0]);
       // Disable inside ttb
       EnableDlgItem(hwnd, IDC_INTTB,
@@ -1066,20 +1056,20 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       // While Moving/While resizing opts.
       EnableDlgItem(hwnd, IDC_MOVEUP, optoff < 3);
       EnableDlgItem(hwnd, IDC_RESIZEUP, optoff < 3);
-      for (i = 0; i < ARR_SZ(mouse_buttons); i++) {
+      for (i = 0; i < std::size(mouse_buttons); i++) {
         FillActionDropListS(hwnd, mouse_buttons[i].control,
                             mouse_buttons[i].option[optoff],
                             optoff < 3 ? mouse_actions : mouse_actionsWMR);
       }
       if (optoff < 3) {
-        for (i = 0; i < ARR_SZ(mouse_buttonsUP); i++) {
+        for (i = 0; i < std::size(mouse_buttonsUP); i++) {
           FillActionDropListS(hwnd, mouse_buttonsUP[i].control,
                               mouse_buttonsUP[i].option[optoff],
                               mouse_actionsUP);
         }
       }
       // Scroll actions, always the same.
-      for (i = 0; i < ARR_SZ(mouse_wheels); i++) {
+      for (i = 0; i < std::size(mouse_wheels); i++) {
         FillActionDropListS(hwnd, mouse_wheels[i].control,
                             mouse_wheels[i].option[optoff], scroll_actions);
       }
@@ -1113,7 +1103,7 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
           {IDC_MB5_HC, L10NIDX(InputMouseMB5HC)},
           {IDC_LONGCLICKMOVE, L10NIDX(InputMouseLongClickMove)},
       };
-      UpdateDialogStrings(hwnd, strlst, ARR_SZ(strlst));
+      UpdateDialogStrings(hwnd, strlst, std::size(strlst));
     }
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
@@ -1126,26 +1116,26 @@ static INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                    : IsChecked(IDC_WHILEM) ? 3
                    : IsChecked(IDC_WHILER) ? 4
                                            : 0;
-      for (i = 0; i < ARR_SZ(mouse_buttons); i++) {
+      for (i = 0; i < std::size(mouse_buttons); i++) {
         WriteActionDropListS(hwnd, mouse_buttons[i].control,
                              mouse_buttons[i].option[optoff],
                              optoff < 3 ? mouse_actions : mouse_actionsWMR);
       }
       if (optoff < 3) {
-        for (i = 0; i < ARR_SZ(mouse_buttonsUP); i++) {
+        for (i = 0; i < std::size(mouse_buttonsUP); i++) {
           WriteActionDropListS(hwnd, mouse_buttonsUP[i].control,
                                mouse_buttonsUP[i].option[optoff],
                                mouse_actionsUP);
         }
       }
       // Scroll
-      for (i = 0; i < ARR_SZ(mouse_wheels); i++) {
+      for (i = 0; i < std::size(mouse_wheels); i++) {
         WriteActionDropListS(hwnd, mouse_wheels[i].control,
                              mouse_wheels[i].option[optoff], scroll_actions);
       }
 
       // Checkboxes...
-      WriteDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+      WriteDialogOptions(hwnd, optlst, std::size(optlst));
       // Hotclicks
       SaveHotKeys(hotclicks, hwnd, TEXT("Hotclicks"));
       UpdateSettings();
@@ -1180,8 +1170,8 @@ static LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp,
     case WM_SYSCHAR:
       break;
     case WM_KEYUP: {
-      if (!IsHotkeyy((UCHAR)wp, vkbl)) {
-        TCHAR txt[LPTR_HDIGITS + 1];
+      if (!IsHotkeyy(static_cast<UCHAR>(wp), vkbl)) {
+        TCHAR txt[kPtrHexDigits + 1];
         HWND phwnd = GetParent(hwnd);
         SetDlgItemText(phwnd, IDC_SHORTCUTS_VK, LPTR2Hex(txt, wp));
 
@@ -1226,10 +1216,11 @@ static LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp,
 }
 
 // Dialog procedure for the Advanced Action construction from base action
-typedef struct tagAdvancedActionParam {
+struct tagAdvancedActionParam {
   const actiondl_t* base_action_lst;
   TCHAR outbuf[64];
-} advancedActionParam_t;
+};
+using advancedActionParam_t = tagAdvancedActionParam;
 
 enum {
   ACPARAM_NONE = 0,
@@ -1240,9 +1231,9 @@ enum {
   ACPARAM_LAST,
 };
 static const char* action_fl_param1_maps[ACPARAM_LAST] = {
-    /* ACPARAM_NONE            */ NULL,     // Nothing...
+    /* ACPARAM_NONE            */ nullptr,  // Nothing...
     /* ACPARAM_DIRECTION       */ "0LURD",  // 0 Left, Up, Right, Down
-    /* ACPARAM_NUMBER          */ NULL,     // Nothing
+    /* ACPARAM_NUMBER          */ nullptr,  // Nothing
     /* ACPARAM_UPDOWN          */ "0UD",    // 0 Up, Down
     /* ACPARAM_UPDOWNSETTOGGLE */ "0UDST",  // 0 Up, Down, Set to, Toggle
 };
@@ -1256,13 +1247,13 @@ static const struct {
   size_t num;
   const short* l10nIdx;
 } action_fl_l10n_maps[ACPARAM_LAST] = {
-    /* ACPARAM_NONE           */ {0, NULL},
+    /* ACPARAM_NONE           */ {0, nullptr},
     /* ACPARAM_DIRECTION      */
-    {ARR_SZ(action_fl_strings_direction), action_fl_strings_direction},
-    /* ACPARAM_NUMBER         */ {0, NULL},
+    {std::size(action_fl_strings_direction), action_fl_strings_direction},
+    /* ACPARAM_NUMBER         */ {0, nullptr},
     /* ACPARAM_UPDOWN         */ {3, action_fl_strings_updown_set_toggle},
     /* ACPARAM_UPDOWNSETTOGGLE*/
-    {ARR_SZ(action_fl_strings_updown_set_toggle),
+    {std::size(action_fl_strings_updown_set_toggle),
      action_fl_strings_updown_set_toggle},
 };
 
@@ -1270,11 +1261,12 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
                                               LPARAM lp) {
   switch (msg) {
     case WM_INITDIALOG: {
-      advancedActionParam_t* acp = (advancedActionParam_t*)lp;
-      SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)lp);
+      advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(lp);
+      SetWindowLongPtr(hwnd, GWLP_USERDATA, static_cast<LONG_PTR>(lp));
 
-      FillActionDropListS(hwnd, IDC_ACTIONP0, NULL, acp->base_action_lst);
-      SendDlgItemMessage(hwnd, IDC_ACTIONP0, CB_SETCURSEL, (WPARAM)-1, 0);
+      FillActionDropListS(hwnd, IDC_ACTIONP0, nullptr, acp->base_action_lst);
+      SendDlgItemMessage(hwnd, IDC_ACTIONP0, CB_SETCURSEL,
+                         static_cast<WPARAM>(-1), 0);
 
       SetWindowText(hwnd, l10n->TtlAdvancedAction);
       SetDlgItemText(hwnd, IDC_ACTIONT, l10n->TtlAction);
@@ -1283,9 +1275,9 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
       HWND parent = GetAncestor(hwnd, GA_ROOTOWNER);
       if (parent) {
         TCHAR txt[32];
-        if (GetDlgItemText(parent, IDOK, txt, ARR_SZ(txt)))
+        if (GetDlgItemText(parent, IDOK, txt, std::size(txt)))
           SetDlgItemText(hwnd, IDOK, txt);
-        if (GetDlgItemText(parent, IDCANCEL, txt, ARR_SZ(txt)))
+        if (GetDlgItemText(parent, IDCANCEL, txt, std::size(txt)))
           SetDlgItemText(hwnd, IDCANCEL, txt);
       }
 
@@ -1295,13 +1287,13 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
     case WM_COMMAND: {
       int id = LOWORD(wp);
       if (id == IDOK) {
-        advancedActionParam_t* acp =
-            (advancedActionParam_t*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(
+            GetWindowLongPtr(hwnd, GWLP_USERDATA));
         if (!acp) return 0;
-        mem00(acp->outbuf, sizeof(acp->outbuf));
+        ZeroObject(acp->outbuf);
         // Get the text from the action string display to return
         GetDlgItemText(hwnd, IDC_ACTIONTSTRING, acp->outbuf,
-                       ARR_SZ(acp->outbuf) - 1);
+                       std::size(acp->outbuf) - 1);
         EndDialog(hwnd, IDOK);
         return TRUE;
       } else if (id == IDCANCEL) {
@@ -1314,15 +1306,15 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
             (id == IDC_ACTIONP0 || id == IDC_ACTIONP1 || IDC_ACTIONP2);
 
         if (update_action_string) {
-          advancedActionParam_t* acp =
-              (advancedActionParam_t*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+          advancedActionParam_t* acp = reinterpret_cast<advancedActionParam_t*>(
+              GetWindowLongPtr(hwnd, GWLP_USERDATA));
           TCHAR acstr[128], param1[16], param2[32];
           acstr[0] = TEXT('\0');
 
           // ACTION PARAM0: base action
           int p0idx = GetActionStringFromDropList(hwnd, IDC_ACTIONP0,
                                                   acp->base_action_lst, acstr,
-                                                  ARR_SZ(acstr) - 8);
+                                                  std::size(acstr) - 8);
           BYTE param1_type = acp->base_action_lst[p0idx].param1_type;
           BYTE param2_type = acp->base_action_lst[p0idx].param2_type;
 
@@ -1351,9 +1343,9 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
             int direction =
                 SendDlgItemMessage(hwnd, IDC_ACTIONP1, CB_GETCURSEL, 0, 0);
             if (direction < 0) {
-              GetDlgItemText(hwnd, IDC_ACTIONP1, param1, ARR_SZ(param1));
+              GetDlgItemText(hwnd, IDC_ACTIONP1, param1, std::size(param1));
             } else if (direction <
-                       (int)lstrlenA(action_fl_param1_maps[param1_type])) {
+                       lstrlenA(action_fl_param1_maps[param1_type])) {
               // Put the correct character in the action string.
               // We use a single character for each kind of param
               param1[0] = action_fl_param1_maps[param1_type][direction];
@@ -1362,16 +1354,16 @@ static INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
           }
           // ACTION PARAM2 number...
           int param2len =
-              GetDlgItemText(hwnd, IDC_ACTIONP2, param2, ARR_SZ(param2));
+              GetDlgItemText(hwnd, IDC_ACTIONP2, param2, std::size(param2));
 
           // Add PARAM1 if needed
           if ((*param1 && *param1 != TEXT('0')) || (param2len && *param2)) {
-            lstrcat_s(acstr, ARR_SZ(acstr), TEXT("_"));
-            lstrcat_s(acstr, ARR_SZ(acstr), param1);
+            lstrcat_s(acstr, std::size(acstr), TEXT("_"));
+            lstrcat_s(acstr, std::size(acstr), param1);
             // Add PARAM2 if needed
             if (param2len && *param2) {
-              lstrcat_s(acstr, ARR_SZ(acstr), TEXT("_"));
-              lstrcat_s(acstr, ARR_SZ(acstr), param2);
+              lstrcat_s(acstr, std::size(acstr), TEXT("_"));
+              lstrcat_s(acstr, std::size(acstr), param2);
             }
           }
 
@@ -1423,7 +1415,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       {TEXT("MinAllOther"), L10NIDX(InputActionMinAllOther)},
       {TEXT("Menu"), L10NIDX(InputActionMenu)},
       {TEXT("Nothing"), L10NIDX(InputActionNothing)},
-      {NULL, 0}};
+      {nullptr, 0}};
   static const actiondl_t kbshortcut_actions[] = {
       {TEXT("Kill"), L10NIDX(InputActionKill)},
       {TEXT("Pause"), L10NIDX(InputActionPause)},
@@ -1468,7 +1460,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       {TEXT("NLayout"), L10NIDX(InputActionNLayout)},
       {TEXT("PLayout"), L10NIDX(InputActionPLayout)},
 
-      {NULL, 0}};
+      {nullptr, 0}};
 
   // Hotkeys
   static const actiondl_t togglekeys[] = {
@@ -1485,27 +1477,27 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       {TEXT("A3"), L10NIDX(InputHotkeysRightCtrl)},
       {TEXT("A0"), L10NIDX(InputHotkeysLeftShift)},
       {TEXT("A1"), L10NIDX(InputHotkeysRightShift)},
-      {NULL, 0},
+      {nullptr, 0},
   };
   static const optlst_t optlst[] = {
-      {IDC_SCROLLLOCKSTATE, T_BMK, 0, TEXT("Input"), "ScrollLockState", 0},
-      {IDC_UNIKEYHOLDMENU, T_BOL, 0, TEXT("Input"), "UniKeyHoldMenu", 0},
-      {IDC_KEYCOMBO, T_BOL, 0, TEXT("Input"), "KeyCombo", 0},
-      {IDC_USEPTWINDOW, T_BOL, 0, TEXT("KBShortcuts"), "UsePtWindow", 0},
+      {IDC_SCROLLLOCKSTATE, T_BMK, 0, TEXT("Input"), "ScrollLockState",
+       nullptr},
+      {IDC_UNIKEYHOLDMENU, T_BOL, 0, TEXT("Input"), "UniKeyHoldMenu", nullptr},
+      {IDC_KEYCOMBO, T_BOL, 0, TEXT("Input"), "KeyCombo", nullptr},
+      {IDC_USEPTWINDOW, T_BOL, 0, TEXT("KBShortcuts"), "UsePtWindow", nullptr},
   };
 
-  LPNMHDR pnmh = (LPNMHDR)lParam;
+  LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
 
   if (msg == WM_INITDIALOG) {
     edit_shortcut_idx = 0;
-    ReadDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+    ReadDialogOptions(hwnd, optlst, std::size(optlst));
     // Agressive Pause
     CheckConfigHotKeys(hotkeys, hwnd, TEXT("Hotkeys"), TEXT("A4 A5"));
 
 #ifndef _WIN64
     // Always enabled in 64 bit mode.
-    EnableDlgItem(hwnd, IDC_AGGRESSIVEPAUSE,
-                  HaveProc("NTDLL.DLL", "NtResumeProcess"));
+    EnableDlgItem(hwnd, IDC_AGGRESSIVEPAUSE, TRUE);
     EnableDlgItem(hwnd, IDC_UNIKEYHOLDMENU, WinVer >= WIN2K);
 #endif
 
@@ -1522,7 +1514,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       TCHAR keyname[32];
       keyname[0] = L'\0';
       GetKeyNameText(MapVirtualKey(vKey, 0) << 16, keyname,
-                     ARR_SZ(keyname) - 8);
+                     std::size(keyname) - 8);
       SetDlgItemText(hwnd, IDC_SHORTCUTS, keyname);
 
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 1);
@@ -1539,7 +1531,8 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
         (event == CBN_SELCHANGE || event == CBN_EDITCHANGE)) {
       // Update the shortcut with the current one.
       TCHAR txt[64];
-      int i = CB_GetTextAndIdx((HWND)lParam, txt, ARR_SZ(txt));
+      int i =
+          CB_GetTextAndIdx(reinterpret_cast<HWND>(lParam), txt, std::size(txt));
       edit_shortcut_idx = i;
       // MessageBox(hwnd, txt, NULL, 0);
       WORD shortcut =
@@ -1560,7 +1553,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
     }
     // WRITE Current Keyboard Shortcut to ini file
     if (id == IDC_SHORTCUTS_SET) {
-      TCHAR txt[UINT_DIGITS + 1], action_string_buf[64];
+      TCHAR txt[kUintDigits + 1], action_string_buf[64];
       // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
       BYTE vKey = lstrhex2u(txt);
@@ -1569,10 +1562,10 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       WORD shortcut = vKey | (mod << 8);
       action_string_buf[0] = TEXT('\0');
       int astrlen = GetDlgItemText(hwnd, IDC_SHORTCUTS_AC, action_string_buf,
-                                   ARR_SZ(action_string_buf));
+                                   std::size(action_string_buf));
       if (0 < astrlen && *action_string_buf) {
         const TCHAR* intstr = shortcut ? Uint2lStr(txt, shortcut)
-                                       : NULL;  // NULL will remove the KEY
+                                       : nullptr;  // NULL will remove the KEY
         edit_shortcut_idx = CB_AddStringIfNotPresentAndGetIdx(
             GetDlgItem(hwnd, IDC_SHORTCUTS_AC), action_string_buf);
         WritePrivateProfileString(TEXT("KBShortcuts"), action_string_buf,
@@ -1591,22 +1584,22 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
                          0,
                          0,
                          g_hinst,
-                         NULL  // LoadIcon(g_hinst, iconstr[1])
+                         nullptr  // LoadIcon(g_hinst, iconstr[1])
                          ,
-                         NULL  // LoadCursor(NULL, IDC_ARROW)
+                         nullptr  // LoadCursor(NULL, IDC_ARROW)
                          ,
-                         NULL  //(HBRUSH)(COLOR_HIGHLIGHT+1)
+                         nullptr  //(HBRUSH)(COLOR_HIGHLIGHT+1)
                          ,
-                         NULL,
+                         nullptr,
                          TEXT(APP_NAMEA) TEXT("-PickShortcut")};
         RegisterClass(&wndd);
       }
       RECT rc;
       GetClientRect(hwnd, &rc);
       pickhwnd = CreateWindowEx(
-          WS_EX_TOPMOST, TEXT(APP_NAMEA) TEXT("-PickShortcut"), NULL,
+          WS_EX_TOPMOST, TEXT(APP_NAMEA) TEXT("-PickShortcut"), nullptr,
           WS_CHILD | WS_VISIBLE, rc.left, rc.top, rc.right - rc.left,
-          rc.bottom - rc.top, hwnd, NULL, g_hinst, NULL);
+          rc.bottom - rc.top, hwnd, nullptr, g_hinst, nullptr);
       // Disable all other child windows
       EnumChildWindows(hwnd, EnableAllControlsProc, 0);
       EnableWindow(pickhwnd, TRUE);
@@ -1631,13 +1624,15 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       acp.base_action_lst = kbshortcut_actions;
       acp.outbuf[0] = TEXT('\0');
       int code = DialogBoxParam(g_hinst, MAKEINTRESOURCE(IDD_ACTIONPARAM), hwnd,
-                                (DLGPROC)AdvancedActionDlgProc, (LPARAM)&acp);
+                                static_cast<DLGPROC>(AdvancedActionDlgProc),
+                                reinterpret_cast<LPARAM>(&acp));
       if (code == IDOK && acp.outbuf[0]) {
         HWND control = GetDlgItem(hwnd, IDC_SHORTCUTS_AC);
         int new_index = CB_AddStringIfNotPresentAndGetIdx(control, acp.outbuf);
         CB_SetCurSel(control, new_index);
-        PostMessage(hwnd, WM_COMMAND, IDC_SHORTCUTS_AC | CBN_SELCHANGE << 16,
-                    (LPARAM)GetDlgItem(hwnd, IDC_SHORTCUTS_AC));
+        PostMessage(
+            hwnd, WM_COMMAND, IDC_SHORTCUTS_AC | CBN_SELCHANGE << 16,
+            reinterpret_cast<LPARAM>(GetDlgItem(hwnd, IDC_SHORTCUTS_AC)));
         edit_shortcut_idx = new_index;
         SetFocus(control);
       }
@@ -1649,7 +1644,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       TCHAR txt[64];
 
       GetPrivateProfileString(TEXT("Input"), TEXT("ModKey"), TEXT(""), txt,
-                              ARR_SZ(txt), inipath);
+                              std::size(txt), inipath);
       EnableDlgItem(hwnd, IDC_GRABWITHALTB_H, txt[0]);
       EnableDlgItem(hwnd, IDC_GRABWITHALTB, txt[0]);
 
@@ -1663,7 +1658,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
         TCHAR kbsec[1600];
         HWND control = GetDlgItem(hwnd, IDC_SHORTCUTS_AC);
         CB_ResetContent(control);
-        GetPrivateProfileSection(TEXT("KBShortcuts"), kbsec, ARR_SZ(kbsec),
+        GetPrivateProfileSection(TEXT("KBShortcuts"), kbsec, std::size(kbsec),
                                  inipath);
         for (TCHAR* p = kbsec; *p != TEXT('\0'); p += lstrlen(p) + 1) {
           // MessageBox(hwnd, p, TEXT("KBShortcuts"), 0);
@@ -1677,17 +1672,18 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       }
       CB_SetCurSel(GetDlgItem(hwnd, IDC_SHORTCUTS_AC), edit_shortcut_idx);
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 0);
-      if (pnmh->hwndFrom != NULL)
-        PostMessage(hwnd, WM_COMMAND, IDC_SHORTCUTS_AC | CBN_SELCHANGE << 16,
-                    (LPARAM)GetDlgItem(hwnd, IDC_SHORTCUTS_AC));
+      if (pnmh->hwndFrom != nullptr)
+        PostMessage(
+            hwnd, WM_COMMAND, IDC_SHORTCUTS_AC | CBN_SELCHANGE << 16,
+            reinterpret_cast<LPARAM>(GetDlgItem(hwnd, IDC_SHORTCUTS_AC)));
 
       // ModKey init
       HWND control = GetDlgItem(hwnd, IDC_MODKEY);
       CB_ResetContent(control);
       unsigned j, sel = 0;
-      for (j = 0; j < ARR_SZ(togglekeys) - 1; j++) {
+      for (j = 0; j < std::size(togglekeys) - 1; j++) {
         TCHAR key_name[256];
-        lstrcpy_noaccel(key_name, ARR_SZ(key_name),
+        lstrcpy_noaccel(key_name, std::size(key_name),
                         L10NSTR(togglekeys[j].l10nidx));
         CB_AddString(control, key_name);
         if (!lstrcmpi(txt, togglekeys[j].action)) {
@@ -1697,7 +1693,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       // Add the current ModKey string to the list if not found!
       if (sel == 0 && txt[0]) {
         CB_AddString(control, &txt[0]);
-        sel = ARR_SZ(togglekeys) - 1;
+        sel = std::size(togglekeys) - 1;
       }
       CB_SetCurSel(control, sel);  // select current ModKey
 
@@ -1728,7 +1724,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
           {IDC_KEYCOMBO, L10NIDX(InputKeyCombo)},
           {IDC_GRABWITHALT_H, L10NIDX(InputGrabWithAlt)},
           {IDC_GRABWITHALTB_H, L10NIDX(InputGrabWithAltB)}};
-      UpdateDialogStrings(hwnd, strlst, ARR_SZ(strlst));
+      UpdateDialogStrings(hwnd, strlst, std::size(strlst));
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
     APPLY_ALL:;
@@ -1739,7 +1735,7 @@ static INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg,
       WriteActionDropListS(hwnd, IDC_GRABWITHALTB, TEXT("GrabWithAltB"),
                            kb_actions);
 
-      WriteDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+      WriteDialogOptions(hwnd, optlst, std::size(optlst));
       ScrollLockState = WriteOptionBoolB(IDC_SCROLLLOCKSTATE, TEXT("Input"),
                                          "ScrollLockState", 0);
       // Modifier key (similar to action list)
@@ -1759,18 +1755,18 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
                                                 WPARAM wParam, LPARAM lParam) {
   static const optlst_t optlst[] = {
       {IDC_PROCESSBLACKLIST, T_STR, 0, TEXT("Blacklist"), "Processes",
-       (void*)TEXT("")},
-      {IDC_BLACKLIST, T_STR, 0, TEXT("Blacklist"), "Windows", (void*)TEXT("")},
-      {IDC_SCROLLLIST, T_STR, 0, TEXT("Blacklist"), "Scroll", (void*)TEXT("")},
-      {IDC_MDIS, T_STR, 0, TEXT("Blacklist"), "MDIs", (void*)TEXT("")},
-      {IDC_PAUSEBL, T_STR, 0, TEXT("Blacklist"), "Pause", (void*)TEXT("")},
+       TEXT("")},
+      {IDC_BLACKLIST, T_STR, 0, TEXT("Blacklist"), "Windows", TEXT("")},
+      {IDC_SCROLLLIST, T_STR, 0, TEXT("Blacklist"), "Scroll", TEXT("")},
+      {IDC_MDIS, T_STR, 0, TEXT("Blacklist"), "MDIs", TEXT("")},
+      {IDC_PAUSEBL, T_STR, 0, TEXT("Blacklist"), "Pause", TEXT("")},
   };
 
   static int have_to_apply = 0;
 
   if (msg == WM_INITDIALOG) {
-    ReadDialogOptions(hwnd, optlst, ARR_SZ(optlst));
-    BOOL haveProcessBL = HaveProc("PSAPI.DLL", "GetModuleFileNameExW");
+    ReadDialogOptions(hwnd, optlst, std::size(optlst));
+    BOOL haveProcessBL = TRUE;
     EnableDlgItem(hwnd, IDC_PROCESSBLACKLIST, haveProcessBL);
     EnableDlgItem(hwnd, IDC_PAUSEBL, haveProcessBL);
   } else if (msg == WM_COMMAND) {
@@ -1797,15 +1793,15 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
       // Create Transparent window covering the whole workspace
       WNDCLASS wnd = {0,       FindWindowProc,
                       0,       0,
-                      g_hinst, NULL,
-                      NULL,    (HBRUSH)(COLOR_WINDOW + 1),
-                      NULL,    TEXT(APP_NAMEA) TEXT("-find")};
+                      g_hinst, nullptr,
+                      nullptr, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1),
+                      nullptr, TEXT(APP_NAMEA) TEXT("-find")};
       wnd.hCursor = LoadCursor(g_hinst, MAKEINTRESOURCE(IDI_FIND));
       RegisterClass(&wnd);
       HWND findhwnd =
           CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
-                         wnd.lpszClassName, NULL, WS_POPUP, 0, 0, 0, 0, NULL,
-                         NULL, g_hinst, NULL);
+                         wnd.lpszClassName, nullptr, WS_POPUP, 0, 0, 0, 0,
+                         nullptr, nullptr, g_hinst, nullptr);
       ShowWindow(findhwnd, SW_SHOWNA);  // And show it
       MoveWindow(findhwnd, left, top, width, height, FALSE);
 
@@ -1814,7 +1810,7 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
     }
 
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = (LPNMHDR)lParam;
+    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {
@@ -1825,8 +1821,8 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
           {IDC_MDISBL_HEADER, L10NIDX(BlacklistMDIs)},
           {IDC_PAUSEBL_HEADER, L10NIDX(BlacklistPause)},
           {IDC_FINDWINDOW_BOX, L10NIDX(BlacklistFindWindowBox)}};
-      UpdateDialogStrings(hwnd, strlst, ARR_SZ(strlst));
-      for (size_t i = 0; i < ARR_SZ(optlst); i++)
+      UpdateDialogStrings(hwnd, strlst, std::size(strlst));
+      for (size_t i = 0; i < std::size(optlst); i++)
         CreateInfoTip(hwnd, optlst[i].idc, l10n->BlacklistFormat);
 
       // Enable or disable buttons if needed
@@ -1841,7 +1837,7 @@ static INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg,
                   8192);
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Save to the config
-      WriteDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+      WriteDialogOptions(hwnd, optlst, std::size(optlst));
       UpdateSettings();
       have_to_apply = 0;
     }
@@ -1869,17 +1865,17 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       HWND window = GetAncestor(nwindow, GA_ROOT);
 
       TCHAR title[256], classname[256];
-      GetWindowText(window, title, ARR_SZ(title));
-      GetClassName(window, classname, ARR_SZ(classname));
+      GetWindowText(window, title, std::size(title));
+      GetClassName(window, classname, std::size(classname));
 
       TCHAR txt[512];
       txt[0] = '\0';
-      lstrcat_s(txt, ARR_SZ(txt), title);
-      lstrcat_s(txt, ARR_SZ(txt), TEXT("|"));
-      lstrcat_s(txt, ARR_SZ(txt), classname);
+      lstrcat_s(txt, std::size(txt), title);
+      lstrcat_s(txt, std::size(txt), TEXT("|"));
+      lstrcat_s(txt, std::size(txt), classname);
       SetDlgItemText(page, IDC_NEWRULE, txt);
 
-      if (GetWindowProgName(window, txt, ARR_SZ(txt))) {
+      if (GetWindowProgName(window, txt, std::size(txt))) {
         SetDlgItemText(page, IDC_NEWPROGNAME, txt);
       }
       SetDlgItemText(page, IDC_GWLSTYLE,
@@ -1888,10 +1884,10 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                      LPTR2Hex(txt, GetWindowLongPtr(window, GWL_EXSTYLE)));
       // WM_NCHITTEST messages info at current pt
       TCHAR tt[32];
-      lstrcpy_s(txt, ARR_SZ(txt),
+      lstrcpy_s(txt, std::size(txt),
                 Int2lStr(tt, HitTestTimeout(nwindow, pt.x, pt.y)));
-      lstrcat_s(txt, ARR_SZ(txt), TEXT("/"));
-      lstrcat_s(txt, ARR_SZ(txt),
+      lstrcat_s(txt, std::size(txt), TEXT("/"));
+      lstrcat_s(txt, std::size(txt),
                 Int2lStr(tt, HitTestTimeout(window, pt.x, pt.y)));
       SetDlgItemText(page, IDC_NCHITTEST, txt);
       // IDC_DWMCAPBUTTON
@@ -1906,13 +1902,16 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         SetDlgItemText(page, IDC_RECT, RectToStr(&rc, txt));
       }
       // IDC_WINHANDLES
-      lstrcpy_s(txt, ARR_SZ(txt), TEXT("Hwnd: "));
-      lstrcat_s(txt, ARR_SZ(txt), LPTR2Hex(tt, (ULONG_PTR)nwindow));
-      lstrcat_s(txt, ARR_SZ(txt), TEXT(", Root: "));
-      lstrcat_s(txt, ARR_SZ(txt), LPTR2Hex(tt, (ULONG_PTR)window));
-      lstrcat_s(txt, ARR_SZ(txt), TEXT(", Owner: "));
-      lstrcat_s(txt, ARR_SZ(txt),
-                LPTR2Hex(tt, (ULONG_PTR)GetWindow(window, GW_OWNER)));
+      lstrcpy_s(txt, std::size(txt), TEXT("Hwnd: "));
+      lstrcat_s(txt, std::size(txt),
+                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(nwindow)));
+      lstrcat_s(txt, std::size(txt), TEXT(", Root: "));
+      lstrcat_s(txt, std::size(txt),
+                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(window)));
+      lstrcat_s(txt, std::size(txt), TEXT(", Owner: "));
+      lstrcat_s(txt, std::size(txt),
+                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(
+                                 GetWindow(window, GW_OWNER))));
       SetDlgItemText(page, IDC_WINHANDLES, txt);
     }
     // Show icon again
@@ -1934,14 +1933,14 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = (LPNMHDR)lParam;
+    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
       TCHAR buf[128];
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
       // Append version number to version....
-      lstrcpy_s(buf, ARR_SZ(buf), l10n->AboutVersion);
-      lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
+      lstrcpy_s(buf, std::size(buf), l10n->AboutVersion);
+      lstrcat_s(buf, std::size(buf), TEXT(" ") TEXT(APP_VERSION));
       SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
 
       SetDlgItemText(hwnd, IDC_URL,
@@ -1953,12 +1952,12 @@ static INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
       TCHAR txt[1024];
       txt[0] = TEXT('\0');
-      for (size_t i = 0; i < langinfo.num; i++) {
-        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].lang_english);
-        lstrcat_s(txt, ARR_SZ(txt), TEXT(": "));
-        lstrcat_s(txt, ARR_SZ(txt), langinfo.it[i].author);
-        if (i + 1 != langinfo.num) {
-          lstrcat_s(txt, ARR_SZ(txt), TEXT("\r\n"));
+      for (size_t i = 0; i < langinfo.size(); i++) {
+        lstrcat_s(txt, std::size(txt), langinfo[i].lang_english.c_str());
+        lstrcat_s(txt, std::size(txt), TEXT(": "));
+        lstrcat_s(txt, std::size(txt), langinfo[i].author.c_str());
+        if (i + 1 != langinfo.size()) {
+          lstrcat_s(txt, std::size(txt), TEXT("\r\n"));
         }
       }
       SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);
@@ -1977,13 +1976,13 @@ static void ToggleFullScreen(HWND hwnd) {
     if (!(fl & WS_MAXIMIZE)) fs &= ~WS_MAXIMIZE;  //
     SetWindowLongPtr(hwnd, GWL_STYLE, fs | (WS_CAPTION | WS_THICKFRAME));
     SetWindowLongPtr(hwnd, 0, 0);  // Clear fs falg.
-    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_ASYNCWINDOWPOS | SWP_NOSIZE | SWP_NOMOVE |
                      SWP_FRAMECHANGED | SWP_NOZORDER);
   } else {
     SetWindowLongPtr(hwnd, 0, fl);  // store fs falg.
     SetWindowLongPtr(hwnd, GWL_STYLE, fl & ~(WS_CAPTION | WS_THICKFRAME));
-    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_ASYNCWINDOWPOS | SWP_NOSIZE | SWP_NOMOVE |
                      SWP_FRAMECHANGED | SWP_NOZORDER);
     SendMessage(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
@@ -2005,16 +2004,17 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     int idx;
     TCHAR lastkey[MAXLINES][MAXLL];
   };
-  const TCHAR* buttonstr = NULL;
+  const TCHAR* buttonstr = nullptr;
 
   switch (msg) {
     case WM_CREATE: {
       // uDarkMode = AllowDarkTitlebar(hwnd);
 
       // Allocate space for the list of last keys.
-      struct lastkeyss* lastkeys =
-          (struct lastkeyss*)calloc(1, sizeof(*lastkeys));
-      SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)lastkeys);
+      // Ownership moves into the window; released again in WM_DESTROY.
+      SetWindowLongPtr(
+          hwnd, GWLP_USERDATA,
+          reinterpret_cast<LONG_PTR>(std::make_unique<lastkeyss>().release()));
 
     } break;
 
@@ -2064,8 +2064,8 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     PRINTT: {
       enum { invalidate_all, invalidate_lastline, invalidate_nothing };
       TCHAR txt[32];
-      struct lastkeyss* lks =
-          (struct lastkeyss*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+      struct lastkeyss* lks = reinterpret_cast<struct lastkeyss*>(
+          GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (!lks) break;
       int idx = lks->idx;
       TCHAR(*lastkey)[MAXLL] = lks->lastkey;
@@ -2085,7 +2085,8 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
         } else {
           lstrcpy_s(lastkey[idx], MAXLL, TEXT("vK="));
-          lstrcat_s(lastkey[idx], MAXLL, LPTR2Hex(txt, (BYTE)wParam));
+          lstrcat_s(lastkey[idx], MAXLL,
+                    LPTR2Hex(txt, static_cast<BYTE>(wParam)));
           lstrcat_s(lastkey[idx], MAXLL,
                     lParam & (1u << 31)   ? TEXT(" U")
                     : lParam & (1u << 30) ? TEXT(" R")
@@ -2098,7 +2099,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           txt[0] = L',';
           txt[1] = L' ';
           txt[2] = L'\0';
-          if (GetKeyNameText(lParam, txt + 2, ARR_SZ(txt) - 2))
+          if (GetKeyNameText(lParam, txt + 2, std::size(txt) - 2))
             lstrcat_s(lastkey[idx], MAXLL, txt);
         }
       } else {
@@ -2146,33 +2147,34 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     case WM_SIZE: {
-      TCHAR num[INT_DIGITS * 4 + 4 + 1];
-      TCHAR title[256 + INT_DIGITS * 4 + 4];
+      TCHAR num[kIntDigits * 4 + 4 + 1];
+      TCHAR title[256 + kIntDigits * 4 + 4];
       RECT rc;
       GetWindowRectL(hwnd, &rc);
-      lstrcpy_noaccel(title, ARR_SZ(title), l10n->AdvancedTestWindow);
-      lstrcat_s(title, ARR_SZ(title), TEXT(": "));
-      lstrcat_s(title, ARR_SZ(title), RectToStr(&rc, num));
+      lstrcpy_noaccel(title, std::size(title), l10n->AdvancedTestWindow);
+      lstrcat_s(title, std::size(title), TEXT(": "));
+      lstrcat_s(title, std::size(title), RectToStr(&rc, num));
 
-      lstrcat_s(title, ARR_SZ(title), TEXT(" ("));
-      lstrcat_s(title, ARR_SZ(title), Int2lStr(num, rc.right - rc.left));
-      lstrcat_s(title, ARR_SZ(title), TEXT("x"));
-      lstrcat_s(title, ARR_SZ(title), Int2lStr(num, rc.bottom - rc.top));
-      lstrcat_s(title, ARR_SZ(title), TEXT(")"));
+      lstrcat_s(title, std::size(title), TEXT(" ("));
+      lstrcat_s(title, std::size(title), Int2lStr(num, rc.right - rc.left));
+      lstrcat_s(title, std::size(title), TEXT("x"));
+      lstrcat_s(title, std::size(title), Int2lStr(num, rc.bottom - rc.top));
+      lstrcat_s(title, std::size(title), TEXT(")"));
       SetWindowText(hwnd, title);
 
     } break;
     case WM_PAINT: {
-      if (!GetUpdateRect(hwnd, NULL, FALSE)) return 0;
+      if (!GetUpdateRect(hwnd, nullptr, FALSE)) return 0;
       /* We must keep track of pens and delete them. */
       const UINT dpi = GetDpiForWindow(hwnd);
       const UINT penwidth = GetSystemMetricsForDpi(SM_CXEDGE, dpi);
 
       const COLORREF txtcolor =
           uDarkMode ? RGB(255, 255, 255) : GetSysColor(COLOR_BTNTEXT);
-      const HBRUSH bgbrush = uDarkMode ? CreateSolidBrush(RGB(32, 32, 32))
-                                       : (HBRUSH)(COLOR_BTNFACE + 1);
-      const HPEN pen = (HPEN)CreatePen(PS_SOLID, penwidth, txtcolor);
+      const HBRUSH bgbrush = uDarkMode
+                                 ? CreateSolidBrush(RGB(32, 32, 32))
+                                 : reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+      const HPEN pen = CreatePen(PS_SOLID, penwidth, txtcolor);
 
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hwnd, &ps);
@@ -2183,7 +2185,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       ScreenToClient(hwnd, &Offset);
 
       SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
-      HPEN oripen = (HPEN)SelectObject(hdc, pen);
+      HPEN oripen = static_cast<HPEN>(SelectObject(hdc, pen));
       SetROP2(hdc, R2_COPYPEN);
 
       const int width = wRect.right - wRect.left;
@@ -2247,7 +2249,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
             {(width + cwidth) / 2, (height + cheight) / 2},
         };
         OffsetPoints(pts, Offset.x, Offset.y, 16);
-        PolyPolyline(hdc, pts, ptsslens, ARR_SZ(pts) / 2);
+        PolyPolyline(hdc, pts, ptsslens, std::size(pts) / 2);
       }
 
       if (centermode == 3) {  // Closest side mode
@@ -2259,10 +2261,10 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
             {(width + cwidth) / 2, (height - cheight) / 2},
         };
         OffsetPoints(pts, Offset.x, Offset.y, 4);
-        PolyPolyline(hdc, pts, ptsslens, ARR_SZ(pts) / 2);
+        PolyPolyline(hdc, pts, ptsslens, std::size(pts) / 2);
 
-        HPEN dotpen = (HPEN)CreatePen(PS_DOT, 1, txtcolor);
-        HPEN prevpen = (HPEN)SelectObject(hdc, dotpen);
+        HPEN dotpen = CreatePen(PS_DOT, 1, txtcolor);
+        HPEN prevpen = static_cast<HPEN>(SelectObject(hdc, dotpen));
         int oldbkmode = SetBkMode(hdc, TRANSPARENT);
         Rectangle(hdc  // Draw dashed central rectagle
                   ,
@@ -2280,7 +2282,8 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(lfont), &lfont);
       lfont.lfHeight = -MulDiv(11, ReallyGetDpiForWindow(hwnd), 72);
       long lineheight = -(lfont.lfHeight + lfont.lfHeight / 8);
-      HFONT oldfont = (HFONT)SelectObject(hdc, CreateFontIndirect(&lfont));
+      HFONT oldfont =
+          static_cast<HFONT>(SelectObject(hdc, CreateFontIndirect(&lfont)));
       SetBkMode(hdc, TRANSPARENT);
       SetTextColor(hdc, txtcolor);
 
@@ -2289,8 +2292,8 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       long splitheight = crc.bottom - lineheight * MAXLINES;
 
       // Draw Key Historic
-      const struct lastkeyss* lks =
-          (struct lastkeyss*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+      const struct lastkeyss* lks = reinterpret_cast<struct lastkeyss*>(
+          GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (lks) {
         int idx = lks->idx;
         const TCHAR(*lastkey)[MAXLL] = lks->lastkey;
@@ -2316,7 +2319,7 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       EndPaint(hwnd, &ps);
 
       DeleteObject(pen);  // delete pen
-      if (bgbrush != (HBRUSH)(COLOR_BTNFACE + 1))
+      if (bgbrush != reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1))
         DeleteObject(bgbrush);  // Delete brush if needed.
 
       return 0;
@@ -2338,10 +2341,9 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     } break;
     case WM_DESTROY: {
       // Free the allocatde memory for the key list.
-      struct lastkeyss* lastkeys =
-          (struct lastkeyss*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
-      free(lastkeys);
-      SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)NULL);  // In case
+      const std::unique_ptr<lastkeyss> lastkeys(
+          reinterpret_cast<lastkeyss*>(GetWindowLongPtr(hwnd, GWLP_USERDATA)));
+      SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);  // In case
     } break;
   }
   return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -2360,19 +2362,19 @@ static HWND NewTestWindow() {
                      g_hinst,
                      g_icons[1]  // LoadIcon(g_hinst, iconstr[1])
                      ,
-                     LoadCursor(NULL, IDC_ARROW),
-                     NULL  //(HBRUSH)(COLOR_BACKGROUND+1)
+                     LoadCursor(nullptr, IDC_ARROW),
+                     nullptr  //(HBRUSH)(COLOR_BACKGROUND+1)
                      ,
-                     NULL,
+                     nullptr,
                      TEXT(APP_NAMEA) TEXT("-Test")};
     RegisterClass(&wndd);
   }
   TCHAR wintitle[256];
-  lstrcpy_noaccel(wintitle, ARR_SZ(wintitle), l10n->AdvancedTestWindow);
-  testwnd =
-      CreateWindowEx(0, TEXT(APP_NAMEA) TEXT("-Test"), wintitle,
-                     WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                     CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, g_hinst, NULL);
+  lstrcpy_noaccel(wintitle, std::size(wintitle), l10n->AdvancedTestWindow);
+  testwnd = CreateWindowEx(0, TEXT(APP_NAMEA) TEXT("-Test"), wintitle,
+                           WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+                           CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr,
+                           g_hinst, nullptr);
   PostMessage(testwnd, WM_UPDCFRACTION, 0, 0);
   ShowWindow(testwnd, SW_SHOW);
 
@@ -2394,23 +2396,25 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
                                                WPARAM wParam, LPARAM lParam) {
 #define V (void*)
   static const optlst_t optlst[] = {
-      {IDC_AUTOREMAXIMIZE, T_BOL, 0, TEXT("Advanced"), "AutoRemaximize", V 0},
+      {IDC_AUTOREMAXIMIZE, T_BOL, 0, TEXT("Advanced"), "AutoRemaximize",
+       V nullptr},
       {IDC_AEROTOPMAXIMIZES, T_BMK, 0, TEXT("Advanced"), "AeroTopMaximizes",
        V 1},  // bit 0
       {IDC_AERODBCLICKSHIFT, T_BMK, 1, TEXT("Advanced"), "AeroTopMaximizes",
        V 1},  // bit 1
       {IDC_MULTIPLEINSTANCES, T_BOL, 0, TEXT("Advanced"), "MultipleInstances",
-       V 0},
+       V nullptr},
       {IDC_FULLSCREEN, T_BOL, 0, TEXT("Advanced"), "FullScreen", V 1},
-      {IDC_BLMAXIMIZED, T_BOL, 0, TEXT("Advanced"), "BLMaximized", V 0},
-      {IDC_FANCYZONE, T_BOL, 0, TEXT("Zones"), "FancyZone", V 0},
-      {IDC_NORESTORE, T_BMK, 2, TEXT("General"), "SmartAero", V 0},  // bit 2
+      {IDC_BLMAXIMIZED, T_BOL, 0, TEXT("Advanced"), "BLMaximized", V nullptr},
+      {IDC_FANCYZONE, T_BOL, 0, TEXT("Zones"), "FancyZone", V nullptr},
+      {IDC_NORESTORE, T_BMK, 2, TEXT("General"), "SmartAero",
+       V nullptr},  // bit 2
       {IDC_MAXWITHLCLICK, T_BMK, 0, TEXT("General"), "MMMaximize",
        V 1},  // bit 0
       {IDC_RESTOREONCLICK, T_BMK, 1, TEXT("General"), "MMMaximize",
-       V 0},  // bit 1
+       V nullptr},  // bit 1
       {IDC_TOPMOSTINDICATOR, T_BOL, 0, TEXT("Advanced"), "TopmostIndicator",
-       V 0},
+       V nullptr},
 
       {IDC_CENTERFRACTION, T_STR, 0, TEXT("General"), "CenterFraction",
        V TEXT("24")},
@@ -2433,7 +2437,7 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
   //    static HWND testwnd=NULL;
   static int have_to_apply = 0;
   if (msg == WM_INITDIALOG) {
-    ReadDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+    ReadDialogOptions(hwnd, optlst, std::size(optlst));
 #ifndef _WIN64
     EnableDlgItem(hwnd, IDC_FANCYZONE, 0);
 #endif
@@ -2450,7 +2454,7 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
       NewTestWindow();
     }
   } else if (msg == WM_NOTIFY) {
-    LPNMHDR pnmh = (LPNMHDR)lParam;
+    LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
       // Update text
       static const dialogstring_t strlst[] = {
@@ -2478,12 +2482,12 @@ static INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg,
           {IDC_NORESTORE, L10NIDX(AdvancedNoRestore)},
           {IDC_TOPMOSTINDICATOR, L10NIDX(AdvancedTopmostIndicator)},
       };
-      UpdateDialogStrings(hwnd, strlst, ARR_SZ(strlst));
+      UpdateDialogStrings(hwnd, strlst, std::size(strlst));
 
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Apply or OK button was pressed.
       // Save settings
-      WriteDialogOptions(hwnd, optlst, ARR_SZ(optlst));
+      WriteDialogOptions(hwnd, optlst, std::size(optlst));
       UpdateSettings();
       // Update Test windows in if open.
       EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);

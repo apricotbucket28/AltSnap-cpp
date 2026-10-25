@@ -7,13 +7,20 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 #include "languages.h"
 
-static struct strings* l10n_ini = NULL;
+// Strings of the currently loaded translation file. `l10n_ini_strings` holds
+// pointers into `l10n_storage`, which owns the characters (one slot per
+// struct member; the slots are never moved after construction).
+static std::array<std::basic_string<TCHAR>,
+                  sizeof(struct strings) / sizeof(const TCHAR*)>
+    l10n_storage;
+static struct strings l10n_ini_strings = {};
+static struct strings* l10n_ini = nullptr;  // &l10n_ini_strings once loaded.
 static const struct strings* l10n = &en_US;
 
 /////////////////////////////////////////////////////////////////////////////
 // Copies and remove the accelerators & sign. and txt between ( ).
-static size_t lstrcpy_noaccel(TCHAR* __restrict__ dest, size_t destlen,
-                              const TCHAR* __restrict__ source) {
+static size_t lstrcpy_noaccel(TCHAR* dest, size_t destlen,
+                              const TCHAR* source) {
   size_t i = 0, j = 0;
   while (i < destlen && source[i]) {
     dest[j] = source[i];
@@ -31,7 +38,7 @@ static size_t lstrcpy_noaccel(TCHAR* __restrict__ dest, size_t destlen,
   return j;
 }
 /////////////////////////////////////////////////////////////////////////////
-static pure size_t lstrlen_resolved(const TCHAR* __restrict__ str) {
+[[nodiscard]] static size_t lstrlen_resolved(const TCHAR* str) {
   // Return the length of str, having resolved escape sequences
   const TCHAR* ptr;
   int num_escape_sequences = 0;
@@ -44,8 +51,7 @@ static pure size_t lstrlen_resolved(const TCHAR* __restrict__ str) {
   return ptr - str - num_escape_sequences;
 }
 
-static void lstrcpy_resolve(TCHAR* __restrict__ dest, size_t dstlen,
-                            const TCHAR* __restrict__ source) {
+static void lstrcpy_resolve(TCHAR* dest, size_t dstlen, const TCHAR* source) {
   // Copy from source to dest, resolving \\n to \n
   for (; --dstlen && *source != '\0'; source++, dest++) {
     if (*source == '\\' && *(source + 1) == 'n') {
@@ -58,8 +64,7 @@ static void lstrcpy_resolve(TCHAR* __restrict__ dest, size_t dstlen,
   *dest = '\0';
 }
 
-static void lstrcpy_encode(TCHAR* __restrict__ dst, size_t dstlen,
-                           const TCHAR* __restrict__ src) {
+static void lstrcpy_encode(TCHAR* dst, size_t dstlen, const TCHAR* src) {
   // Copy from source to dest, encoding '\n' to '\' 'n'
   for (; --dstlen && *src != '\0'; src++, dst++) {
     if (dstlen && *src == '\n') {
@@ -74,68 +79,52 @@ static void lstrcpy_encode(TCHAR* __restrict__ dst, size_t dstlen,
 }
 /////////////////////////////////////////////////////////////////////////////
 //
-static void LoadTranslationOrTT(const TCHAR* __restrict__ ini,
-                                const TCHAR* __restrict__ section_name,
+static void LoadTranslationOrTT(const TCHAR* ini, const TCHAR* section_name,
                                 int offset) {
   // if english is not seleced then we have to allocate l10_ini strings struct
   // and we have to read the ini file...
   // RGTICTAC tt; RGTic(&tt);
-  DWORD ret;
-  DWORD tsectionlen = 16383;
-  TCHAR* tsection = NULL;
-  do {
-    tsectionlen *= 2;
-    TCHAR* tmp = (TCHAR*)realloc(tsection, tsectionlen * sizeof(TCHAR));
-    if (!tmp) {
-      free(tsection);
-      return;
-    }
-    tsection = tmp;
-    ret = GetPrivateProfileSection(section_name, tsection, tsectionlen, ini);
-  } while (ret == tsectionlen - 2);
+  const std::vector<TCHAR> section = ReadIniSection(section_name, ini, 32768);
+  if (section.empty() || !section[0]) return;
+  const TCHAR* const tsection = section.data();
 
-  if (!ret || !*tsection) {
-    free(tsection);
-    return;
-  }
+  if (!l10n_ini) l10n_ini = &l10n_ini_strings;
 
-  if (!l10n_ini) {
-    l10n_ini = (struct strings*)calloc(1, sizeof(struct strings));
-  }
-  if (!l10n_ini) return;  // Unable to allocate mem
+  TCHAR const* ini_map[std::size(l10n_inimapping)];
+  RGIniMapSection(tsection, ini_map, l10n_inimapping,
+                  std::size(l10n_inimapping));
 
-  TCHAR const* ini_map[ARR_SZ(l10n_inimapping)];
-  RGIniMapSection(tsection, ini_map, l10n_inimapping, ARR_SZ(l10n_inimapping));
-
-  for (size_t i = 0; i < ARR_SZ(l10n_inimapping); i++) {
+  for (size_t i = 0; i < std::size(l10n_inimapping); i++) {
     // Get pointer to default English string to be used if ini entry doesn't
     // exist
-    const TCHAR* const def_val = ((const TCHAR* const*)&en_US)[i * 2 + offset];
+    const TCHAR* const def_val =
+        (reinterpret_cast<const TCHAR* const*>(&en_US))[i * 2 + offset];
     const TCHAR* txt = ini_map[i] ? ini_map[i] : def_val;
     if (!txt) continue;  // default value may be NULL...
 
     TCHAR buf[128];
-    TCHAR** deststr = &((TCHAR**)l10n_ini)[i * 2 + offset];
-    if (deststr == (TCHAR**)&l10n_ini->AboutVersion) {
+    const size_t slot = i * 2 + offset;
+    const TCHAR** deststr = &reinterpret_cast<const TCHAR**>(l10n_ini)[slot];
+    if (deststr == reinterpret_cast<const TCHAR**>(&l10n_ini->AboutVersion)) {
       // Append version number to version....
-      lstrcpy_s(buf, ARR_SZ(buf), txt);
-      lstrcat_s(buf, ARR_SZ(buf), TEXT(" ") TEXT(APP_VERSION));
-      txt = (const TCHAR*)buf;
+      lstrcpy_s(buf, std::size(buf), txt);
+      lstrcat_s(buf, std::size(buf), TEXT(" ") TEXT(APP_VERSION));
+      txt = static_cast<const TCHAR*>(buf);
     }
-    size_t destlen = lstrlen(txt) + 1;
-    TCHAR* t = (TCHAR*)realloc(*deststr, destlen * sizeof(TCHAR));
-    if (!t) continue;
-    *deststr = t;
-    lstrcpy_resolve(*deststr, destlen, txt);
+    const size_t destlen = lstrlen(txt) + 1;
+    std::basic_string<TCHAR>& owned = l10n_storage[slot];
+    owned.assign(destlen, TEXT('\0'));
+    lstrcpy_resolve(owned.data(), destlen, txt);
+    owned.resize(lstrlen(owned.c_str()));
+    *deststr = owned.c_str();
   }
   l10n = l10n_ini;
-  free(tsection);  // free the cached Translation section.
   // LOGA("LoadTranslationOrTT in %u us", (unsigned)RGTac(&tt));
 }
 
-static void LoadTranslation(const TCHAR* __restrict__ ini) {
+static void LoadTranslation(const TCHAR* ini) {
   if (!ini) {
-    l10n = (struct strings const*)&en_US;
+    l10n = &en_US;
     return;
   } else if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(ini)) {
     return;
@@ -145,100 +134,71 @@ static void LoadTranslation(const TCHAR* __restrict__ ini) {
   LoadTranslationOrTT(ini, TEXT("ToolTips"), 1);
 }
 
-struct langinfoitemList {
-  struct langinfoitem* it;
-  size_t num;
-  size_t cap;
-} langinfo = {NULL, 0, 0};
+static std::vector<langinfoitem> langinfo;
 
 /////////////////////////////////////////////////////////////////////////////
 void ListAllTranslations() {
-  if (langinfo.it) return;
+  if (!langinfo.empty()) return;
 
-  HANDLE hFind = INVALID_HANDLE_VALUE;
-  WIN32_FIND_DATA ffd;
-  TCHAR szDir[MAX_PATH], fpath[MAX_PATH * 2];
-  LPCTSTR txt;
+  // First element: the built-in English translation.
+  langinfo.push_back({en_US.Code, en_US.LangEnglish, en_US.Lang, en_US.Author,
+                      std::basic_string<TCHAR>()});
 
-  // First element
-  struct langinfoitem* lnfo =
-      (struct langinfoitem*)ListAppend(&langinfo, NULL, sizeof(*lnfo));
-  if (!lnfo) return;
-  lstrcpy_s(lnfo->code, ARR_SZ(lnfo->code), en_US.Code);
-  lnfo->lang_english = (TCHAR*)en_US.LangEnglish;
-  lnfo->lang = (TCHAR*)en_US.Lang;
-  lnfo->author = (TCHAR*)en_US.Author;
-  lnfo->fn = NULL;
-
-  GetModuleFileName(NULL, szDir, ARR_SZ(szDir));
+  TCHAR szDir[MAX_PATH];
+  GetModuleFileName(nullptr, szDir, std::size(szDir));
   PathRemoveFileSpecL(szDir);
-  lstrcat_s(szDir, ARR_SZ(szDir), TEXT("\\Lang\\*.ini"));
-  lstrcpy_s(fpath, MAX_PATH, szDir);
-  TCHAR* end = fpath;  // not the star!
-  end += lstrlen(fpath) - 5;
-  hFind = FindFirstFile(szDir, &ffd);
+  lstrcat_s(szDir, std::size(szDir), TEXT("\\Lang\\*.ini"));
+  const std::basic_string<TCHAR> directory(
+      szDir, lstrlen(szDir) - lstrlen(TEXT("*.ini")));  // Keep trailing '\\'.
 
-  if (hFind != INVALID_HANDLE_VALUE) {
-    do {
-      lstrcpy_s(end, MAX_PATH,
-                ffd.cFileName);  // add filenale at the end of the path
-      lnfo = (struct langinfoitem*)ListAppend(&langinfo, NULL, sizeof(*lnfo));
-      if (!lnfo) break;
+  WIN32_FIND_DATA ffd;
+  const HANDLE hFind = FindFirstFile(szDir, &ffd);
+  if (hFind == INVALID_HANDLE_VALUE) return;
+  do {
+    const std::basic_string<TCHAR> path = directory + ffd.cFileName;
 
-      // Preload section start
-      TCHAR tsection[512];
-      DWORD ret = GetPrivateProfileSection(TEXT("Translation"), tsection,
-                                           ARR_SZ(tsection), fpath);
-      if (!ret) continue;
-
-      // Short language code such as en-US, fr-FR, it-IT etc.
-      txt = GetSectionOptionCStr(tsection, "Code", TEXT(""));
-      lstrcpy_s(lnfo->code, ARR_SZ(lnfo->code), txt);
-
-      // Language name in English
-      txt = GetSectionOptionCStr(tsection, "LangEnglish", TEXT(""));
-      lnfo->lang_english = lstrdup(txt);
-
-      // Language name in original language
-      txt = GetSectionOptionCStr(tsection, "Lang", TEXT(""));
-      lnfo->lang = lstrdup(txt);
-
-      // Author
-      txt = GetSectionOptionCStr(tsection, "Author", TEXT(""));
-      lnfo->author = lstrdup(txt);
-
-      // Full file path
-      lnfo->fn = lstrdup(fpath);
-    } while (FindNextFile(hFind, &ffd));
-
-    FindClose(hFind);
-  }
+    // Preload the start of the Translation section.
+    TCHAR tsection[512];
+    if (!GetPrivateProfileSection(TEXT("Translation"), tsection,
+                                  std::size(tsection), path.c_str())) {
+      continue;
+    }
+    langinfoitem item;
+    item.code = GetSectionOptionCStr(tsection, "Code", TEXT(""));
+    item.lang_english = GetSectionOptionCStr(tsection, "LangEnglish", TEXT(""));
+    item.lang = GetSectionOptionCStr(tsection, "Lang", TEXT(""));
+    item.author = GetSectionOptionCStr(tsection, "Author", TEXT(""));
+    item.fn = path;
+    langinfo.push_back(std::move(item));
+  } while (FindNextFile(hFind, &ffd));
+  FindClose(hFind);
 }
 
 static void Generate_en_US_base_txt() {
-  HANDLE h = CreateFileA("en_US.txt", GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, NULL);
+  HANDLE h = CreateFileA("en_US.txt", GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) return;
 
   DWORD dummy = 0;
   TCHAR key[100], val[1000];
-  TCHAR const* const* const def_strings = ((TCHAR const* const*)&en_US);
-  WriteFile(h, "\xFF\xFE", 2, &dummy, NULL);  // UTF-16 LE BOM
+  TCHAR const* const* const def_strings =
+      (reinterpret_cast<TCHAR const* const*>(&en_US));
+  WriteFile(h, "\xFF\xFE", 2, &dummy, nullptr);  // UTF-16 LE BOM
   WriteFile(h, TEXT("; Base AltSnap Translation\r\n[Translation]\r\n"),
-            43 * sizeof(TCHAR), &dummy, NULL);
+            43 * sizeof(TCHAR), &dummy, nullptr);
 
-  for (size_t i = 0; i < ARR_SZ(l10n_inimapping); i++) {
+  for (size_t i = 0; i < std::size(l10n_inimapping); i++) {
     TCHAR* k = key;
     const char* p = l10n_inimapping[i];
     while ((*k++ = *p++));
 
     const TCHAR* vv = def_strings[i * 2];
-    lstrcpy_encode(val, ARR_SZ(val), vv);
+    lstrcpy_encode(val, std::size(val), vv);
 
-    WriteFile(h, key, lstrlen(key) * sizeof(TCHAR), &dummy, NULL);
-    WriteFile(h, TEXT("="), sizeof(TCHAR), &dummy, NULL);
-    WriteFile(h, val, lstrlen(val) * sizeof(TCHAR), &dummy, NULL);
-    WriteFile(h, TEXT("\r\n"), 2 * sizeof(TCHAR), &dummy, NULL);
+    WriteFile(h, key, lstrlen(key) * sizeof(TCHAR), &dummy, nullptr);
+    WriteFile(h, TEXT("="), sizeof(TCHAR), &dummy, nullptr);
+    WriteFile(h, val, lstrlen(val) * sizeof(TCHAR), &dummy, nullptr);
+    WriteFile(h, TEXT("\r\n"), 2 * sizeof(TCHAR), &dummy, nullptr);
   }
   CloseHandle(h);
 }
@@ -246,16 +206,16 @@ static void Generate_en_US_base_txt() {
 #ifdef UNICODE
 /////////////////////////////////////////////////////////////////////////////
 // Helper function to get
-static int GetCUserLanguage_xx_XX(wchar_t txt[AT_LEAST 16]) {
+static int GetCUserLanguage_xx_XX(wchar_t txt[16]) {
   txt[0] = L'\0';
-  return LCIDToLocaleNameL(GetUserDefaultLCID(), txt, 16, 0);
+  return LCIDToLocaleName(GetUserDefaultLCID(), txt, 16, 0);
 }
 #endif
 /////////////////////////////////////////////////////////////////////////////
 void UpdateLanguage() {
   TCHAR txt[16];
   GetPrivateProfileString(TEXT("General"), TEXT("Language"), TEXT("Auto"), txt,
-                          ARR_SZ(txt), inipath);
+                          std::size(txt), inipath);
 
 // Determine which language should be used
 // based on current user's LCID
@@ -270,34 +230,21 @@ void UpdateLanguage() {
   }
 
   ListAllTranslations();
-  for (size_t i = 0; i < langinfo.num; i++) {
-    if (!lstrcmpi(txt, langinfo.it[i].code)) {
-      LoadTranslation(langinfo.it[i].fn);
+  for (const langinfoitem& item : langinfo) {
+    if (!lstrcmpi(txt, item.code.c_str())) {
+      LoadTranslation(item.fn.empty() ? nullptr : item.fn.c_str());
       break;
     }
   }
 }
 
 void FreeAllLangRelated() {
-  if (langinfo.it) {
-    for (size_t i = 1; i < langinfo.num; i++) {
-      free(const_cast<TCHAR*>(langinfo.it[i].lang_english));
-      free(const_cast<TCHAR*>(langinfo.it[i].lang));
-      free(const_cast<TCHAR*>(langinfo.it[i].author));
-      free(const_cast<TCHAR*>(langinfo.it[i].fn));
-    }
-    ListFree(&langinfo);
-    langinfo.it = NULL;
-    langinfo.num = langinfo.cap = 0;
-  }
+  langinfo = {};
 
   if (l10n_ini) {
-    for (size_t i = 0; i < sizeof(struct strings) / sizeof(TCHAR*); i++) {
-      TCHAR** deststr = &((TCHAR**)l10n_ini)[i];
-      free(*deststr);
-    }
-    free(l10n_ini);
-    l10n_ini = NULL;
+    for (auto& owned : l10n_storage) owned = {};
+    l10n_ini_strings = {};
+    l10n_ini = nullptr;
   }
   l10n = &en_US;
 }
