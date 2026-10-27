@@ -1,7 +1,10 @@
 #ifndef ALTDRAG_RPC_H
 #define ALTDRAG_RPC_H
 
+// clang-format off
 #include <windows.h>
+#include <commctrl.h>  // Must come after windows.h.
+// clang-format on
 
 #include "winutil.h"
 

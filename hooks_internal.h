@@ -6,8 +6,11 @@
 #include <array>
 #include <vector>
 
+#include "blacklist.h"
 #include "hooks.h"
 #include "ini_section.h"
+
+namespace altsnap::hooks {
 
 // Timer messages
 enum {
@@ -371,5 +374,37 @@ unsigned ReadHotkeys(const IniSection& section, const char* name,
 // Reads `count` hex bytes ("RR GG BB") as a packed little-endian COLORREF.
 uint32_t ReadColor(const IniSection& section, const char* key,
                    const wchar_t* def, unsigned count);
+
+// Types and constants shared by the hooks.dll modules.
+enum { SW_FULLSCREEN = 28 };
+
+enum { SNTO_CNSNAP = 0, SNTO_EXTEND = 1, SNTO_NEXTBD = 2, SNTO_MOVETO = 4 };
+
+enum { CW_RESTORE = (1 << 0), CW_TRIM = (1 << 1) };
+
+enum { TRK_LASERMODE = (1 << 0), TRK_MOVETOMONITOR = (1 << 1) };
+
+struct MinimizeWindowProcParams {
+  HMONITOR hMon;
+  HWND clickedhwnd;
+};
+
+// State shared by the hooks.dll modules (defined in hooks.cc).
+extern HWND g_transhwnd[4];
+extern HWND g_mchwnd;
+extern DWORD g_WorkerThreadID;
+extern UCHAR g_InFinishMovement;
+extern UCHAR g_InMouseMove;
+extern Blacklists BlkLst;
+extern std::array<std::vector<UCHAR>, 36> g_inputSequences;
+extern HHOOK mousehook;
+extern std::vector<snwdata> snwnds;
+extern std::vector<HWND> minhwnds;
+
+// Defined in hooks.cc.
+void LogState(const char* Title);
+HWND KreateMsgWin(WNDPROC proc, const wchar_t* name, LONG_PTR userdata);
+
+}  // namespace altsnap::hooks
 
 #endif  // ALTSNAP_HOOKS_INTERNAL_H_

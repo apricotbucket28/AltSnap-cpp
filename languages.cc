@@ -14,6 +14,8 @@
 #include "ini_section.h"
 #include "tray.h"
 
+namespace altsnap::app {
+
 // Definitions of the tables declared in languages.h.
 #define LNGVALUE(x, y, z) #x,
 // Name of values ini entries
@@ -196,3 +198,5 @@ void FreeAllLangRelated() {
   }
   l10n = &en_US;
 }
+
+}  // namespace altsnap::app

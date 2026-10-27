@@ -3,6 +3,8 @@
 
 #include "hooks_internal.h"
 
+namespace altsnap::hooks {
+
 // Snapping state flags stored per window (see SetRestoreFlag()).
 enum SnapFlag : unsigned {
   SNAPPED = 1,
@@ -49,5 +51,7 @@ void ResetDB();
 void SetBorderlessFlag(HWND hwnd, LONG_PTR flag);
 void SetRestoreData(HWND hwnd, int width, int height, unsigned restore);
 void SetRestoreFlag(HWND hwnd, unsigned flag);
+
+}  // namespace altsnap::hooks
 
 #endif  // ALTSNAP_SNAP_H_

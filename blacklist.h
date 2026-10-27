@@ -10,6 +10,8 @@
 
 #include "ini_section.h"
 
+namespace altsnap {
+
 // A list of window patterns parsed from a comma-separated ini value such as
 //   "notepad.exe, *|Chrome_WidgetWin_1, calc.exe:Calculator|CalcFrame"
 //
@@ -71,5 +73,7 @@ struct Blacklists {
 
   [[nodiscard]] static Blacklists Read(const IniSection& section);
 };
+
+}  // namespace altsnap
 
 #endif  // ALTSNAP_BLACKLIST_H_

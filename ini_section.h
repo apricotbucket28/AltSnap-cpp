@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+namespace altsnap {
+
 // A snapshot of one [section] of an ini file.
 //
 // Keys are ASCII and compared case-insensitively. Values are NUL-terminated
@@ -53,5 +55,7 @@ class IniSection {
                                          const wchar_t* key,
                                          const wchar_t* default_value,
                                          const wchar_t* ini_path);
+
+}  // namespace altsnap
 
 #endif  // ALTSNAP_INI_SECTION_H_

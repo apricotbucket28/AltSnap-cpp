@@ -13,6 +13,8 @@
 #include "languages.h"
 #include "tray.h"
 
+namespace altsnap::app {
+
 // Boring stuff
 HINSTANCE g_hinst = nullptr;
 HWND g_hwnd = nullptr;
@@ -392,6 +394,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 /////////////////////////////////////////////////////////////////////////////
+
+}  // namespace altsnap::app
+using namespace altsnap::app;
+
 // Returns the part of the process command line that follows the program name.
 // WinMain() only receives the command line as ANSI text, which would lose any
 // non-ASCII characters of a Unicode build (e.g. in the "-l" or "-a" values).

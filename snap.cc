@@ -10,6 +10,8 @@
 
 #include "hooks_internal.h"
 
+namespace altsnap::hooks {
+
 /////////////////////////////////////////////////////////////////////////////
 enum { NUMWNDDB = 16 };
 struct wnddata {
@@ -243,3 +245,5 @@ LONG_PTR ClearBorderlessFlag(HWND hwnd) {
 //{
 //     SetRestoreFlag(hwnd, flag & (~GetRestoreFlag(hwnd)));
 // }
+
+}  // namespace altsnap::hooks

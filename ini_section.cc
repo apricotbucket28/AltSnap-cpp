@@ -6,6 +6,8 @@
 
 #include "strutil.h"
 
+namespace altsnap {
+
 IniSection IniSection::Read(const wchar_t* ini_path,
                             const wchar_t* section_name) {
   IniSection section;
@@ -59,3 +61,5 @@ std::wstring ReadIniString(const wchar_t* section, const wchar_t* key,
     value.assign(value.size() * 2, L'\0');
   }
 }
+
+}  // namespace altsnap

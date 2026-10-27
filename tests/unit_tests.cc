@@ -7,6 +7,11 @@
 
 #include "blacklist.h"
 #include "ini_section.h"
+
+using altsnap::Blacklist;
+using altsnap::Blacklists;
+using altsnap::IniSection;
+using altsnap::ReadIniString;
 #include "strutil.h"
 
 static int g_failures = 0;

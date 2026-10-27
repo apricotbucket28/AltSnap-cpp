@@ -4,6 +4,8 @@
 
 #include "strutil.h"
 
+namespace altsnap {
+
 namespace {
 
 // A lone `*` means "anything", which is stored as an absent value.
@@ -113,3 +115,5 @@ Blacklists Blacklists::Read(const IniSection& section) {
   }
   return lists;
 }
+
+}  // namespace altsnap

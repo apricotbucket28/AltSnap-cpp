@@ -101,6 +101,40 @@ set(ALTSNAP_LINK_FLAGS
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
     hooks.cc
+    window_info.cc
+    window_enum.cc
+    window_move.cc
+    snap_move.cc
+    input_state.cc
+    trans_window.cc
+    mouse_move.cc
+    send_input.cc
+    volume.cc
+    pin_window.cc
+    window_actions.cc
+    click_actions.cc
+    window_menu.cc
+    keyboard_hook.cc
+    mouse_hook.cc
+    movement.cc
+    hook_config.cc
+    window_info.h
+    window_enum.h
+    window_move.h
+    snap_move.h
+    input_state.h
+    trans_window.h
+    mouse_move.h
+    send_input.h
+    volume.h
+    pin_window.h
+    window_actions.h
+    click_actions.h
+    window_menu.h
+    keyboard_hook.h
+    mouse_hook.h
+    movement.h
+    hook_config.h
     blacklist.cc
     blacklist.h
     ini_section.cc
@@ -133,6 +167,23 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     altsnap.cc
+    dialog_util.cc
+    general_page.cc
+    mouse_page.cc
+    keyboard_page.cc
+    blacklist_page.cc
+    about_page.cc
+    advanced_page.cc
+    test_window.cc
+    config_internal.h
+    dialog_util.h
+    general_page.h
+    mouse_page.h
+    keyboard_page.h
+    blacklist_page.h
+    about_page.h
+    advanced_page.h
+    test_window.h
     ini_section.cc
     ini_section.h
     config.cc

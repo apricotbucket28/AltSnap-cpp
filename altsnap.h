@@ -3,6 +3,8 @@
 
 #include "hooks.h"
 
+namespace altsnap::app {
+
 extern HINSTANCE hinstDLL;
 extern DWORD ACMenuItems;
 extern WNDPROC G_HooksWinProc;
@@ -26,5 +28,7 @@ extern wchar_t inipath[MAX_PATH];
 inline BOOL GetWindowRectL(HWND hwnd, RECT* rect) {
   return GetWindowRectLL(hwnd, rect, SnapGap);
 }
+
+}  // namespace altsnap::app
 
 #endif  // ALTSNAP_ALTSNAP_H_

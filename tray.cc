@@ -13,6 +13,8 @@
 #include "hooks.h"
 #include "languages.h"
 
+namespace altsnap::app {
+
 #ifndef NIF_INFO
 #define NIF_INFO 0x00000010
 #endif
@@ -312,3 +314,5 @@ void ShowContextMenu(HWND hwnd) {
   TrackPopupMenu(menu, TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, nullptr);
   DestroyMenu(menu);
 }
+
+}  // namespace altsnap::app

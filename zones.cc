@@ -10,6 +10,8 @@
 #include "ini_section.h"
 #include "snap.h"
 
+namespace altsnap::hooks {
+
 std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
 static DWORD Grids[MAX_LAYOUTS] = {};
 
@@ -612,3 +614,5 @@ void SetLayoutNumber(WPARAM number) {
     state.forcelayoutdisplay = !!id;
   }
 }
+
+}  // namespace altsnap::hooks

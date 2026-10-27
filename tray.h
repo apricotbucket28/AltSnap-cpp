@@ -3,6 +3,8 @@
 
 #include "hooks.h"
 
+namespace altsnap::app {
+
 enum { ICONS_COUNT = 3 };
 
 void CloseAllTestWindows();
@@ -20,5 +22,7 @@ void catFullLayoutName(wchar_t* txt, size_t len, int laynum);
 extern HICON g_icons[ICONS_COUNT];
 extern unsigned char tray_added;
 extern unsigned char tray_hidden;
+
+}  // namespace altsnap::app
 
 #endif  // ALTSNAP_TRAY_H_
