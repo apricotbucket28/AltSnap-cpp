@@ -17,7 +17,7 @@ endif()
 
 # Standalone LLVM installs (e.g. C:\Program Files\LLVM) default to the MSVC
 # ABI/target triple on Windows, which defines _MSC_VER for Windows-SDK
-# compatibility. hooks.cc has real `#if defined(_MSC_VER)` branches meant
+# compatibility. src/hooks/hooks.cc has real `#if defined(_MSC_VER)` branches meant
 # ONLY for cl.exe/clang-cl (they use __FUNCDNAME__ and a linker pragma that
 # plain clang.exe does not implement) - a MSVC-ABI clang trips that branch
 # without being able to satisfy it, and fails deep in the build with a
@@ -100,60 +100,63 @@ set(ALTSNAP_LINK_FLAGS
 
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
-    hooks.cc
-    window_info.cc
-    window_enum.cc
-    window_move.cc
-    snap_move.cc
-    input_state.cc
-    trans_window.cc
-    mouse_move.cc
-    send_input.cc
-    volume.cc
-    pin_window.cc
-    window_actions.cc
-    click_actions.cc
-    window_menu.cc
-    keyboard_hook.cc
-    mouse_hook.cc
-    movement.cc
-    hook_config.cc
-    window_info.h
-    window_enum.h
-    window_move.h
-    snap_move.h
-    input_state.h
-    trans_window.h
-    mouse_move.h
-    send_input.h
-    volume.h
-    pin_window.h
-    window_actions.h
-    click_actions.h
-    window_menu.h
-    keyboard_hook.h
-    mouse_hook.h
-    movement.h
-    hook_config.h
-    blacklist.cc
-    blacklist.h
-    ini_section.cc
-    ini_section.h
-    snap.cc
-    zones.cc
-    hooks.h
-    hooks_internal.h
-    snap.h
-    zones.h
+    src/hooks/hooks.cc
+    src/hooks/window/window_info.cc
+    src/hooks/window/window_enum.cc
+    src/hooks/window/window_move.cc
+    src/hooks/window/snap_move.cc
+    src/hooks/input_state.cc
+    src/hooks/overlay/trans_window.cc
+    src/hooks/mouse_move.cc
+    src/hooks/send_input.cc
+    src/hooks/actions/volume.cc
+    src/hooks/overlay/pin_window.cc
+    src/hooks/actions/window_actions.cc
+    src/hooks/actions/click_actions.cc
+    src/hooks/overlay/window_menu.cc
+    src/hooks/keyboard_hook.cc
+    src/hooks/mouse_hook.cc
+    src/hooks/movement.cc
+    src/hooks/hook_config.cc
+    src/hooks/window/window_info.h
+    src/hooks/window/window_enum.h
+    src/hooks/window/window_move.h
+    src/hooks/window/snap_move.h
+    src/hooks/input_state.h
+    src/hooks/overlay/trans_window.h
+    src/hooks/mouse_move.h
+    src/hooks/send_input.h
+    src/hooks/actions/volume.h
+    src/hooks/overlay/pin_window.h
+    src/hooks/actions/window_actions.h
+    src/hooks/actions/click_actions.h
+    src/hooks/overlay/window_menu.h
+    src/hooks/keyboard_hook.h
+    src/hooks/mouse_hook.h
+    src/hooks/movement.h
+    src/hooks/hook_config.h
+    src/hooks/blacklist.cc
+    src/hooks/blacklist.h
+    src/common/ini_section.cc
+    src/common/ini_section.h
+    src/hooks/window/snap.cc
+    src/hooks/window/zones.cc
+    src/hooks/hooks.h
+    src/hooks/hooks_internal.h
+    src/hooks/window/snap.h
+    src/hooks/window/zones.h
 )
 altsnap_add_rc(hooks hooks.rc)
-target_sources(hooks PRIVATE winutil.h strutil.h)
+target_sources(hooks PRIVATE src/common/winutil.h src/common/strutil.h)
 
 set_target_properties(hooks PROPERTIES
     PREFIX ""
     OUTPUT_NAME "hooks"
     SUFFIX ".dll"
 )
+# Sources include each other relative to src/ (e.g. "hooks/window/snap.h");
+# resource.h lives next to the .rc files in the project root.
+target_include_directories(hooks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(hooks PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(hooks PRIVATE
     ${ALTSNAP_LINK_FLAGS}
@@ -166,34 +169,34 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # windres inputs. Only altsnap.rc gets compiled; the rest are tracked
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
-    altsnap.cc
-    dialog_util.cc
-    general_page.cc
-    mouse_page.cc
-    keyboard_page.cc
-    blacklist_page.cc
-    about_page.cc
-    advanced_page.cc
-    test_window.cc
-    config_internal.h
-    dialog_util.h
-    general_page.h
-    mouse_page.h
-    keyboard_page.h
-    blacklist_page.h
-    about_page.h
-    advanced_page.h
-    test_window.h
-    ini_section.cc
-    ini_section.h
-    config.cc
-    languages.cc
-    tray.cc
-    altsnap.h
-    config.h
-    hooks.h
-    languages.h
-    tray.h
+    src/app/altsnap.cc
+    src/ui/dialog_util.cc
+    src/ui/general_page.cc
+    src/ui/mouse_page.cc
+    src/ui/keyboard_page.cc
+    src/ui/blacklist_page.cc
+    src/ui/about_page.cc
+    src/ui/advanced_page.cc
+    src/ui/test_window.cc
+    src/ui/config_internal.h
+    src/ui/dialog_util.h
+    src/ui/general_page.h
+    src/ui/mouse_page.h
+    src/ui/keyboard_page.h
+    src/ui/blacklist_page.h
+    src/ui/about_page.h
+    src/ui/advanced_page.h
+    src/ui/test_window.h
+    src/common/ini_section.cc
+    src/common/ini_section.h
+    src/ui/config.cc
+    src/app/languages.cc
+    src/app/tray.cc
+    src/app/altsnap.h
+    src/ui/config.h
+    src/hooks/hooks.h
+    src/app/languages.h
+    src/app/tray.h
 )
 altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/window.rc
@@ -209,10 +212,11 @@ set_source_files_properties(
     window.rc AltSnap.exe.manifest resource.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
 target_sources(AltSnap PRIVATE
-    winutil.h strutil.h
+    src/common/winutil.h src/common/strutil.h
     window.rc AltSnap.exe.manifest resource.h)
 
 set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")
+target_include_directories(AltSnap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(AltSnap PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(AltSnap PRIVATE
     -mwindows
@@ -265,8 +269,8 @@ add_dependencies(stage AltSnap hooks)
 option(ALTSNAP_BUILD_TESTS "Build the unit tests" OFF)
 if(ALTSNAP_BUILD_TESTS)
   enable_testing()
-  add_executable(unit_tests tests/unit_tests.cc ini_section.cc blacklist.cc)
-  target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(unit_tests tests/unit_tests.cc src/common/ini_section.cc src/hooks/blacklist.cc)
+  target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
   target_link_options(unit_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   add_test(NAME unit_tests COMMAND unit_tests)

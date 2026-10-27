@@ -5,14 +5,14 @@
 #include <cstring>
 #include <string>
 
-#include "blacklist.h"
-#include "ini_section.h"
+#include "common/ini_section.h"
+#include "hooks/blacklist.h"
 
 using altsnap::Blacklist;
 using altsnap::Blacklists;
 using altsnap::IniSection;
 using altsnap::ReadIniString;
-#include "strutil.h"
+#include "common/strutil.h"
 
 static int g_failures = 0;
 #define CHECK(cond)                                               \
