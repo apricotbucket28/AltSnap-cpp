@@ -274,7 +274,6 @@ struct config {
   // [KBShortcuts]
   UCHAR UsePtWindow;
   // -- -- -- -- -- -- --
-  UCHAR keepMousehook;
   UCHAR EndSendKey;  // Used to be VK_CONTROL
   WORD AeroMaxSpeed;
   WORD LongClickMoveDelay;
@@ -302,7 +301,7 @@ struct config {
 
   action_t KBShortcutsList[64];
 };
-extern struct config conf;
+extern const struct config& conf;  // Read-only; written by hook_config.cc
 
 // The only two exports of hooks.dll (resolved by name with GetProcAddress).
 extern "C" {

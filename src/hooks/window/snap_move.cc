@@ -418,7 +418,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
       if (!state.shift ^ !(conf.AeroTopMaximizes & 1) &&
           (state.Speed < conf.AeroMaxSpeed)) {
         if (conf.FullWin) {
-          MaximizeRestore_atpt(state.hwnd, SW_MAXIMIZE, 1);
+          MaximizeRestoreAtPoint(state.hwnd, SW_MAXIMIZE, 1);
           LastWin.hwnd = nullptr;
           state.moving = 2;
           return 1;

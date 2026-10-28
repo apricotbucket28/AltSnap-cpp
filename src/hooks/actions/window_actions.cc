@@ -29,7 +29,7 @@ namespace altsnap::hooks {
 ///////////////////////////////////////////////////////////////////////////
 int ActionPause(HWND hwnd, UCHAR pause) {
   //    LOGA("Entering pause/resume %d", (int)pause);
-  if (!blacklisted(hwnd, BlkLst.Pause)) {
+  if (!IsBlacklisted(hwnd, BlkLst.Pause)) {
     wchar_t tmpname[256];
     DWORD pid = GetWindowProgName(hwnd, tmpname, std::size(tmpname));
 
@@ -84,7 +84,7 @@ int ActionKill(HWND hwnd) {
   // LOG("hwnd=%lx",(DWORD) hwnd);
   if (!hwnd) return 0;
 
-  if (isClassName(hwnd, L"Ghost")) {
+  if (IsClassName(hwnd, L"Ghost")) {
     HWND tmp = HungWindowFromGhostWindow(hwnd);
     if (tmp) {
       hwnd = tmp;
@@ -96,7 +96,7 @@ int ActionKill(HWND hwnd) {
     }
   }
 
-  if (blacklisted(hwnd, BlkLst.Pause)) return 0;
+  if (IsBlacklisted(hwnd, BlkLst.Pause)) return 0;
 
   PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
                     reinterpret_cast<WPARAM>(ActionKillThread),
@@ -117,7 +117,7 @@ void ReallySetForegroundWindow(HWND hwnd) {
       // We need to activate the window with key input.
       // CTRL seems to work. Also Alt works but trigers the menu
       // So it is simpler to stick to CTRL.
-      Send_KEY(VK_CONTROL);
+      SendKey(VK_CONTROL);
     }
     BringWindowToTop(hwnd);
     SetForegroundWindow(hwnd);
@@ -140,16 +140,16 @@ void ToggleSnapState() {
 int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
   // Get window and foreground window
   HWND hwnd = WindowFromPoint(pt);
-  if (!hwnd || blacklisted(hwnd, BlkLst.IScroll)) return 0;
+  if (!hwnd || IsBlacklisted(hwnd, BlkLst.IScroll)) return 0;
 
   HWND foreground = GetForegroundWindow();
 
-  // Return if foreground window is blacklisted
-  if (foreground && blacklisted(foreground, BlkLst.Windows)) return 0;
+  // Return if foreground window is IsBlacklisted
+  if (foreground && IsBlacklisted(foreground, BlkLst.Windows)) return 0;
 
   // If it's a groupbox, grab the real window
   LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-  if ((style & BS_GROUPBOX) && isClassName(hwnd, L"Button")) {
+  if ((style & BS_GROUPBOX) && IsClassName(hwnd, L"Button")) {
     HWND groupbox = hwnd;
     EnableWindow(groupbox, FALSE);
     hwnd = WindowFromPoint(pt);
@@ -200,7 +200,7 @@ int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
 
     // Get MDIClient
     HWND mdiclient = nullptr;
-    if (isClassName(hwnd, L"MDIClient")) {
+    if (IsClassName(hwnd, L"MDIClient")) {
       mdiclient = hwnd;  // we are pointing to the MDI client!
     } else {
       MDIorNOT(hwnd, &mdiclient);  // Get mdiclient from hwnd
@@ -245,8 +245,8 @@ int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
 /////////////////////////////////////////////////////////////////////////////
 // Windows 2000+ Only
 int ActionTransparency(HWND hwnd, short delta) {
-  if (blacklisted(hwnd, BlkLst.Windows)) return 0;  // Spetial
-  if (state.action.ac && MOUVEMENT(state.action))
+  if (IsBlacklisted(hwnd, BlkLst.Windows)) return 0;  // Spetial
+  if (state.action.ac && IsMovementAction(state.action))
     SetWindowTrans(reinterpret_cast<HWND>(-1));
 
   static int alpha = 255;
@@ -290,13 +290,13 @@ void ActionTransparency2(HWND hwnd, action_t action) {
 static void SetBottomMost(HWND hwnd) {
   HWND lowhwnd = HWND_BOTTOM;  // Lowest hwnd to consider.
 
-  if (!blacklisted(hwnd, BlkLst.Bottommost)) {
+  if (!IsBlacklisted(hwnd, BlkLst.Bottommost)) {
     // Ignore bottommost list if the lowered windows is also part of it.
     HWND tmph = hwnd;
     int i = 0;
     while ((tmph = GetNextWindow(tmph, GW_HWNDNEXT)) && i++ < 1024) {
       if (IsVisible(tmph) && !IsIconic(tmph) &&
-          blacklisted(tmph, BlkLst.Bottommost)) {
+          IsBlacklisted(tmph, BlkLst.Bottommost)) {
         lowhwnd = GetNextWindow(tmph, GW_HWNDPREV);
         break;
       }
@@ -799,16 +799,16 @@ void StepWindow(HWND hwnd, action_t action) {
 }
 void ActionASOnOff() {
   if (state.action.ac) FinishMovementAsync();
-  state.altsnaponoff = !GetProp(g_mainhwnd, APP_ASONOFF);
-  SetProp(g_mainhwnd, APP_ASONOFF,
+  state.altsnaponoff = !GetProp(g_mainhwnd, kPropAutoSnapOnOff);
+  SetProp(g_mainhwnd, kPropAutoSnapOnOff,
           reinterpret_cast<HANDLE>(static_cast<DorQWORD>(state.altsnaponoff)));
   PostMessage(g_mainhwnd, WM_UPDATETRAY, 0, 0);
 }
 void ActionMoveOnOff(HWND hwnd) {
-  if (GetProp(hwnd, APP_MOVEONOFF))
-    RemoveProp(hwnd, APP_MOVEONOFF);
+  if (GetProp(hwnd, kPropMoveOnOff))
+    RemoveProp(hwnd, kPropMoveOnOff);
   else
-    SetProp(hwnd, APP_MOVEONOFF, reinterpret_cast<HANDLE>(1));
+    SetProp(hwnd, kPropMoveOnOff, reinterpret_cast<HANDLE>(1));
 }
 
 }  // namespace altsnap::hooks

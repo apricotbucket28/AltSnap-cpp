@@ -29,8 +29,8 @@ INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
       // Append version number to version....
-      lstrcpy_s(buf, std::size(buf), l10n->AboutVersion);
-      lstrcat_s(buf, std::size(buf), L" " APP_VERSION);
+      CopyString(buf, std::size(buf), l10n->AboutVersion);
+      AppendString(buf, std::size(buf), L" " APP_VERSION);
       SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
 
       SetDlgItemText(hwnd, IDC_URL, L"https://github.com/RamonUnch/AltSnap");
@@ -42,11 +42,11 @@ INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       wchar_t txt[1024];
       txt[0] = L'\0';
       for (size_t i = 0; i < langinfo.size(); i++) {
-        lstrcat_s(txt, std::size(txt), langinfo[i].lang_english.c_str());
-        lstrcat_s(txt, std::size(txt), L": ");
-        lstrcat_s(txt, std::size(txt), langinfo[i].author.c_str());
+        AppendString(txt, std::size(txt), langinfo[i].lang_english.c_str());
+        AppendString(txt, std::size(txt), L": ");
+        AppendString(txt, std::size(txt), langinfo[i].author.c_str());
         if (i + 1 != langinfo.size()) {
-          lstrcat_s(txt, std::size(txt), L"\r\n");
+          AppendString(txt, std::size(txt), L"\r\n");
         }
       }
       SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);

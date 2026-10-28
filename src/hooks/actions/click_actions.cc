@@ -95,7 +95,7 @@ void SClickActions(HWND hwnd, action_t action) {
       MinimizeAllOtherWindows(hwnd, state.shift);
       break;
     case AC_MUTE:
-      Send_KEY(VK_VOLUME_MUTE);
+      SendKey(VK_VOLUME_MUTE);
       break;
     case AC_SIDESNAP:
       SnapToCorner(hwnd, AUTORESIZE, !!state.shift);
@@ -165,13 +165,12 @@ void SClickActions(HWND hwnd, action_t action) {
 
     case AC_NLAYOUT:
       PostMessage(g_mainhwnd, WM_COMMAND,
-                  CMD_SNAPLAYOUT + (conf.LayoutNumber + 1) % conf.MaxLayouts,
-                  0);
+                  CMD_SNAPLAYOUT + (CurrentLayout() + 1) % conf.MaxLayouts, 0);
       break;
     case AC_PLAYOUT:
       PostMessage(g_mainhwnd, WM_COMMAND,
-                  CMD_SNAPLAYOUT + (conf.LayoutNumber + conf.MaxLayouts - 1) %
-                                       conf.MaxLayouts,
+                  CMD_SNAPLAYOUT +
+                      (CurrentLayout() + conf.MaxLayouts - 1) % conf.MaxLayouts,
                   0);
       break;
 
@@ -194,7 +193,7 @@ void SClickActions(HWND hwnd, action_t action) {
 int DoWheelActions(HWND hwnd, action_t action) {
   state.sactiondone = action;
   // Return if in the scroll blacklist.
-  if (blacklisted(hwnd, BlkLst.Scroll)) {
+  if (IsBlacklisted(hwnd, BlkLst.Scroll)) {
     return 0;  // Next hook!
   }
   int ret = 1;
@@ -268,7 +267,7 @@ int TitleBarActions(POINT pt, action_t action, enum button button) {
   state.hittest = 0;                // Cursor in titlebar?
   if (!conf.TTBActions) return -1;  // fall through
   if ((state.hittest = InTitlebar(pt, action, button))) {
-    return init_movement_and_actions(pt, nullptr, action, button);
+    return InitMovementAndActions(pt, nullptr, action, button);
   }
   return -1;  // Fall through
 }
@@ -290,7 +289,7 @@ static DWORD WINAPI DoMoveResizeMaxMinComboAction(LPVOID pp) {
       state.action = k_action_none;
       state.moving = 0;
     }
-    MaximizeRestore_atpt(state.hwnd, SW_MAXIMIZE, 2);
+    MaximizeRestoreAtPoint(state.hwnd, SW_MAXIMIZE, 2);
   }
   return 1;
 }
@@ -310,7 +309,7 @@ static int ClickComboActions(action_t action) {
 // Generalization of Click combo.
 void DoComboActions(action_t action, enum button button) {
   // For safety
-  if (!MOUVEMENT(state.action)) return;
+  if (!IsMovementAction(state.action)) return;
 
   action_t accombo = GetActionMR(button);
   if (ActionInfo(accombo) & (ACINFO_MOVE | ACINFO_RESIZE | ACINFO_CLOSE)) {

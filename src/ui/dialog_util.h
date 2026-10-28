@@ -26,17 +26,17 @@ void ReadOptionStr(HWND hwnd, WORD id, const wchar_t* section,
                    const char* name_s, const wchar_t* def);
 int ReadOptionInt(HWND hwnd, WORD id, const wchar_t* section,
                   const char* name_s, int def, int mask);
-int CB_GetCurSelDlgItem(HWND hwnd, UINT id);
+int ComboBoxCurSel(HWND hwnd, UINT id);
 
 void MoveButtonUporDown(WORD id, WINDOWPLACEMENT* wndpl, int diffrows);
 void MoveToCorner(HWND hwnd);
-LRESULT CB_GetTextAndIdx(HWND hwnd, wchar_t* txt, size_t txtlen);
-LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd, const wchar_t* txt);
+LRESULT ComboBoxTextAndIndex(HWND hwnd, wchar_t* txt, size_t txtlen);
+LRESULT AddComboStringIfMissing(HWND hwnd, const wchar_t* txt);
 HWND CreateInfoTip(HWND hDlg, int toolID, const wchar_t* const pszText);
 void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
                          size_t size);
-void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size);
-void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size);
+void ReadDialogOptions(HWND hwnd, const DialogOption* ol, size_t size);
+void WriteDialogOptions(HWND hwnd, const DialogOption* ol, size_t size);
 void ShowContextHelp(const dialogstring_t sl[], size_t len, HWND hwnd,
                      LPHELPINFO hi);
 BOOL CALLBACK EnableAllControlsProc(HWND hwnd, LPARAM lp);

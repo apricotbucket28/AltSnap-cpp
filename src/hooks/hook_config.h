@@ -11,11 +11,11 @@ namespace altsnap::hooks {
 void ReadConfig(const wchar_t* inipath);
 
 // Registers the keyboard shortcuts of the [KBShortcuts] section.
-void registerAllHotkeys(const wchar_t* inipath);
+void RegisterAllHotkeys(const wchar_t* inipath);
 
 // Releases the memory held by the blacklists and the input sequences.
-void freeblacklists();
-void freeallinputSequences();
+void FreeBlacklists();
+void FreeAllInputSequences();
 
 }  // namespace altsnap::hooks
 

@@ -15,10 +15,6 @@
 
 namespace altsnap::app {
 
-#ifndef NIF_INFO
-#define NIF_INFO 0x00000010
-#endif
-
 static struct {  // NOTIFYICONDATA for NT4
   DWORD cbSize;
   HWND hWnd;
@@ -52,16 +48,16 @@ static void LoadAllIcons() {
     DWORD mod = GetModuleFileName(nullptr, path, std::size(path));
     if (mod) {
       PathRemoveFileSpecL(path);
-      lstrcat_s(path, std::size(path), L"\\Themes\\");  // Themes subfolder
-      lstrcat_s(path, std::size(path), theme);          // Theme name
+      AppendString(path, std::size(path), L"\\Themes\\");  // Themes subfolder
+      AppendString(path, std::size(path), theme);          // Theme name
       int len = lstrlen(path);
       wchar_t* p = path + len;
       *p++ = L'\\';
       if (len < MAX_PATH - 13) {  // strlen("TRAY_OFF.ICO")==12
         UCHAR i = 0;
         for (i = 0; i < 3; i++) {
-          lstrcpy_s(p, std::size(path) - len, tray_iconstr[i]);
-          lstrcat_s(path, std::size(path), L".ico");
+          CopyString(p, std::size(path) - len, tray_iconstr[i]);
+          AppendString(path, std::size(path), L".ico");
           auto tmp = static_cast<HICON>(
               LoadImage(g_hinst, path, IMAGE_ICON, 0, 0,
                         LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_LOADTRANSPARENT));
@@ -108,10 +104,10 @@ int UpdateTray() {
   if (Index) {
     Index += (ScrollLockState & 1) &&
              !(!(GetKeyState(VK_SCROLL) & 1) ^ !(ScrollLockState & 2));
-    if (GetProp(g_hwnd, APP_ASONOFF)) Index = 2;
+    if (GetProp(g_hwnd, kPropAutoSnapOnOff)) Index = 2;
   }
   // Load info tool tip and tray icon
-  lstrcpy_s(tray.szTip, std::size(tray.szTip), tray_tooltipstr[Index]);
+  CopyString(tray.szTip, std::size(tray.szTip), tray_tooltipstr[Index]);
   tray.hIcon = g_icons[Index];
 
   // Only add or modify if not hidden or if balloon will be displayed
@@ -173,8 +169,8 @@ wchar_t* RectToStr(const RECT* rc, wchar_t rectstr[kIntDigits * 4 + 4 + 1]) {
   const long* RC = reinterpret_cast<const long*>(rc);
   rectstr[0] = '\0';
   for (size_t i = 0; i < 4; i++) {
-    lstrcat_s(rectstr, 64, Int2lStr(txt, static_cast<int>(RC[i])));
-    lstrcat_s(rectstr, 64, L",");
+    AppendString(rectstr, 64, Int2lStr(txt, static_cast<int>(RC[i])));
+    AppendString(rectstr, 64, L",");
   }
   return rectstr;
 }
@@ -232,25 +228,26 @@ void CloseAllTestWindows() {
   EnumThreadWindows(GetCurrentThreadId(), CloseTestWindowCB, 0);
 }
 
-void catFullLayoutName(wchar_t* txt, size_t len, int laynum) {
+// Upstream: catFullLayoutName
+void AppendFullLayoutName(wchar_t* txt, size_t len, int laynum) {
   wchar_t n1[kUintDigits + 1];
-  lstrcat_s(txt, len, l10n->MenuSnapLayout);
-  lstrcat_s(txt, len, Uint2lStr(n1, laynum + 1));
+  AppendString(txt, len, l10n->MenuSnapLayout);
+  AppendString(txt, len, Uint2lStr(n1, laynum + 1));
   if (G_HooksWinProc) {
     DWORD rez = 0;
     if ((rez = G_HooksWinProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0))) {
       // Add (width:height) to label the layout.
-      lstrcat_s(txt, len, L"  (");
-      lstrcat_s(txt, len, Uint2lStr(n1, LOWORD(rez)));
-      lstrcat_s(txt, len, L":");
-      lstrcat_s(txt, len, Uint2lStr(n1, HIWORD(rez)));
-      lstrcat_s(txt, len, L")");
+      AppendString(txt, len, L"  (");
+      AppendString(txt, len, Uint2lStr(n1, LOWORD(rez)));
+      AppendString(txt, len, L":");
+      AppendString(txt, len, Uint2lStr(n1, HIWORD(rez)));
+      AppendString(txt, len, L")");
     } else {
-      lstrcat_s(txt, len, L"  ");
-      lstrcat_s(txt, len, l10n->MenuEmptyZone);  // (empty)
+      AppendString(txt, len, L"  ");
+      AppendString(txt, len, l10n->MenuEmptyZone);  // (empty)
     }
   } else {
-    lstrcat_s(txt, len, L"  (...)");
+    AppendString(txt, len, L"  (...)");
   }
 }
 
@@ -278,7 +275,7 @@ void ShowContextMenu(HWND hwnd) {
     wchar_t txt[128];
     for (i = 0; i < MaxLayouts; i++) {
       txt[0] = '\0';
-      catFullLayoutName(txt, std::size(txt), i);
+      AppendFullLayoutName(txt, std::size(txt), i);
       // Check the current layout We use a simple checkmark,
       // because a radio button is more complex to setup.
       UINT mfflags =
@@ -288,9 +285,9 @@ void ShowContextMenu(HWND hwnd) {
 
     if (!(UseZones & 2)) {
       wchar_t numstr[kIntDigits + 1];
-      lstrcpy_s(txt, std::size(txt), l10n->MenuEditLayout);
-      lstrcat_s(txt, std::size(txt), L" ");
-      lstrcat_s(txt, std::size(txt), Int2lStr(numstr, LayoutNumber + 1));
+      CopyString(txt, std::size(txt), l10n->MenuEditLayout);
+      AppendString(txt, std::size(txt), L" ");
+      AppendString(txt, std::size(txt), Int2lStr(numstr, LayoutNumber + 1));
       AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
       AppendMenu(menu, MF_STRING, CMD_TESTWIN, l10n->AdvancedTestWindow);
       AppendMenu(menu, MF_STRING, CMD_EDITLAYOUT, txt);

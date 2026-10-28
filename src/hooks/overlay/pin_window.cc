@@ -200,7 +200,7 @@ static HWND CreatePinWindow(const HWND owner) {
   return ret;
 }
 BOOL CALLBACK PostPinWindowsProcMessage(HWND hwnd, LPARAM lp) {
-  if (isClassName(hwnd, APP_NAME L"-Pin")) {
+  if (IsClassName(hwnd, APP_NAME L"-Pin")) {
     if (lp == WM_CLOSE)
       DestroyWindow(hwnd);
     else

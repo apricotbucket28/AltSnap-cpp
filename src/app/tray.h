@@ -18,7 +18,7 @@ void ShowContextMenu(HWND hwnd);
 int UpdateTray();
 extern unsigned char UseZones;
 void WriteCurrentLayoutNumber();
-void catFullLayoutName(wchar_t* txt, size_t len, int laynum);
+void AppendFullLayoutName(wchar_t* txt, size_t len, int laynum);
 extern HICON g_icons[ICONS_COUNT];
 extern unsigned char tray_added;
 extern unsigned char tray_hidden;

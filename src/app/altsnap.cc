@@ -36,7 +36,7 @@ static HINSTANCE LoadHooksDLL() {
   DWORD ret = GetModuleFileName(nullptr, path, std::size(path));
   if (!ret || ret == std::size(path)) return nullptr;
   PathRemoveFileSpecL(path);
-  lstrcat_s(path, std::size(path), L"\\hooks.dll");
+  AppendString(path, std::size(path), L"\\hooks.dll");
   return LoadLibrary(path);
 }
 static void FreeHooksDLL() {
@@ -61,7 +61,7 @@ int HookSystem() {
   WNDPROC(WINAPI * Load)
   (HWND, const wchar_t*) =
       reinterpret_cast<WNDPROC(WINAPI*)(HWND, const wchar_t*)>(
-          GetProcAddress(hinstDLL, LOAD_PROC));
+          GetProcAddress(hinstDLL, kLoadProcName));
   if (Load) {
     G_HooksWinProc = Load(g_hwnd, inipath);
   }
@@ -82,8 +82,8 @@ int UnhookSystem() {
   LOG("Going to UnHook the system...");
 
   // Tell dll file that we are unloading
-  void(WINAPI * Unload)() =
-      reinterpret_cast<void(WINAPI*)()>(GetProcAddress(hinstDLL, UNLOAD_PROC));
+  void(WINAPI * Unload)() = reinterpret_cast<void(WINAPI*)()>(
+      GetProcAddress(hinstDLL, kUnloadProcName));
   if (Unload) {
     Unload();
   }
@@ -132,8 +132,11 @@ static void ShowSClickMenu(HWND hwnd, LPARAM param) {
   HMENU menu = CreatePopupMenu();
   UCHAR show_oriclick = (param & LP_NOALTACTION) ? AC_ORICLICK : 0xFF;
 
-#define CHK(LP_FLAG) \
-  static_cast<WORD>(MF_STRING | ((param & LP_FLAG) ? MF_CHECKED : MF_UNCHECKED))
+  // MF_STRING, plus MF_CHECKED if `flag` is set in the action parameter.
+  const auto menu_flags = [&](unsigned flag) {
+    return static_cast<WORD>(MF_STRING |
+                             ((param & flag) ? MF_CHECKED : MF_UNCHECKED));
+  };
 
   const struct {
     UCHAR action;
@@ -141,23 +144,23 @@ static void ShowSClickMenu(HWND hwnd, LPARAM param) {
     short l10nidx;
   } mnlst[] = {
       /* hide, action,      MF_FLAG/CHECKED,    menu string */
-      {AC_ALWAYSONTOP, CHK(LP_TOPMOST), L10nId::InputActionAlwaysOnTop},
-      {AC_BORDERLESS, CHK(LP_BORDERLESS), L10nId::InputActionBorderless},
+      {AC_ALWAYSONTOP, menu_flags(LP_TOPMOST), L10nId::InputActionAlwaysOnTop},
+      {AC_BORDERLESS, menu_flags(LP_BORDERLESS), L10nId::InputActionBorderless},
       {AC_CENTER, MF_STRING, L10nId::InputActionCenter},
       {AC_CENTER2, MF_STRING, L10nId::InputActionCenter2},
-      {AC_ROLL, CHK(LP_ROLLED), L10nId::InputActionRoll},
+      {AC_ROLL, menu_flags(LP_ROLLED), L10nId::InputActionRoll},
       {AC_LOWER, MF_STRING, L10nId::InputActionLower},
       {AC_MAXHV, MF_STRING, L10nId::InputActionMaximizeHV},
       {AC_MINALL, MF_STRING, L10nId::InputActionMinAllOther},
       {AC_SIDESNAP, MF_STRING, L10nId::InputActionSideSnap},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {AC_MAXIMIZE, CHK(LP_MAXIMIZED), L10nId::InputActionMaximize},
+      {AC_MAXIMIZE, menu_flags(LP_MAXIMIZED), L10nId::InputActionMaximize},
       {AC_MINIMIZE, MF_STRING, L10nId::InputActionMinimize},
       {AC_CLOSE, MF_STRING, L10nId::InputActionClose},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
       {AC_KILL, MF_STRING, L10nId::InputActionKill},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
-      {AC_MOVEONOFF, CHK(LP_MOVEONOFF), L10nId::InputActionMoveOnOff},
+      {AC_MOVEONOFF, menu_flags(LP_MOVEONOFF), L10nId::InputActionMoveOnOff},
       {0, MF_SEPARATOR, -1}, /* ------------------------ */
       {show_oriclick, MF_STRING, L10nId::InputActionOriClick},
       {AC_NONE, MF_STRING, L10nId::InputActionNothing},
@@ -325,9 +328,9 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       DestroyWindow(hwnd);
     } else if (wmId == CMD_SAVEZONES) {
       wchar_t txt[256];
-      lstrcpy_s(txt, std::size(txt), l10n->MiscZoneConfirmation);
-      lstrcat_s(txt, std::size(txt), L"\n\n");
-      catFullLayoutName(txt, std::size(txt), LayoutNumber);
+      CopyString(txt, std::size(txt), l10n->MiscZoneConfirmation);
+      AppendString(txt, std::size(txt), L"\n\n");
+      AppendFullLayoutName(txt, std::size(txt), LayoutNumber);
       int ret = MessageBox(nullptr, txt, APP_NAME, MB_OKCANCEL);
       if (ret == IDOK) {
         UnhookSystem();
@@ -398,6 +401,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 }  // namespace altsnap::app
 using namespace altsnap::app;
 
+static bool IsDigit(wchar_t c) {
+  return L'0' <= c && c <= L'9';
+}
+
 // Returns the part of the process command line that follows the program name.
 // WinMain() only receives the command line as ANSI text, which would lose any
 // non-ASCII characters of a Unicode build (e.g. in the "-l" or "-a" values).
@@ -423,37 +430,37 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
   GetModuleFileName(nullptr, inipath, std::size(inipath));
   inipath[MAX_PATH - 1] = '\0';
   size_t inipath_len = lstrlen(inipath) - 3;
-  lstrcpy_s(&inipath[inipath_len], 4, L"ini");
+  CopyString(&inipath[inipath_len], 4, L"ini");
   if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(inipath) &&
       GetEnvironmentVariable(L"APPDATA", nullptr, 0)) {
     // .ini file is not in current directorry, and APPDATA exists
     // we should look for %APPDATA%\AltSnap\AltSnap.ini
     wchar_t userini[MAX_PATH];
     GetEnvironmentVariable(L"APPDATA", userini, std::size(userini));
-    lstrcat_s(userini, std::size(userini), L"\\AltSnap");
+    AppendString(userini, std::size(userini), L"\\AltSnap");
     if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
       CreateDirectory(userini, nullptr);
       LOG("CreateDirectory(%ls)", userini);
     }
     // Full user ini name.
-    // lstrcat_s(userini, std::size(userini), L"\\AltSnap.ini");
+    // AppendString(userini, std::size(userini), L"\\AltSnap.ini");
     const wchar_t* inifilename = inipath + inipath_len - 3;
     while (inifilename >= inipath && *inifilename != '\\') inifilename--;
-    lstrcat_s(userini, std::size(userini), inifilename);
+    AppendString(userini, std::size(userini), inifilename);
     if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
       // Copy AltSnap.dni (Default ini file) if no ini present
-      lstrcpy_s(&inipath[lstrlen(inipath) - 3], 4, L"dni");
+      CopyString(&inipath[lstrlen(inipath) - 3], 4, L"dni");
       CopyFile(inipath, userini, FALSE);  // AltSnap.dni -> AltSnap.ini
       LOG("CopyFile(%ls -> %ls)", inipath, userini);
     }
 
-    lstrcpy_s(inipath, std::size(inipath), userini);
+    CopyString(inipath, std::size(inipath), userini);
   }
   LOG("ini file: %ls", inipath);
 
   // Read parameters on command line
-  int help = !!lstrstr(params, L"-help") || !!lstrstr(params, L"/?") ||
-             !!lstrstr(params, L"-?");
+  int help = !!FindSubstring(params, L"-help") ||
+             !!FindSubstring(params, L"/?") || !!FindSubstring(params, L"-?");
   if (help) {
     static const wchar_t* txthelp =
         L"AltSnap command line options:\n\n"
@@ -473,12 +480,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
     return 0;
   }
 
-  tray_hidden = !!lstrstr(params, L"-h");
-  int quiet = !!lstrstr(params, L"-q");
-  int elevate = !!lstrstr(params, L"-e");
-  int multi = !!lstrstr(params, L"-m");
-  int config = !!lstrstr(params, L"-c");
-  int rlini = !!lstrstr(params, L"-r");
+  tray_hidden = !!FindSubstring(params, L"-h");
+  int quiet = !!FindSubstring(params, L"-q");
+  int elevate = !!FindSubstring(params, L"-e");
+  int multi = !!FindSubstring(params, L"-m");
+  int config = !!FindSubstring(params, L"-c");
+  int rlini = !!FindSubstring(params, L"-r");
 
   // Check whether the process is already elevated.
   {
@@ -505,22 +512,21 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
     HWND previnst = FindWindow(APP_NAME, L"");
     if (previnst) {
       // Ask old HotKey window to perform an action.
-      const wchar_t* actionstr = lstrstr(params, L"-a");
+      const wchar_t* actionstr = FindSubstring(params, L"-a");
       if (actionstr && actionstr[2] && actionstr[3] && actionstr[4]) {
         action_t action = MapActionW(&actionstr[3]);
         PostMessage(previnst, WM_HOTKEY,
                     (actionstr[2] == 'p') * 0x1000 + action.ac,
-                    PACK_ACTION(action));
+                    PackAction(action));
         return 0;
       }
-// Change layout if asked...
-#define isUDigit(x) (L'0' <= (x) && (x) <= L'9')
-      const wchar_t* layout = lstrstr(params, L"-l");
-      if (layout && isUDigit(layout[2])) {
+      // Change layout if asked...
+      const wchar_t* layout = FindSubstring(params, L"-l");
+      if (layout && IsDigit(layout[2])) {
         wchar_t numstr[3] = {layout[2], layout[3], L'\0'};
-        if (!isUDigit(numstr[1])) numstr[1] = L'\0';
+        if (!IsDigit(numstr[1])) numstr[1] = L'\0';
         // MessageBox(NULL, NULL, NULL, 0);
-        int layoutnumber = CLAMP(0, strtoi(numstr) - 1, 9);
+        int layoutnumber = CLAMP(0, ParseInt(numstr) - 1, 9);
         PostMessage(previnst, WM_COMMAND, CMD_SNAPLAYOUT + layoutnumber, 0);
         return 0;
       }

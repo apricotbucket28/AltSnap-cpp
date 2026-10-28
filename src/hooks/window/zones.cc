@@ -15,7 +15,8 @@ namespace altsnap::hooks {
 std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
 static DWORD Grids[MAX_LAYOUTS] = {};
 
-void freezones() {
+// Upstream: freezones
+void FreeZones() {
   for (auto& layout : Zones) layout = {};  // Also releases the memory.
 }
 
@@ -33,16 +34,16 @@ static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
   if (!txt || !txt[0]) return 0;
   // LOGA("Zone(%u, %u) = %ls", laynum, idx, txt);
   //  Copy to modifyable buffer.
-  lstrcpy_s(zaschii, std::size(zaschii), txt);
+  CopyString(zaschii, std::size(zaschii), txt);
   wchar_t *oldptr = nullptr, *newptr = nullptr;
   oldptr = &zaschii[0];
   for (size_t i = 0; i < 4; i++) {
-    newptr = lstrchr(oldptr, ',');
+    newptr = FindChar(oldptr, ',');
     if (!newptr) return 0;
     *newptr = '\0';
     newptr++;
     if (!*oldptr) return 0;
-    ZONE[i] = strtoi(oldptr);  // 0 left, 1 top, 2 right, 3 bottom;
+    ZONE[i] = ParseInt(oldptr);  // 0 left, 1 top, 2 right, 3 bottom;
     oldptr = newptr;
   }
   return 1;
@@ -85,8 +86,8 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
 void ReadGrids(const IniSection& section) {
   char gnamex[8];
   char gnamey[8];
-  lstrcpy_s(gnamex, std::size(gnamex), "GridNx");
-  lstrcpy_s(gnamey, std::size(gnamex), "GridNy");
+  CopyString(gnamex, std::size(gnamex), "GridNx");
+  CopyString(gnamey, std::size(gnamex), "GridNy");
   gnamex[7] = '\0';
   gnamey[7] = '\0';
   for (size_t i = 0; i < std::size(Grids); i++) {
@@ -126,8 +127,8 @@ static void RecalculateZonesFromGrids() {
 }
 
 static unsigned GetNearestZoneDist(POINT pt, unsigned long* dist_) {
-  RECT* const lZones = Zones[conf.LayoutNumber].data();
-  size_t numzones = Zones[conf.LayoutNumber].size();
+  RECT* const lZones = Zones[CurrentLayout()].data();
+  size_t numzones = Zones[CurrentLayout()].size();
   if (!lZones) return 0;
   unsigned long dist = 0xffffffff;
   unsigned idx = 0;
@@ -143,8 +144,8 @@ static unsigned GetNearestZoneDist(POINT pt, unsigned long* dist_) {
 }
 
 static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
-  RECT* const lZones = Zones[conf.LayoutNumber].data();
-  size_t numzones = Zones[conf.LayoutNumber].size();
+  RECT* const lZones = Zones[CurrentLayout()].data();
+  size_t numzones = Zones[CurrentLayout()].size();
   if (!lZones) return 0;
   unsigned i = 0, ret = 0;
   SetRectEmpty(urc);
@@ -172,8 +173,8 @@ static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
 }
 
 static unsigned GetZoneContainingPoint(POINT pt, RECT* urc, int extend) {
-  RECT* const lZones = Zones[conf.LayoutNumber].data();
-  size_t numzones = Zones[conf.LayoutNumber].size();
+  RECT* const lZones = Zones[CurrentLayout()].data();
+  size_t numzones = Zones[CurrentLayout()].size();
   if (!lZones) return 0;
   unsigned i = 0, ret = 0;
   SetRectEmpty(urc);
@@ -268,8 +269,8 @@ void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width, int* height) {
 static unsigned GetNearestZoneFromPointInDirection(const RECT* rc, RECT* out,
                                                    UCHAR direction) {
   unsigned idx = INVALID_ZONE_IDX;
-  RECT* const lZones = Zones[conf.LayoutNumber].data();
-  size_t nZones = Zones[conf.LayoutNumber].size();
+  RECT* const lZones = Zones[CurrentLayout()].data();
+  size_t nZones = Zones[CurrentLayout()].size();
   if (!lZones) return 0;
 
   POINT opt = {(rc->left + rc->right) / 2, (rc->top + rc->bottom) / 2};
@@ -415,7 +416,7 @@ int GetBestLayoutFromMonitors() {
     RecalculateZonesFromGrids();
     return -1;  // DONE!
   }
-  DWORD curRZ = GetLayoutRez(conf.LayoutNumber);
+  DWORD curRZ = GetLayoutRez(CurrentLayout());
 
   // If the current rez is 0:0 we should not change it.
   // Because it can be used as a dummy mode, plus a user
@@ -477,7 +478,7 @@ static LRESULT CALLBACK SnapLayoutWinProc(HWND hwnd, UINT msg, WPARAM wp,
       // PaintDesktop(ps.hdc);
       auto oldBrush = static_cast<HBRUSH>(
           SelectObject(ps.hdc, GetStockObject(HOLLOW_BRUSH)));
-      for (auto& i : Zones[conf.LayoutNumber]) {
+      for (auto& i : Zones[CurrentLayout()]) {
         RECT* rc = &i;
         if (!AreRectsTouchingT(rc, &ps.rcPaint, 0)) {
           //                wchar_t buf[16]; SIZE sz;
@@ -532,7 +533,7 @@ static void ZonesPrevResetRegion() {
   GetWindowRect(g_zphwnd, &wrc);
   ScreenToClient(g_zphwnd, &opt);
   HRGN hregion = CreateRectRgn(0, 0, 0, 0);
-  for (auto& i : Zones[conf.LayoutNumber]) {
+  for (auto& i : Zones[CurrentLayout()]) {
     RECT rc;
     CopyRect(&rc, &i);
     OffsetRect(&rc, opt.x, opt.y);
@@ -598,10 +599,19 @@ void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
   }
 }
 
+// The active zone layout. The ini file only provides the initial value.
+static unsigned g_layout_number = 0;
+unsigned CurrentLayout() {
+  return g_layout_number;
+}
+void InitCurrentLayout(unsigned layout) {
+  g_layout_number = layout;
+}
+
 void SetLayoutNumber(WPARAM number) {
   int was_visible = IsWindowVisible(g_zphwnd);
   ShowSnapLayoutPreview(0);
-  conf.LayoutNumber = CLAMP(0, number, 9);
+  g_layout_number = CLAMP(0, number, 9);
   ZonesPrevResetRegion();  // re-calculate
   ShowSnapLayoutPreview(was_visible);
 

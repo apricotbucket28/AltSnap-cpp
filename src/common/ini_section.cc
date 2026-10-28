@@ -34,7 +34,7 @@ const wchar_t* IniSection::GetString(const char* key,
                                      const wchar_t* default_value) const {
   const std::wstring prefix = std::wstring(key, key + std::strlen(key)) + L'=';
   for (const wchar_t* line : lines_) {
-    if (!lstrcmpi_samestart(line, prefix.c_str())) {
+    if (!CompareStartIgnoreCase(line, prefix.c_str())) {
       return line + prefix.size();
     }
   }
@@ -43,7 +43,7 @@ const wchar_t* IniSection::GetString(const char* key,
 
 int IniSection::GetInt(const char* key, int default_value) const {
   const wchar_t* value = GetString(key, nullptr);
-  return value ? strtoi(value) : default_value;
+  return value ? ParseInt(value) : default_value;
 }
 
 std::wstring ReadIniString(const wchar_t* section, const wchar_t* key,

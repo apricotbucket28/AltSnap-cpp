@@ -24,7 +24,7 @@ namespace altsnap::app {
   wchar_t* pos = keys;
   while (*pos != '\0') {
     numread = 0;
-    temp = lstrhex2u(pos);
+    temp = HexToUnsigned(pos);
     while (pos[numread] && pos[numread] != ' ') numread++;
     while (pos[numread] == ' ') numread++;
     if (temp == vkey) {
@@ -39,10 +39,10 @@ static void AddvKeytoList(wchar_t keys[32], unsigned vkey) {
   if (IsKeyInList(keys, vkey)) return;
   // Add a key to the hotkeys list
   if (*keys != '\0') {
-    lstrcat_s(keys, 32, L" ");
+    AppendString(keys, 32, L" ");
   }
   wchar_t buf[kPtrHexDigits + 1];
-  lstrcat_s(keys, 32, LPTR2Hex(buf, vkey));
+  AppendString(keys, 32, LPTR2Hex(buf, vkey));
 }
 static void RemoveKeyFromList(wchar_t keys[32], unsigned vkey) {
   // Remove the key from the hotclick list
@@ -50,12 +50,12 @@ static void RemoveKeyFromList(wchar_t keys[32], unsigned vkey) {
   wchar_t* pos = keys;
   while (*pos != '\0') {
     numread = 0;
-    temp = lstrhex2u(pos);
+    temp = HexToUnsigned(pos);
     while (pos[numread] && pos[numread] != ' ') numread++;
     while (pos[numread] == ' ') numread++;
     if (temp == vkey) {
       keys[pos - keys] = '\0';
-      lstrcat_s(keys, 32, pos + numread);
+      AppendString(keys, 32, pos + numread);
       break;
     }
     pos += numread;
@@ -88,7 +88,7 @@ void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
                           inipath);
   wchar_t* pos = txt;
   while (*pos != '\0') {
-    temp = lstrhex2u(pos);
+    temp = HexToUnsigned(pos);
     while (*pos && *pos != ' ') pos++;
     while (*pos == ' ') pos++;
 
@@ -192,11 +192,11 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       {L"A1", L10nId::InputHotkeysRightShift},
       {nullptr, 0},
   };
-  static const optlst_t optlst[] = {
-      {IDC_SCROLLLOCKSTATE, T_BMK, 0, L"Input", "ScrollLockState", nullptr},
-      {IDC_UNIKEYHOLDMENU, T_BOL, 0, L"Input", "UniKeyHoldMenu", nullptr},
-      {IDC_KEYCOMBO, T_BOL, 0, L"Input", "KeyCombo", nullptr},
-      {IDC_USEPTWINDOW, T_BOL, 0, L"KBShortcuts", "UsePtWindow", nullptr},
+  static const DialogOption optlst[] = {
+      {IDC_SCROLLLOCKSTATE, T_BMK, 0, L"Input", "ScrollLockState", 0},
+      {IDC_UNIKEYHOLDMENU, T_BOL, 0, L"Input", "UniKeyHoldMenu", 0},
+      {IDC_KEYCOMBO, T_BOL, 0, L"Input", "KeyCombo", 0},
+      {IDC_USEPTWINDOW, T_BOL, 0, L"KBShortcuts", "UsePtWindow", 0},
   };
 
   auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
@@ -241,7 +241,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     } else if (event == EN_UPDATE && id == IDC_SHORTCUTS_VK) {
       wchar_t txt[4];
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
-      BYTE vKey = lstrhex2u(txt);
+      BYTE vKey = HexToUnsigned(txt);
       wchar_t keyname[32];
       keyname[0] = L'\0';
       GetKeyNameText(MapVirtualKey(vKey, 0) << 16, keyname,
@@ -262,8 +262,8 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         (event == CBN_SELCHANGE || event == CBN_EDITCHANGE)) {
       // Update the shortcut with the current one.
       wchar_t txt[64];
-      int i =
-          CB_GetTextAndIdx(reinterpret_cast<HWND>(lParam), txt, std::size(txt));
+      int i = ComboBoxTextAndIndex(reinterpret_cast<HWND>(lParam), txt,
+                                   std::size(txt));
       edit_shortcut_idx = i;
       // MessageBox(hwnd, txt, NULL, 0);
       WORD shortcut = GetPrivateProfileInt(L"KBShortcuts", txt, 0, inipath);
@@ -286,7 +286,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       wchar_t txt[kUintDigits + 1], action_string_buf[64];
       // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
-      BYTE vKey = lstrhex2u(txt);
+      BYTE vKey = HexToUnsigned(txt);
       BYTE mod = IsChecked(hwnd, IDC_ALT) |
                  (IsChecked(hwnd, IDC_CONTROL) << 1) |
                  (IsChecked(hwnd, IDC_SHIFT) << 2) |
@@ -298,7 +298,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       if (0 < astrlen && *action_string_buf) {
         const wchar_t* intstr = shortcut ? Uint2lStr(txt, shortcut)
                                          : nullptr;  // NULL will remove the KEY
-        edit_shortcut_idx = CB_AddStringIfNotPresentAndGetIdx(
+        edit_shortcut_idx = AddComboStringIfMissing(
             GetDlgItem(hwnd, IDC_SHORTCUTS_AC), action_string_buf);
         WritePrivateProfileString(L"KBShortcuts", action_string_buf, intstr,
                                   inipath);
@@ -361,7 +361,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                 reinterpret_cast<LPARAM>(&acp));
       if (code == IDOK && acp.outbuf[0]) {
         HWND control = GetDlgItem(hwnd, IDC_SHORTCUTS_AC);
-        int new_index = CB_AddStringIfNotPresentAndGetIdx(control, acp.outbuf);
+        int new_index = AddComboStringIfMissing(control, acp.outbuf);
         ComboBox_SetCurSel(control, new_index);
         PostMessage(
             hwnd, WM_COMMAND, IDC_SHORTCUTS_AC | CBN_SELCHANGE << 16,
@@ -393,7 +393,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                  inipath);
         for (wchar_t* p = kbsec; *p != L'\0'; p += lstrlen(p) + 1) {
           // MessageBox(hwnd, p, L"KBShortcuts", 0);
-          wchar_t* pp = lstrchr(p, L'=');
+          wchar_t* pp = FindChar(p, L'=');
           if (!pp) continue;  // No equal sign...
           *pp = L'\0';
           if (!lstrcmpi(p, L"UsePtWindow")) continue;
@@ -414,8 +414,8 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       unsigned j = 0, sel = 0;
       for (j = 0; j < std::size(togglekeys) - 1; j++) {
         wchar_t key_name[256];
-        lstrcpy_noaccel(key_name, std::size(key_name),
-                        l10n->Get(togglekeys[j].l10nidx));
+        CopyWithoutAccelerator(key_name, std::size(key_name),
+                               l10n->Get(togglekeys[j].l10nidx));
         ComboBox_AddString(control, key_name);
         if (!lstrcmpi(txt, togglekeys[j].action)) {
           sel = j;

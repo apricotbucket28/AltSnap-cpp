@@ -20,7 +20,7 @@ namespace altsnap::hooks {
 /////////////////////////////////////////////////////////////////////////////
 static BOOL CALLBACK EnumWindowsProc(HWND window, LPARAM lParam) {
   // Only store window if it's visible, not minimized to taskbar,
-  // not the window we are dragging and not blacklisted
+  // not the window we are dragging and not IsBlacklisted
   struct snwdata sn;
   if (ShouldSnapTo(window) && GetWindowRectL(window, &sn.rc)) {
     // Maximized?
@@ -111,7 +111,7 @@ void EnumSnapped() {
 static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
   struct snwdata sn;
   if (ShouldSnapTo(hwnd) && !IsZoomed(hwnd) && IsResizable(hwnd) &&
-      !blacklisted(hwnd, BlkLst.Windows) && GetWindowRectL(hwnd, &sn.rc)) {
+      !IsBlacklisted(hwnd, BlkLst.Windows) && GetWindowRectL(hwnd, &sn.rc)) {
     // Only considers windows that are
     // touching the currently resized window
     RECT statewnd;

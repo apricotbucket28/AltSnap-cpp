@@ -46,6 +46,16 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
   addressed by `L10nId::X` constants and pointer-to-member tables, not by
   reinterpreting the struct as an array.
 - `common/winutil.h` (upstream: `unfuck.h`) is what is left of the old compat layer.
+- `conf` (the configuration) is a `const config&` for every module; only
+  `hook_config.cc` owns the writable `g_config`. Values that change at runtime are
+  not configuration and live with their owner: the active zone layout
+  (`CurrentLayout()` in zones.cc) and "keep the mouse hook installed"
+  (`SetKeepMouseHook()` in mouse_hook.cc).
+- Settings pages describe their controls with `DialogOption` (typed default value),
+  not a `void*` that held either an integer or a string.
+- Naming follows the Google style: CamelCase functions, `kConstants`. Renamed
+  upstream identifiers carry a `// Upstream: OldName` note; the string helpers
+  from nanolibc.h are listed at the top of `common/strutil.h`.
 
 ## Done
 - macro-free `strutil.h` (replaces nanolibc.h); direct Win32 linking, no

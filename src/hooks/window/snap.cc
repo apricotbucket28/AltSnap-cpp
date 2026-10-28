@@ -79,7 +79,7 @@ static void DelWindowFromDB(HWND hwnd) {
 // There is a lot of cast because of annoying warnings...
 // There is also a fallback to a database for some spetial windows.
 unsigned GetRestoreData(HWND hwnd, int* width, int* height) {
-  auto WH = reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPPT));
+  auto WH = reinterpret_cast<DorQWORD>(GetProp(hwnd, kPropRestoreSize));
   if (WH) {
     *width = static_cast<int>(LOWORDPTR(WH));
     *height = static_cast<int>(HIWORDPTR(WH));
@@ -87,19 +87,19 @@ unsigned GetRestoreData(HWND hwnd, int* width, int* height) {
     UINT odpi = 0;
     if (dpi &&
         (odpi = static_cast<UINT>(
-             reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PRODPI)))) &&
+             reinterpret_cast<DorQWORD>(GetProp(hwnd, kPropOriginalDpi)))) &&
         odpi != dpi) {
       // The current dpi is different for the window, We must scale the content.
       *width = MulDiv(*width, dpi, odpi);
       *height = MulDiv(*height, dpi, odpi);
     }
     return static_cast<unsigned>(
-        reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPFL)));
+        reinterpret_cast<DorQWORD>(GetProp(hwnd, kPropRestoreFlag)));
     ;
 
 #ifdef _WIN64  // Try fancy zone flag only in 64bit mode!
-  } else if (conf.FancyZone &&
-             (WH = reinterpret_cast<DorQWORD>(GetProp(hwnd, FZ_PROPPT)))) {
+  } else if (conf.FancyZone && (WH = reinterpret_cast<DorQWORD>(
+                                    GetProp(hwnd, kPropFancyZonesSize)))) {
     // It seems FancyZones stores size info in points, not pixels.
     *width = static_cast<int>(LOWORDPTR(WH));
     *height = static_cast<int>(HIWORDPTR(WH));
@@ -126,13 +126,13 @@ unsigned GetRestoreData(HWND hwnd, int* width, int* height) {
   return 0;
 }
 void ClearRestoreData(HWND hwnd) {
-  RemoveProp(hwnd, APP_PROPPT);
-  RemoveProp(hwnd, APP_PROPFL);
-  // RemoveProp(hwnd, APP_PROPOFFSET);
+  RemoveProp(hwnd, kPropRestoreSize);
+  RemoveProp(hwnd, kPropRestoreFlag);
+  // RemoveProp(hwnd, kPropRestoreOffset);
 #ifdef _WIN64
   if (conf.FancyZone) {
-    RemoveProp(hwnd, FZ_PROPPT);
-    RemoveProp(hwnd, FZ_PROPZONES);
+    RemoveProp(hwnd, kPropFancyZonesSize);
+    RemoveProp(hwnd, kPropFancyZonesZones);
   }
 #endif
   DelWindowFromDB(hwnd);
@@ -140,23 +140,24 @@ void ClearRestoreData(HWND hwnd) {
 // Sets width, height and restore flag in a hwnd
 void SetRestoreData(HWND hwnd, int width, int height, unsigned restore) {
   BOOL ret = 0;
-  ret = SetProp(hwnd, APP_PROPFL,
+  ret = SetProp(hwnd, kPropRestoreFlag,
                 reinterpret_cast<HANDLE>(static_cast<DorQWORD>(restore)));
-  ret &= SetProp(hwnd, APP_PROPPT,
+  ret &= SetProp(hwnd, kPropRestoreSize,
                  reinterpret_cast<HANDLE>(MAKELONGPTR(width, height)));
   UINT dpi = 0;
   if ((dpi = GetDpiForWindow(hwnd)))
-    ret &= SetProp(hwnd, APP_PRODPI,
+    ret &= SetProp(hwnd, kPropOriginalDpi,
                    reinterpret_cast<HANDLE>(static_cast<DorQWORD>(dpi)));
 
   if (!ret) AddWindowToDB(hwnd, width, height, restore);
 }
 
 unsigned GetRestoreFlag(HWND hwnd) {
-  unsigned flag = reinterpret_cast<DorQWORD>(GetProp(hwnd, APP_PROPFL));
+  unsigned flag = reinterpret_cast<DorQWORD>(GetProp(hwnd, kPropRestoreFlag));
 
 #ifdef _WIN64
-  if (conf.FancyZone && GetProp(hwnd, FZ_PROPPT)) flag |= SNAPPED | SNZONE;
+  if (conf.FancyZone && GetProp(hwnd, kPropFancyZonesSize))
+    flag |= SNAPPED | SNZONE;
 #endif
 
   int idx = 0;  // fallback to db.
@@ -166,7 +167,7 @@ unsigned GetRestoreFlag(HWND hwnd) {
   return flag;
 }
 void SetRestoreFlag(HWND hwnd, unsigned flag) {
-  BOOL ret = SetProp(hwnd, APP_PROPFL,
+  BOOL ret = SetProp(hwnd, kPropRestoreFlag,
                      reinterpret_cast<HANDLE>(static_cast<DorQWORD>(flag)));
   int idx = 0;
   if (!ret && ((idx = GetWindowInDB(hwnd)) >= 0)) {
@@ -186,20 +187,20 @@ int IsAnySnapped(HWND hwnd) {
 /////////////////////////////////////////////////////////////////////////////
 // borderless flag (saving old GWL_STYLE)
 void SetBorderlessFlag(HWND hwnd, LONG_PTR flag) {
-  SetProp(hwnd, APP_PRBDLESS, reinterpret_cast<HANDLE>(flag));
+  SetProp(hwnd, kPropBorderlessStyle, reinterpret_cast<HANDLE>(flag));
 }
 LONG_PTR GetBorderlessFlag(HWND hwnd) {
-  return reinterpret_cast<LONG_PTR>(GetProp(hwnd, APP_PRBDLESS));
+  return reinterpret_cast<LONG_PTR>(GetProp(hwnd, kPropBorderlessStyle));
 }
 LONG_PTR ClearBorderlessFlag(HWND hwnd) {
-  return reinterpret_cast<LONG_PTR>(RemoveProp(hwnd, APP_PRBDLESS));
+  return reinterpret_cast<LONG_PTR>(RemoveProp(hwnd, kPropBorderlessStyle));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //// Roll unroll stuff
 // static int GetRolledHeight(HWND hwnd)
 //{
-//     int ret = (int)GetProp(hwnd, APP_ROLLED);
+//     int ret = (int)GetProp(hwnd, kPropRolled);
 //     int idx;
 //     if (!ret && ((idx = GetWindowInDB(hwnd)) >=0)) {
 //         ret = wnddb[idx].rolledh;
@@ -208,7 +209,7 @@ LONG_PTR ClearBorderlessFlag(HWND hwnd) {
 // }
 // static int ClearRolledHeight(HWND hwnd)
 //{
-//     int ret = (int)RemoveProp(hwnd, APP_ROLLED);
+//     int ret = (int)RemoveProp(hwnd, kPropRolled);
 //
 //     int idx;
 //     if (!ret && ((idx = GetWindowInDB(hwnd)) >=0)) {
@@ -219,7 +220,7 @@ LONG_PTR ClearBorderlessFlag(HWND hwnd) {
 // }
 // static void SetRolledHeight(HWND hwnd, int rolledh)
 //{
-//     BOOL ret = SetProp(hwnd, APP_ROLLED, (HANDLE)(DorQWORD)rolledh);
+//     BOOL ret = SetProp(hwnd, kPropRolled, (HANDLE)(DorQWORD)rolledh);
 //     if (ret) return;
 //
 //     int idx;

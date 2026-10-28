@@ -167,7 +167,8 @@ void ResizeAllSnappedWindows() {
   if (hwndSS) EndDeferWindowPosNow(hwndSS);
   LastWin.hwnd = nullptr;
 }
-void MaximizeRestore_atpt(HWND hwnd, UINT sw_cmd, int origin) {
+// Upstream: MaximizeRestore_atpt
+void MaximizeRestoreAtPoint(HWND hwnd, UINT sw_cmd, int origin) {
   WINDOWPLACEMENT wndpl;
   wndpl.length = sizeof(wndpl);
   GetWindowPlacement(hwnd, &wndpl);
@@ -293,7 +294,7 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
  * emulators can snap to their character-cell grid.  */
 BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
   /* Apply the blacklist (also applies to WM_*SIZEMOVE) */
-  if (blacklisted(hwnd, BlkLst.SSizeMove)) return FALSE;
+  if (IsBlacklisted(hwnd, BlkLst.SSizeMove)) return FALSE;
 
   /* WM_SIZING may enforce minimum width/height */
   if (conf.IgnoreMinMaxInfo != 0) {
@@ -351,7 +352,8 @@ BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
 
 /////////////////////////////////////////////////////////////////////////////
 // Move the windows in a thread in case it is very slow to resize
-static void MoveResizeWindowNow_(struct windowRR* lw, UINT flag) {
+// Upstream: MoveResizeWindowNow_
+static void MoveResizeWindowNowEx(struct windowRR* lw, UINT flag) {
   HWND hwnd = nullptr;
   hwnd = lw->hwnd;
 
@@ -362,7 +364,7 @@ static void MoveResizeWindowNow_(struct windowRR* lw, UINT flag) {
   // Send WM_ENTERSIZEMOVE and EVENT_SYSTEM_MOVESIZESTART
   if (lw->start) NotifySizeMoveStaEnd(hwnd, 1);  // Once darg actually starts.
 
-  LOG("MoveResizeWindowNow_:lw->end=%d, start=%d, moveonly=%d, maximize=%d, "
+  LOG("MoveResizeWindowNowEx:lw->end=%d, start=%d, moveonly=%d, maximize=%d, "
       "snap=%d, resize{%d,%d}",
       static_cast<int>(lw->end), static_cast<int>(lw->start),
       static_cast<int>(lw->moveonly), static_cast<int>(lw->maximize),
@@ -451,7 +453,7 @@ DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
   if (nothingtodo)
     lw->hwnd = nullptr;  // DONE!
   else
-    MoveResizeWindowNow_(lw, flag);
+    MoveResizeWindowNowEx(lw, flag);
 
   // lw->resizing_now = 0;
   return 0;

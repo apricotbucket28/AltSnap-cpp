@@ -50,8 +50,8 @@ void StopSpeedMes() {
 }
 /////////////////////////////////////////////////////////////////////////////
 // If we pass buttonX BT_PROBE it will tell us if we pass the blacklist.
-int init_movement_and_actions(POINT pt, HWND hwnd, action_t action,
-                              int buttonX) {
+// Upstream: init_movement_and_actions
+int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
   // RGTICTAC tt; RGTic(&tt);
   LOG("\ninit_movement_and_actions(pt=%d,%d, hwnd=%x, action=%d, button=%d)",
       static_cast<int>(pt.x), static_cast<int>(pt.y),
@@ -101,14 +101,14 @@ int init_movement_and_actions(POINT pt, HWND hwnd, action_t action,
 
   WINDOWPLACEMENT wndpl;
   wndpl.length = sizeof(wndpl);
-  // Return if window is blacklisted,
+  // Return if window is IsBlacklisted,
   // if we can't get information about it,
   // or if the window is fullscreen.
   // state.hwnd == GetDesktopWindow()
   // state.hwnd == GetShellWindow()
-  if (blacklisted(state.hwnd, BlkLst.Processes) ||
+  if (IsBlacklisted(state.hwnd, BlkLst.Processes) ||
       !lstrcmp(state.classname, APP_NAME L"-Pin") ||
-      (blacklisted(state.hwnd, BlkLst.Windows) && !state.hittest &&
+      (IsBlacklisted(state.hwnd, BlkLst.Windows) && !state.hittest &&
        (button <
         BT_WHEELD /* || BT_HWHEELU > button*/))  // does not apply in titlebar,
                                                  // nor for the wheel action...
@@ -146,9 +146,9 @@ int init_movement_and_actions(POINT pt, HWND hwnd, action_t action,
   // LOGA("Going to start action! in %d us", (int)RGTac(&tt));
 
   // Do things depending on what button was pressed
-  if (MOUVEMENT(action)) {
+  if (IsMovementAction(action)) {
     state.sactiondone = action;
-    if (GetProp(state.hwnd, APP_MOVEONOFF)) {
+    if (GetProp(state.hwnd, kPropMoveOnOff)) {
       state.action = k_action_none;
       return 0;  // Movement was disabled for this window.
     }
@@ -189,7 +189,7 @@ int init_movement_and_actions(POINT pt, HWND hwnd, action_t action,
   } else if (BT_WHEELD <= button && button <= BT_HWHEELU) {
     // Wheel actions, directly return here
     // because maybe the action will not be done
-    if (GetProp(state.hwnd, APP_MOVEONOFF)) {
+    if (GetProp(state.hwnd, kPropMoveOnOff)) {
       state.action = k_action_none;
       return 0;  // Wheel was disabled for this window.
     }
@@ -237,7 +237,7 @@ static DWORD WINAPI FinishMovementNow(LPVOID pp) {
     }
     if (IsWindow(LastWin.hwnd) && !LastWin.snap) {
       if (LastWin.maximize) {
-        MaximizeRestore_atpt(LastWin.hwnd, SW_MAXIMIZE, 1);
+        MaximizeRestoreAtPoint(LastWin.hwnd, SW_MAXIMIZE, 1);
         LastWin.hwnd = nullptr;
       } else {
         LastWin.end = 1;
@@ -260,10 +260,10 @@ static DWORD WINAPI FinishMovementNow(LPVOID pp) {
     HMONITOR monitor = MonitorFromPoint(state.prevpt, MONITOR_DEFAULTTONEAREST);
     if (monitor != state.origin.monitor) {
       if (state.origin.maximized) {
-        MaximizeRestore_atpt(state.hwnd, SW_MAXIMIZE, 0);
+        MaximizeRestoreAtPoint(state.hwnd, SW_MAXIMIZE, 0);
       }
       if (state.origin.fullscreen) {
-        MaximizeRestore_atpt(state.hwnd, SW_FULLSCREEN, 0);
+        MaximizeRestoreAtPoint(state.hwnd, SW_FULLSCREEN, 0);
       }
     }
   }

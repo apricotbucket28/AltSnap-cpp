@@ -31,8 +31,8 @@ void FillActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
   }
   for (j = 0; actions[j].action; j++) {
     wchar_t action_name[256];
-    lstrcpy_noaccel(action_name, std::size(action_name),
-                    l10n->Get(actions[j].l10nidx));
+    CopyWithoutAccelerator(action_name, std::size(action_name),
+                           l10n->Get(actions[j].l10nidx));
     ComboBox_AddString(control, action_name);
     if (inioption && !lstrcmpi(txt, actions[j].action)) {
       sel = j;
@@ -52,8 +52,8 @@ static int GetActionStringFromDropList(HWND hwnd, int idc,
                                        size_t obuflen) {
   HWND control = GetDlgItem(hwnd, idc);
   int j = SendMessage(control, CB_GETCURSEL, 0, 0);
-  if (j >= 0 && actions[j].action) {              // Inside of known values
-    lstrcpy_s(obuf, obuflen, actions[j].action);  // DONE!
+  if (j >= 0 && actions[j].action) {               // Inside of known values
+    CopyString(obuf, obuflen, actions[j].action);  // DONE!
     return j;
   }
 
@@ -64,8 +64,8 @@ static int GetActionStringFromDropList(HWND hwnd, int idc,
     // Action was direcly written!
     j = SendMessage(control, CB_FINDSTRINGEXACT, /*start index=*/-1,
                     reinterpret_cast<LPARAM>(obuf));
-    if (j >= 0 && actions[j].action)                // Found index.
-      lstrcpy_s(obuf, obuflen, actions[j].action);  // DONE!
+    if (j >= 0 && actions[j].action)                 // Found index.
+      CopyString(obuf, obuflen, actions[j].action);  // DONE!
 
     return j;
   }
@@ -187,10 +187,10 @@ INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   static const struct hk_struct hotclicks[] = {
       {IDC_MMB_HC, 0x04}, {IDC_MB4_HC, 0x05}, {IDC_MB5_HC, 0X06}, {0, 0}};
 
-  static const optlst_t optlst[] = {
-      {IDC_TTBACTIONSNA, T_BMK, 0, L"Input", "TTBActions", nullptr},
-      {IDC_TTBACTIONSWA, T_BMK, 1, L"Input", "TTBActions", nullptr},
-      {IDC_LONGCLICKMOVE, T_BOL, 0, L"Input", "LongClickMove", nullptr}};
+  static const DialogOption optlst[] = {
+      {IDC_TTBACTIONSNA, T_BMK, 0, L"Input", "TTBActions", 0},
+      {IDC_TTBACTIONSWA, T_BMK, 1, L"Input", "TTBActions", 0},
+      {IDC_LONGCLICKMOVE, T_BOL, 0, L"Input", "LongClickMove", 0}};
 
   auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
 
@@ -519,12 +519,12 @@ INT_PTR CALLBACK AdvancedActionDlgProc(HWND hwnd, UINT msg, WPARAM wp,
 
           // Add PARAM1 if needed
           if ((*param1 && *param1 != L'0') || (param2len && *param2)) {
-            lstrcat_s(acstr, std::size(acstr), L"_");
-            lstrcat_s(acstr, std::size(acstr), param1);
+            AppendString(acstr, std::size(acstr), L"_");
+            AppendString(acstr, std::size(acstr), param1);
             // Add PARAM2 if needed
             if (param2len && *param2) {
-              lstrcat_s(acstr, std::size(acstr), L"_");
-              lstrcat_s(acstr, std::size(acstr), param2);
+              AppendString(acstr, std::size(acstr), L"_");
+              AppendString(acstr, std::size(acstr), param2);
             }
           }
 

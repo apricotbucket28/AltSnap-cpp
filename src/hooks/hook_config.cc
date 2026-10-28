@@ -10,13 +10,20 @@
 #include "common/ini_section.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
+#include "hooks/mouse_hook.h"
 #include "hooks/overlay/trans_window.h"
 #include "hooks/window/snap.h"
 #include "hooks/window/zones.h"
 
 namespace altsnap::hooks {
 
-void freeblacklists() {
+// The only writable copy of the configuration. Everything else sees it
+// through the read-only reference `conf` (declared in hooks_internal.h).
+static config g_config;
+const config& conf = g_config;
+
+// Upstream: freeblacklists
+void FreeBlacklists() {
   BlkLst = {};
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -35,7 +42,7 @@ unsigned ReadHotkeys(const IniSection& section, const char* name,
   while (*pos) {
     // Store key
     if (i == MaxKeys) break;
-    keys[i++] = lstrhex2u(pos);
+    keys[i++] = HexToUnsigned(pos);
 
     while (*pos && *pos >= '0') pos++;  // go to the end of the word
     while (*pos && *pos < '0') pos++;   // go to next char after spaces.
@@ -59,14 +66,16 @@ uint32_t ReadColor(const IniSection& section, const char* key,
 }
 
 /* TOTO: IMPLEMENT action parameters */
-static action_t readaction(const IniSection& section, const char* key) {
+// Upstream: readaction
+static action_t ReadAction(const IniSection& section, const char* key) {
   const wchar_t* txt = section.GetString(key, L"Nothing");
   if (!txt || !*txt) return k_action_none;
 
   return MapActionW(txt);
 }
 // Read all buttons actions from inipath
-static void readbuttonactions(const IniSection& inputsection) {
+// Upstream: readbuttonactions
+static void ReadButtonActions(const IniSection& inputsection) {
   static const char* buttons[] = {
       "LMB",         "RMB",    "MMB",      "MB4",      "MB5",     "MB6",
       "MB7",         "MB8",    "MB9",      "MB10",     "MB11",    "MB12",
@@ -77,55 +86,56 @@ static void readbuttonactions(const IniSection& inputsection) {
   };
 
   for (size_t i = 0; i < std::size(buttons); i++) {
-    action_t* const actionptr = &conf.Mouse[0];  // first action in list
+    action_t* const actionptr = &g_config.Mouse[0];  // first action in list
 
     char key[32];
-    lstrcpy_s(key, std::size(key) - 8, buttons[i]);
+    CopyString(key, std::size(key) - 8, buttons[i]);
     int len = lstrlenA(key);
     // Read primary action (no sufix)
-    actionptr[NACPB * i + 0] = readaction(inputsection, key);
+    actionptr[NACPB * i + 0] = ReadAction(inputsection, key);
     key[len] = 'B';
     key[len + 1] = '\0';  // Secondary B sufixe
-    actionptr[NACPB * i + 1] = readaction(inputsection, key);
+    actionptr[NACPB * i + 1] = ReadAction(inputsection, key);
 
     // Titlbar actions
     key[len] = 'T';
     key[len + 1] = '\0';  // Titlebar T sufixes
-    actionptr[NACPB * i + 2] = readaction(inputsection, key);
+    actionptr[NACPB * i + 2] = ReadAction(inputsection, key);
     key[len + 1] = 'B';
     key[len + 2] = '\0';  // TB
-    actionptr[NACPB * i + 3] = readaction(inputsection, key);
+    actionptr[NACPB * i + 3] = ReadAction(inputsection, key);
 
     // Action while moving
     key[len] = 'M';
     key[len + 1] = '\0';  // Action while Moving M sufixe
-    actionptr[NACPB * i + 4] = readaction(inputsection, key);
+    actionptr[NACPB * i + 4] = ReadAction(inputsection, key);
     key[len + 1] = 'B';
     key[len + 2] = '\0';  // MB
-    actionptr[NACPB * i + 5] = readaction(inputsection, key);
+    actionptr[NACPB * i + 5] = ReadAction(inputsection, key);
 
     // Action while resizing
     key[len] = 'R';
     key[len + 1] = '\0';  // Action while Moving M sufixe
-    actionptr[NACPB * i + 6] = readaction(inputsection, key);
+    actionptr[NACPB * i + 6] = ReadAction(inputsection, key);
     key[len + 1] = 'B';
     key[len + 2] = '\0';  // MB
-    actionptr[NACPB * i + 7] = readaction(inputsection, key);
+    actionptr[NACPB * i + 7] = ReadAction(inputsection, key);
   }
 
   for (size_t j = 0; j < NACPB; j++) {
     // ScrollUp
-    if (conf.Mouse[21 * NACPB + j].ac == AC_NONE)
-      conf.Mouse[21 * NACPB + j] = conf.Mouse[20 * NACPB + j];
+    if (g_config.Mouse[21 * NACPB + j].ac == AC_NONE)
+      g_config.Mouse[21 * NACPB + j] = g_config.Mouse[20 * NACPB + j];
 
     // HScrollUp
-    if (conf.Mouse[23 * NACPB + j].ac == AC_NONE)
-      conf.Mouse[23 * NACPB + j] = conf.Mouse[22 * NACPB + j];
+    if (g_config.Mouse[23 * NACPB + j].ac == AC_NONE)
+      g_config.Mouse[23 * NACPB + j] = g_config.Mouse[22 * NACPB + j];
   }
 }
 
-void registerAllHotkeys(const wchar_t* inipath) {
-  LOG("registerAllHotkeys START");
+// Upstream: registerAllHotkeys
+void RegisterAllHotkeys(const wchar_t* inipath) {
+  LOG("RegisterAllHotkeys START");
   ChangeWindowMessageFilterEx(g_mainhwnd, WM_HOTKEY, /*MSGFLT_ALLOW*/ 1,
                               nullptr);
   // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
@@ -133,7 +143,7 @@ void registerAllHotkeys(const wchar_t* inipath) {
   // // F4=73h Read All shortcuts in the [KBShortcuts] section.
   const IniSection section = IniSection::Read(inipath, L"KBShortcuts");
 
-  conf.UsePtWindow = section.GetInt("UsePtWindow", 0);
+  g_config.UsePtWindow = section.GetInt("UsePtWindow", 0);
 
 #define ACVALUE(a, b, c) (#b),
   static const char* action_names[] = {ACTION_MAP};
@@ -141,20 +151,20 @@ void registerAllHotkeys(const wchar_t* inipath) {
 
   size_t idx = 0;
   for (const wchar_t* p : section.lines()) {
-    if (idx >= std::size(conf.KBShortcutsList)) break;
+    if (idx >= std::size(g_config.KBShortcutsList)) break;
     if (*p == ';') continue;
 
     action_t action = MapActionW(p);
     if (action.ac == AC_NONE) continue;
 
-    const wchar_t* pp = lstrchr(p, L'=');
+    const wchar_t* pp = FindChar(p, L'=');
     if (!pp) continue;
 
-    WORD HK = strtoi(p = ++pp);  // Read HOTKEY
+    WORD HK = ParseInt(p = ++pp);  // Read HOTKEY
     if (LOBYTE(HK) && HIBYTE(HK)) {
       // Lobyte is the virtual key code and hibyte is the mod_key
       if (RegisterHotKey(g_mainhwnd, 0xC001 + idx, HIBYTE(HK), LOBYTE(HK))) {
-        conf.KBShortcutsList[idx] = action;  // Add action to the list
+        g_config.KBShortcutsList[idx] = action;  // Add action to the list
         LOG("OK registering hotkey %s_%d_%d=%x, [idx=%d]",
             action_names[action.ac], static_cast<int>(action.fl),
             static_cast<int>(action.wp), static_cast<unsigned>(HK),
@@ -165,16 +175,16 @@ void registerAllHotkeys(const wchar_t* inipath) {
             static_cast<unsigned>(HK));
 #ifdef LOG_STUFF
         wchar_t title[76], acN[32];
-        lstrcpy_s(title, std::size(title),
-                  APP_NAME L": unable to register hotkey for action ");
-        str2tchar_s(acN, std::size(acN) - 1, action_names[action.ac]);
-        lstrcat_s(title, std::size(title), acN);
+        CopyString(title, std::size(title),
+                   APP_NAME L": unable to register hotkey for action ");
+        AsciiToWideBounded(acN, std::size(acN) - 1, action_names[action.ac]);
+        AppendString(title, std::size(title), acN);
         ErrorBox(title);
 #endif  // LOG_STUFF
       }
     }
   }
-  LOG("registerAllHotkeys END");
+  LOG("RegisterAllHotkeys END");
 }
 struct OptionListItem {
   const char* name;  // Key in the ini file.
@@ -266,20 +276,22 @@ static const struct OptionListItem Zones_uchars[] = {
 #endif
 };
 
-static void readalluchars(const IniSection& section,
+// Upstream: readalluchars
+static void ReadAllUchars(const IniSection& section,
                           const struct OptionListItem* optlist,
                           size_t listlen) {
-  // Read all one-byte options straight into their `conf` fields.
-  auto* const bytes = reinterpret_cast<UCHAR*>(&conf);
+  // Read all one-byte options straight into their `g_config` fields.
+  auto* const bytes = reinterpret_cast<UCHAR*>(&g_config);
   for (size_t i = 0; i < listlen; i++) {
     bytes[optlist[i].offset] = section.GetInt(optlist[i].name, optlist[i].def);
   }
 }
-static void readallinputSequences(const IniSection& section) {
+// Upstream: readallinputSequences
+static void ReadAllInputSequences(const IniSection& section) {
   UCHAR buf[512];
   char shrtN[6] = "Shrt0";
 
-  freeallinputSequences();
+  FreeAllInputSequences();
 
   for (size_t i = 0; i < g_inputSequences.size(); i++) {
     shrtN[4] = i < 10 ? '0' + i : 'A' - 10 + i;
@@ -290,7 +302,8 @@ static void readallinputSequences(const IniSection& section) {
     if (len) g_inputSequences[i].assign(buf, buf + len * 2 + 1);
   }
 }
-void freeallinputSequences() {
+// Upstream: freeallinputSequences
+void FreeAllInputSequences() {
   for (auto& sequence : g_inputSequences) sequence = {};
 }
 
@@ -300,59 +313,60 @@ void freeallinputSequences() {
 namespace {
 
 void ReadGeneralOptions(const wchar_t* inipath) {
-  readalluchars(IniSection::Read(inipath, L"General"), General_uchars,
+  ReadAllUchars(IniSection::Read(inipath, L"General"), General_uchars,
                 std::size(General_uchars));
 
   // Consistency checks
-  conf.CenterFraction = std::min<UCHAR>(conf.CenterFraction, 100);
-  if (conf.SidesFraction == 255) conf.SidesFraction = conf.CenterFraction;
-  conf.AHoff = std::min<UCHAR>(conf.AHoff, 100);
-  conf.AVoff = std::min<UCHAR>(conf.AVoff, 100);
-  conf.AeroSpeedTau = std::max<UCHAR>(1, conf.AeroSpeedTau);
-  conf.MinAlpha = std::max<UCHAR>(1, conf.MinAlpha);
-  state.snap = conf.AutoSnap;
+  g_config.CenterFraction = std::min<UCHAR>(g_config.CenterFraction, 100);
+  if (g_config.SidesFraction == 255)
+    g_config.SidesFraction = g_config.CenterFraction;
+  g_config.AHoff = std::min<UCHAR>(g_config.AHoff, 100);
+  g_config.AVoff = std::min<UCHAR>(g_config.AVoff, 100);
+  g_config.AeroSpeedTau = std::max<UCHAR>(1, g_config.AeroSpeedTau);
+  g_config.MinAlpha = std::max<UCHAR>(1, g_config.MinAlpha);
+  state.snap = g_config.AutoSnap;
 }
 
 void ReadAdvancedOptions(const wchar_t* inipath) {
   const IniSection advanced = IniSection::Read(inipath, L"Advanced");
-  readalluchars(advanced, Advanced_uchars, std::size(Advanced_uchars));
+  ReadAllUchars(advanced, Advanced_uchars, std::size(Advanced_uchars));
 
-  conf.ZoomFrac = std::max<UCHAR>(2, conf.ZoomFrac);
-  conf.ZoomFracShift = std::max<UCHAR>(2, conf.ZoomFracShift);
-  conf.BLCapButtons = advanced.GetInt("BLCapButtons", 3);
-  conf.BLUpperBorder = advanced.GetInt("BLUpperBorder", 3);
-  conf.AeroMaxSpeed = advanced.GetInt("AeroMaxSpeed", MAX_SNAP_SPEED);
-  conf.LongClickMoveDelay = advanced.GetInt("LongClickMoveDelay", 0);
-  if (conf.LongClickMoveDelay == 0) {
-    conf.LongClickMoveDelay = GetDoubleClickTime();
+  g_config.ZoomFrac = std::max<UCHAR>(2, g_config.ZoomFrac);
+  g_config.ZoomFracShift = std::max<UCHAR>(2, g_config.ZoomFracShift);
+  g_config.BLCapButtons = advanced.GetInt("BLCapButtons", 3);
+  g_config.BLUpperBorder = advanced.GetInt("BLUpperBorder", 3);
+  g_config.AeroMaxSpeed = advanced.GetInt("AeroMaxSpeed", MAX_SNAP_SPEED);
+  g_config.LongClickMoveDelay = advanced.GetInt("LongClickMoveDelay", 0);
+  if (g_config.LongClickMoveDelay == 0) {
+    g_config.LongClickMoveDelay = GetDoubleClickTime();
   }
 }
 
 void ReadPerformanceOptions(const wchar_t* inipath) {
-  readalluchars(IniSection::Read(inipath, L"Performance"), Performance_uchars,
+  ReadAllUchars(IniSection::Read(inipath, L"Performance"), Performance_uchars,
                 std::size(Performance_uchars));
-  conf.MoveRate = std::max<UCHAR>(1, conf.MoveRate);
-  conf.ResizeRate = std::max<UCHAR>(1, conf.ResizeRate);
+  g_config.MoveRate = std::max<UCHAR>(1, g_config.MoveRate);
+  g_config.ResizeRate = std::max<UCHAR>(1, g_config.ResizeRate);
 
-  if (conf.RezTimer == 2 || conf.RezTimer == 4) {
+  if (g_config.RezTimer == 2 || g_config.RezTimer == 4) {
     // 2 => Auto 1 (if 60Hz monitor) or 0.
     // 4 => Auto 1 (if 60Hz monitor) or 3.
-    conf.RezTimer = conf.RezTimer == 2 ? 0 : 3;
+    g_config.RezTimer = g_config.RezTimer == 2 ? 0 : 3;
     DEVMODE dvm;
     ZeroObject(dvm);
     dvm.dmSize = sizeof(dvm);
     if (EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &dvm)) {
       LOG("Display Frequency = %luHz", dvm.dmDisplayFrequency);
-      if (dvm.dmDisplayFrequency == 60) conf.RezTimer = 1;
+      if (dvm.dmDisplayFrequency == 60) g_config.RezTimer = 1;
     }
   }
-  if (conf.RezTimer) {
-    conf.RefreshRate = 0;  // Ignore the refresh rate in RezTimer mode.
+  if (g_config.RezTimer) {
+    g_config.RefreshRate = 0;  // Ignore the refresh rate in RezTimer mode.
   }
-  if (conf.FullWin == 2) {      // Use the system setting to decide.
+  if (g_config.FullWin == 2) {  // Use the system setting to decide.
     BOOL drag_full_win = TRUE;  // Default to ON if unable to detect
     SystemParametersInfo(SPI_GETDRAGFULLWINDOWS, 0, &drag_full_win, 0);
-    conf.FullWin = drag_full_win;
+    g_config.FullWin = drag_full_win;
   }
 }
 
@@ -363,63 +377,63 @@ void ReadHotkeyLists(const IniSection& input) {
     const wchar_t* def;
     UCHAR* dst;
   } kHotkeyLists[] = {
-      {"Hotkeys", L"A4 A5", conf.Hotkeys},      // VK_LMENU VK_RMENU
-      {"Shiftkeys", L"A0 A1", conf.Shiftkeys},  // VK_LSHIFT VK_RSHIFT
-      {"Hotclicks", nullptr, conf.Hotclick},
-      {"Killkeys", L"09 2E", conf.Killkey},  // VK_TAB VK_DELETE
-      {"XXButtons", nullptr, conf.XXButtons},
-      {"ModKey", nullptr, conf.ModKey},
-      {"HScrollKey", L"10", conf.HScrollKey},  // VK_SHIFT
-      {"ESCKeys", L"1B", conf.ESCkeys},        // VK_ESCAPE
+      {"Hotkeys", L"A4 A5", g_config.Hotkeys},      // VK_LMENU VK_RMENU
+      {"Shiftkeys", L"A0 A1", g_config.Shiftkeys},  // VK_LSHIFT VK_RSHIFT
+      {"Hotclicks", nullptr, g_config.Hotclick},
+      {"Killkeys", L"09 2E", g_config.Killkey},  // VK_TAB VK_DELETE
+      {"XXButtons", nullptr, g_config.XXButtons},
+      {"ModKey", nullptr, g_config.ModKey},
+      {"HScrollKey", L"10", g_config.HScrollKey},  // VK_SHIFT
+      {"ESCKeys", L"1B", g_config.ESCkeys},        // VK_ESCAPE
   };
   for (const auto& list : kHotkeyLists) {
     ReadHotkeys(input, list.name, list.def, list.dst, MAXKEYS);
   }
   UCHAR end_keys[MAXKEYS + 1];  // Key to be sent at the end of a movement.
   ReadHotkeys(input, "EndSendKey", L"11", end_keys, MAXKEYS);
-  conf.EndSendKey = end_keys[0];
+  g_config.EndSendKey = end_keys[0];
 }
 
 // Accelerators of the window list menu.
 void ReadMenuAccelerators(const IniSection& input) {
   const size_t read =
-      ReadHotkeys(input, "MenuAccelMap", nullptr, conf.MenuAccelMap,
-                  std::size(conf.MenuAccelMap) - 1);
+      ReadHotkeys(input, "MenuAccelMap", nullptr, g_config.MenuAccelMap,
+                  std::size(g_config.MenuAccelMap) - 1);
   // Fill the rest with the usual accelerators.
-  for (size_t j = read; j < std::size(conf.MenuAccelMap); j++) {
-    if (conf.NumberMenuItems) {
-      conf.MenuAccelMap[j] = j < 10 ? L'0' + j : L'A' + j - 10;
+  for (size_t j = read; j < std::size(g_config.MenuAccelMap); j++) {
+    if (g_config.NumberMenuItems) {
+      g_config.MenuAccelMap[j] = j < 10 ? L'0' + j : L'A' + j - 10;
     } else {
-      conf.MenuAccelMap[j] = j < 26 ? L'A' + j : L'0' + j - 26;
+      g_config.MenuAccelMap[j] = j < 26 ? L'A' + j : L'0' + j - 26;
     }
   }
-  conf.MenuAccelMap[std::size(conf.MenuAccelMap) - 1] = 0;
+  g_config.MenuAccelMap[std::size(g_config.MenuAccelMap) - 1] = 0;
 }
 
 void ReadInputOptions(const wchar_t* inipath) {
   const IniSection input = IniSection::Read(inipath, L"Input");
-  readalluchars(input, Input_uchars, std::size(Input_uchars));
-  readbuttonactions(input);
+  ReadAllUchars(input, Input_uchars, std::size(Input_uchars));
+  ReadButtonActions(input);
 
-  if (conf.TopmostIndicator) {
-    conf.PinColor = ReadColor(input, "PinColor", L"FF FF 00 54", 4);
+  if (g_config.TopmostIndicator) {
+    g_config.PinColor = ReadColor(input, "PinColor", L"FF FF 00 54", 4);
   }
-  if (!conf.FullWin) {
+  if (!g_config.FullWin) {
     CreateTransWin(input);  // The hollow window used while moving.
   }
 
   ReadHotkeyLists(input);
   ReadMenuAccelerators(input);
-  readallinputSequences(input);  // User shortcuts / input sequences
+  ReadAllInputSequences(input);  // User shortcuts / input sequences
 }
 
 void ReadZoneOptions(const wchar_t* inipath) {
   const IniSection zones = IniSection::Read(inipath, L"Zones");
-  readalluchars(zones, Zones_uchars, std::size(Zones_uchars));
+  ReadAllUchars(zones, Zones_uchars, std::size(Zones_uchars));
 
-  if (conf.UseZones & 1) {  // We are using Zones
-    conf.MaxLayouts = CLAMP(0, conf.MaxLayouts, 10);
-    if (conf.UseZones & 2) {  // Grid Mode
+  if (g_config.UseZones & 1) {  // We are using Zones
+    g_config.MaxLayouts = CLAMP(0, g_config.MaxLayouts, 10);
+    if (g_config.UseZones & 2) {  // Grid Mode
       ReadGrids(zones);
     } else {
       ReadZones(zones);
@@ -431,8 +445,8 @@ void ReadZoneOptions(const wchar_t* inipath) {
 }  // namespace
 
 void ReadConfig(const wchar_t* inipath) {
-  conf.dbclickX = GetSystemMetrics(SM_CXDOUBLECLK);
-  conf.dbclickY = GetSystemMetrics(SM_CYDOUBLECLK);
+  g_config.dbclickX = GetSystemMetrics(SM_CXDOUBLECLK);
+  g_config.dbclickY = GetSystemMetrics(SM_CYDOUBLECLK);
 
   ReadGeneralOptions(inipath);
   ReadAdvancedOptions(inipath);
@@ -445,10 +459,10 @@ void ReadConfig(const wchar_t* inipath) {
 
   ReadZoneOptions(inipath);
 
-  conf.keepMousehook = ((conf.TTBActions & 1)    // titlebar action w/o Alt
-                        || conf.InactiveScroll   // Inactive scrolling
-                        || conf.Hotclick[0]      // Hotclick
-                        || conf.LongClickMove);  // Move with long click
+  SetKeepMouseHook((g_config.TTBActions & 1)    // titlebar action w/o Alt
+                   || g_config.InactiveScroll   // Inactive scrolling
+                   || g_config.Hotclick[0]      // Hotclick
+                   || g_config.LongClickMove);  // Move with long click
 }
 
 }  // namespace altsnap::hooks

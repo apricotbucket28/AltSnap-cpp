@@ -22,7 +22,7 @@ static LRESULT CALLBACK FindWindowProc(HWND, UINT, WPARAM, LPARAM);
 /////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                          LPARAM lParam) {
-  static const optlst_t optlst[] = {
+  static const DialogOption optlst[] = {
       {IDC_PROCESSBLACKLIST, T_STR, 0, L"Blacklist", "Processes", L""},
       {IDC_BLACKLIST, T_STR, 0, L"Blacklist", "Windows", L""},
       {IDC_SCROLLLIST, T_STR, 0, L"Blacklist", "Scroll", L""},
@@ -136,9 +136,9 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
       wchar_t txt[512];
       txt[0] = '\0';
-      lstrcat_s(txt, std::size(txt), title);
-      lstrcat_s(txt, std::size(txt), L"|");
-      lstrcat_s(txt, std::size(txt), classname);
+      AppendString(txt, std::size(txt), title);
+      AppendString(txt, std::size(txt), L"|");
+      AppendString(txt, std::size(txt), classname);
       SetDlgItemText(page, IDC_NEWRULE, txt);
 
       if (GetWindowProgName(window, txt, std::size(txt))) {
@@ -150,11 +150,11 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                      LPTR2Hex(txt, GetWindowLongPtr(window, GWL_EXSTYLE)));
       // WM_NCHITTEST messages info at current pt
       wchar_t tt[32];
-      lstrcpy_s(txt, std::size(txt),
-                Int2lStr(tt, HitTestTimeout(nwindow, pt.x, pt.y)));
-      lstrcat_s(txt, std::size(txt), L"/");
-      lstrcat_s(txt, std::size(txt),
-                Int2lStr(tt, HitTestTimeout(window, pt.x, pt.y)));
+      CopyString(txt, std::size(txt),
+                 Int2lStr(tt, HitTestTimeout(nwindow, pt.x, pt.y)));
+      AppendString(txt, std::size(txt), L"/");
+      AppendString(txt, std::size(txt),
+                   Int2lStr(tt, HitTestTimeout(window, pt.x, pt.y)));
       SetDlgItemText(page, IDC_NCHITTEST, txt);
       // IDC_DWMCAPBUTTON
       RECT rc;
@@ -168,16 +168,16 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         SetDlgItemText(page, IDC_RECT, RectToStr(&rc, txt));
       }
       // IDC_WINHANDLES
-      lstrcpy_s(txt, std::size(txt), L"Hwnd: ");
-      lstrcat_s(txt, std::size(txt),
-                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(nwindow)));
-      lstrcat_s(txt, std::size(txt), L", Root: ");
-      lstrcat_s(txt, std::size(txt),
-                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(window)));
-      lstrcat_s(txt, std::size(txt), L", Owner: ");
-      lstrcat_s(txt, std::size(txt),
-                LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(
-                                 GetWindow(window, GW_OWNER))));
+      CopyString(txt, std::size(txt), L"Hwnd: ");
+      AppendString(txt, std::size(txt),
+                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(nwindow)));
+      AppendString(txt, std::size(txt), L", Root: ");
+      AppendString(txt, std::size(txt),
+                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(window)));
+      AppendString(txt, std::size(txt), L", Owner: ");
+      AppendString(txt, std::size(txt),
+                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(
+                                    GetWindow(window, GW_OWNER))));
       SetDlgItemText(page, IDC_WINHANDLES, txt);
     }
     // Show icon again

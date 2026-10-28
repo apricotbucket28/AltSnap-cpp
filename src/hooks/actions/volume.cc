@@ -101,17 +101,17 @@ void ActionVolume(int delta) {
       // We would Set the volume to Zero
       // We prefer to mute instead,
       // because otherwise it resets volume balance.
-      if (!muted) Send_KEY(VK_VOLUME_MUTE);  // Mute
+      if (!muted) SendKey(VK_VOLUME_MUTE);  // Mute
       return;
     }
     if (delta > 0) {
       if (muted) {
-        Send_KEY(VK_VOLUME_MUTE);  // UnMute
+        SendKey(VK_VOLUME_MUTE);  // UnMute
         return;
       }
     }
   }
-  while (num--) Send_KEY(delta > 0 ? VK_VOLUME_UP : VK_VOLUME_DOWN);
+  while (num--) SendKey(delta > 0 ? VK_VOLUME_UP : VK_VOLUME_DOWN);
 }
 
 }  // namespace altsnap::hooks

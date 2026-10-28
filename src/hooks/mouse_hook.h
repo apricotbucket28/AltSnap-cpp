@@ -8,6 +8,8 @@ namespace altsnap::hooks {
 
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 void HookMouse();
+void SetKeepMouseHook(bool keep);
+[[nodiscard]] bool KeepMouseHook();
 void UnhookMouse();
 
 }  // namespace altsnap::hooks

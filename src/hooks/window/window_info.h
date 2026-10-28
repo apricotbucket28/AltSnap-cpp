@@ -6,8 +6,8 @@
 
 namespace altsnap::hooks {
 
-[[nodiscard]] bool blacklisted(HWND hwnd, const Blacklist& list);
-int isClassName(HWND hwnd, const wchar_t* str);
+[[nodiscard]] bool IsBlacklisted(HWND hwnd, const Blacklist& list);
+int IsClassName(HWND hwnd, const wchar_t* str);
 int IsFullscreenF(HWND hwnd, const RECT* wnd, const RECT* fmon);
 int IsFullScreenBL(HWND hwnd);
 void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta);

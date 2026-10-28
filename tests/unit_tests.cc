@@ -26,15 +26,16 @@ static int g_failures = 0;
 int main() {
   // ---- strutil ----
   wchar_t buf[8];
-  CHECK(lstrcpy_s(buf, 8, L"abc") == 3 && std::wstring(buf) == L"abc");
-  CHECK(lstrcpy_s(buf, 4, L"abcdef") == 3 &&
+  CHECK(CopyString(buf, 8, L"abc") == 3 && std::wstring(buf) == L"abc");
+  CHECK(CopyString(buf, 4, L"abcdef") == 3 &&
         std::wstring(buf) == L"abc");  // truncates
-  CHECK(lstrcat_s(buf, 8, L"de") == 5 && std::wstring(buf) == L"abcde");
-  CHECK(lstrcat_s(buf, 8, L"fghijk") == 7 &&
+  CHECK(AppendString(buf, 8, L"de") == 5 && std::wstring(buf) == L"abcde");
+  CHECK(AppendString(buf, 8, L"fghijk") == 7 &&
         std::wstring(buf) == L"abcdefg");  // truncates
-  CHECK(lstrcpy_s(buf, 0, L"x") == 0);
-  CHECK(strtoi(L"  -42xyz") == -42 && strtoi(L"+7") == 7 && strtoi(L"") == 0);
-  CHECK(lstrhex2u(L"A4 A5") == 0xA4 && lstrhex2u(L"ff") == 0xFF);
+  CHECK(CopyString(buf, 0, L"x") == 0);
+  CHECK(ParseInt(L"  -42xyz") == -42 && ParseInt(L"+7") == 7 &&
+        ParseInt(L"") == 0);
+  CHECK(HexToUnsigned(L"A4 A5") == 0xA4 && HexToUnsigned(L"ff") == 0xFF);
   wchar_t num[kIntDigits + 1];
   CHECK(std::wstring(Int2lStr(num, -2147483647 - 1)) == L"-2147483648");
   CHECK(std::wstring(Int2lStr(num, 0)) == L"0");
@@ -44,12 +45,13 @@ int main() {
   CHECK(std::wstring(LPTR2Hex(hex, 0xBEEF)) == L"BEEF");
   CHECK(AsciiToLower(L'A') == L'a' && AsciiToLower(L'Z') == L'z' &&
         AsciiToLower(L'[') == L'[');
-  CHECK(lstrcmpi_samestart(L"Alwaysontop=1", L"alwaysontop=") == 0);
-  CHECK(lstrcmpi_samestart(L"Alwaysontop=1", L"zzz=") != 0);
-  CHECK(lstrcmp_star(L"notepad.exe", L"note*") == 0);
-  CHECK(lstrcmp_star(L"notepad.exe", L"*.exe") == 0);
-  CHECK(lstrcmp_star(L"notepad.exe", L"*.dll") != 0);
-  CHECK(lstrcmp_star(L"anything", static_cast<const wchar_t*>(nullptr)) == 0);
+  CHECK(CompareStartIgnoreCase(L"Alwaysontop=1", L"alwaysontop=") == 0);
+  CHECK(CompareStartIgnoreCase(L"Alwaysontop=1", L"zzz=") != 0);
+  CHECK(WildcardCompare(L"notepad.exe", L"note*") == 0);
+  CHECK(WildcardCompare(L"notepad.exe", L"*.exe") == 0);
+  CHECK(WildcardCompare(L"notepad.exe", L"*.dll") != 0);
+  CHECK(WildcardCompare(L"anything", static_cast<const wchar_t*>(nullptr)) ==
+        0);
 
   // ---- IniSection ----
   wchar_t path[MAX_PATH];

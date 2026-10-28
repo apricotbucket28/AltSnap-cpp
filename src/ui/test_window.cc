@@ -149,50 +149,50 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           if (lstrlen(lastkey[idx]) == MAXLL - 1) {
             zone_to_invalidate = invalidate_nothing;
           } else {
-            lstrcat_s(lastkey[idx], MAXLL, L".");
+            AppendString(lastkey[idx], MAXLL, L".");
             zone_to_invalidate = invalidate_lastline;
           }
 
         } else {
-          lstrcpy_s(lastkey[idx], MAXLL, L"vK=");
-          lstrcat_s(lastkey[idx], MAXLL,
-                    LPTR2Hex(txt, static_cast<BYTE>(wParam)));
-          lstrcat_s(lastkey[idx], MAXLL,
-                    lParam & (1u << 31)   ? L" U"
-                    : lParam & (1u << 30) ? L" R"
-                                          : L" D");
-          lstrcat_s(lastkey[idx], MAXLL, L" sC=");
-          lstrcat_s(lastkey[idx], MAXLL,
-                    LPTR2Hex(txt, HIWORD(lParam) & 0x00FF));
-          lstrcat_s(lastkey[idx], MAXLL, L", LP=");
-          lstrcat_s(lastkey[idx], MAXLL, LPTR2Hex(txt, lParam));
+          CopyString(lastkey[idx], MAXLL, L"vK=");
+          AppendString(lastkey[idx], MAXLL,
+                       LPTR2Hex(txt, static_cast<BYTE>(wParam)));
+          AppendString(lastkey[idx], MAXLL,
+                       lParam & (1u << 31)   ? L" U"
+                       : lParam & (1u << 30) ? L" R"
+                                             : L" D");
+          AppendString(lastkey[idx], MAXLL, L" sC=");
+          AppendString(lastkey[idx], MAXLL,
+                       LPTR2Hex(txt, HIWORD(lParam) & 0x00FF));
+          AppendString(lastkey[idx], MAXLL, L", LP=");
+          AppendString(lastkey[idx], MAXLL, LPTR2Hex(txt, lParam));
           txt[0] = L',';
           txt[1] = L' ';
           txt[2] = L'\0';
           if (GetKeyNameText(lParam, txt + 2, std::size(txt) - 2))
-            lstrcat_s(lastkey[idx], MAXLL, txt);
+            AppendString(lastkey[idx], MAXLL, txt);
         }
       } else {
         // Mouse Button
         short x = LOWORD(lParam);
         short y = HIWORD(lParam);
-        lstrcpy_s(lastkey[idx], MAXLL, buttonstr);
+        CopyString(lastkey[idx], MAXLL, buttonstr);
         if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL) {
           short delta = HIWORD(wParam);
           if (delta >= 0) {
-            lstrcat_s(lastkey[idx], MAXLL, L" +");
+            AppendString(lastkey[idx], MAXLL, L" +");
           } else {
             delta = -delta;
-            lstrcat_s(lastkey[idx], MAXLL, L" -");
+            AppendString(lastkey[idx], MAXLL, L" -");
           }
-          lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, delta));
+          AppendString(lastkey[idx], MAXLL, Int2lStr(txt, delta));
         }
-        lstrcat_s(lastkey[idx], MAXLL, L" (");
-        lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, x));
-        lstrcat_s(lastkey[idx], MAXLL, L", ");
-        lstrcat_s(lastkey[idx], MAXLL, Int2lStr(txt, y));
-        lstrcat_s(lastkey[idx], MAXLL, L"), WP=");
-        lstrcat_s(lastkey[idx], MAXLL, LPTR2Hex(txt, wParam));
+        AppendString(lastkey[idx], MAXLL, L" (");
+        AppendString(lastkey[idx], MAXLL, Int2lStr(txt, x));
+        AppendString(lastkey[idx], MAXLL, L", ");
+        AppendString(lastkey[idx], MAXLL, Int2lStr(txt, y));
+        AppendString(lastkey[idx], MAXLL, L"), WP=");
+        AppendString(lastkey[idx], MAXLL, LPTR2Hex(txt, wParam));
       }
 
       if (zone_to_invalidate != invalidate_nothing) {
@@ -221,15 +221,15 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       wchar_t title[256 + kIntDigits * 4 + 4];
       RECT rc;
       GetWindowRectL(hwnd, &rc);
-      lstrcpy_noaccel(title, std::size(title), l10n->AdvancedTestWindow);
-      lstrcat_s(title, std::size(title), L": ");
-      lstrcat_s(title, std::size(title), RectToStr(&rc, num));
+      CopyWithoutAccelerator(title, std::size(title), l10n->AdvancedTestWindow);
+      AppendString(title, std::size(title), L": ");
+      AppendString(title, std::size(title), RectToStr(&rc, num));
 
-      lstrcat_s(title, std::size(title), L" (");
-      lstrcat_s(title, std::size(title), Int2lStr(num, rc.right - rc.left));
-      lstrcat_s(title, std::size(title), L"x");
-      lstrcat_s(title, std::size(title), Int2lStr(num, rc.bottom - rc.top));
-      lstrcat_s(title, std::size(title), L")");
+      AppendString(title, std::size(title), L" (");
+      AppendString(title, std::size(title), Int2lStr(num, rc.right - rc.left));
+      AppendString(title, std::size(title), L"x");
+      AppendString(title, std::size(title), Int2lStr(num, rc.bottom - rc.top));
+      AppendString(title, std::size(title), L")");
       SetWindowText(hwnd, title);
 
     } break;
@@ -438,7 +438,8 @@ HWND NewTestWindow() {
     RegisterClass(&wndd);
   }
   wchar_t wintitle[256];
-  lstrcpy_noaccel(wintitle, std::size(wintitle), l10n->AdvancedTestWindow);
+  CopyWithoutAccelerator(wintitle, std::size(wintitle),
+                         l10n->AdvancedTestWindow);
   testwnd = CreateWindowEx(0, APP_NAME L"-Test", wintitle, WS_OVERLAPPEDWINDOW,
                            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
                            CW_USEDEFAULT, nullptr, nullptr, g_hinst, nullptr);

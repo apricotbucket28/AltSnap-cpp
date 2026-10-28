@@ -56,11 +56,13 @@ void MoveToCorner(HWND hwnd) {
                    SWP_ASYNCWINDOWPOS);
 }
 
-int CB_GetCurSelDlgItem(HWND hwnd, UINT id) {
+// Upstream: CB_GetCurSelDlgItem
+int ComboBoxCurSel(HWND hwnd, UINT id) {
   return static_cast<int>(static_cast<DWORD>(
       SendMessage(GetDlgItem(hwnd, id), CB_GETCURSEL, 0, 0)));
 }
-LRESULT CB_GetTextAndIdx(HWND hwnd, wchar_t* txt, size_t txtlen) {
+// Upstream: CB_GetTextAndIdx
+LRESULT ComboBoxTextAndIndex(HWND hwnd, wchar_t* txt, size_t txtlen) {
   LRESULT idx = SendMessage(hwnd, CB_GETCURSEL, 0, 0);
   if (idx < 0) {
     GetWindowText(hwnd, txt, txtlen);  // Edit mode
@@ -72,7 +74,8 @@ LRESULT CB_GetTextAndIdx(HWND hwnd, wchar_t* txt, size_t txtlen) {
   return idx;
 }
 
-LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd, const wchar_t* txt) {
+// Upstream: CB_AddStringIfNotPresentAndGetIdx
+LRESULT AddComboStringIfMissing(HWND hwnd, const wchar_t* txt) {
   LRESULT new_index =
       SendMessage(hwnd, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
                   reinterpret_cast<LPARAM>(txt));
@@ -82,7 +85,7 @@ LRESULT CB_AddStringIfNotPresentAndGetIdx(HWND hwnd, const wchar_t* txt) {
 void WriteOptionBool(HWND hwnd, WORD id, const wchar_t* section,
                      const char* name_s) {
   wchar_t name[64];
-  str2tchar(name, name_s);
+  AsciiToWide(name, name_s);
   WritePrivateProfileString(
       section, name, IsDlgButtonChecked(hwnd, id) ? L"1" : L"0", inipath);
 }
@@ -91,7 +94,7 @@ int WriteOptionBoolBit(HWND hwnd, WORD id, const wchar_t* section,
                        const char* name_s, int bit) {
   wchar_t txt[kUintDigits + 1];
   wchar_t name[64];
-  str2tchar(name, name_s);
+  AsciiToWide(name, name_s);
   int val = GetPrivateProfileInt(section, name, 0, inipath);
   if (IsDlgButtonChecked(hwnd, id))
     val = SetBit(val, bit);
@@ -104,7 +107,7 @@ int WriteOptionBoolBit(HWND hwnd, WORD id, const wchar_t* section,
 void WriteOptionStr(HWND hwnd, WORD id, const wchar_t* section,
                     const char* name_s) {
   wchar_t name[64];
-  str2tchar(name, name_s);
+  AsciiToWide(name, name_s);
   HWND item = GetDlgItem(hwnd, id);
   const int len = GetWindowTextLength(item);
   std::wstring text(static_cast<size_t>(len) + 1, L'\0');
@@ -114,13 +117,13 @@ void WriteOptionStr(HWND hwnd, WORD id, const wchar_t* section,
 void ReadOptionStr(HWND hwnd, WORD id, const wchar_t* section,
                    const char* name_s, const wchar_t* def) {
   wchar_t name[64];
-  str2tchar(name, name_s);
+  AsciiToWide(name, name_s);
   SetDlgItemText(hwnd, id, ReadIniString(section, name, def, inipath).c_str());
 }
 int ReadOptionInt(HWND hwnd, WORD id, const wchar_t* section,
                   const char* name_s, int def, int mask) {
   wchar_t name[64];
-  str2tchar(name, name_s);
+  AsciiToWide(name, name_s);
   int ret = GetPrivateProfileInt(section, name, def, inipath);
   CheckDlgButton(hwnd, id, (ret & mask) ? BST_CHECKED : BST_UNCHECKED);
   return ret;
@@ -184,30 +187,51 @@ void UpdateDialogStrings(HWND hwnd, const dialogstring_t* const strlst,
     CreateInfoTip(hwnd, strlst[i].idc, l10n->Get(strlst[i].l10nidx + 1));
   }
 }
-void ReadDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
+// An integer default (a missing or string default counts as 0).
+static int DefaultInt(const DialogOption& option) {
+  const int* value = std::get_if<int>(&option.default_value);
+  return value ? *value : 0;
+}
+static const wchar_t* DefaultString(const DialogOption& option) {
+  const wchar_t* const* value =
+      std::get_if<const wchar_t*>(&option.default_value);
+  return value && *value ? *value : L"";
+}
+
+void ReadDialogOptions(HWND hwnd, const DialogOption* ol, size_t size) {
   for (size_t i = 0; i < size; i++) {
-    if (ol[i].type == T_BOL)
-      ReadOptionInt(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                    static_cast<int>(reinterpret_cast<DorQWORD>(ol[i].def)),
-                    -1);
-    else if (ol[i].type == T_BMK)
-      ReadOptionInt(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                    static_cast<int>(reinterpret_cast<DorQWORD>(ol[i].def)),
-                    1 << ol[i].bitN);
-    else
-      ReadOptionStr(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                    static_cast<const wchar_t*>(ol[i].def));
+    const DialogOption& option = ol[i];
+    switch (option.kind) {
+      case T_BOL:
+        ReadOptionInt(hwnd, option.idc, option.section, option.name,
+                      DefaultInt(option), -1);
+        break;
+      case T_BMK:
+        ReadOptionInt(hwnd, option.idc, option.section, option.name,
+                      DefaultInt(option), 1 << option.bit);
+        break;
+      case T_STR:
+        ReadOptionStr(hwnd, option.idc, option.section, option.name,
+                      DefaultString(option));
+        break;
+    }
   }
 }
-void WriteDialogOptions(HWND hwnd, const optlst_t* ol, size_t size) {
+void WriteDialogOptions(HWND hwnd, const DialogOption* ol, size_t size) {
   for (size_t i = 0; i < size; i++) {
-    if (ol[i].type == T_BOL)
-      WriteOptionBool(hwnd, ol[i].idc, ol[i].section, ol[i].name);
-    else if (ol[i].type == T_BMK)
-      WriteOptionBoolBit(hwnd, ol[i].idc, ol[i].section, ol[i].name,
-                         ol[i].bitN);
-    else
-      WriteOptionStr(hwnd, ol[i].idc, ol[i].section, ol[i].name);
+    const DialogOption& option = ol[i];
+    switch (option.kind) {
+      case T_BOL:
+        WriteOptionBool(hwnd, option.idc, option.section, option.name);
+        break;
+      case T_BMK:
+        WriteOptionBoolBit(hwnd, option.idc, option.section, option.name,
+                           option.bit);
+        break;
+      case T_STR:
+        WriteOptionStr(hwnd, option.idc, option.section, option.name);
+        break;
+    }
   }
 }
 

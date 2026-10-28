@@ -27,17 +27,9 @@ enum {
   CMD_CLOSEZONES = (431)
 };
 
-#ifndef LOW_LEVEL_KB_PROC
-#ifndef DECORATED_HOOKS_DLL_PROCS
-#define LOW_LEVEL_KB_PROC "LowLevelKeyboardProc"
-#define LOAD_PROC "Load"
-#define UNLOAD_PROC "Unload"
-#else
-#define LOW_LEVEL_KB_PROC "_LowLevelKeyboardProc@12"
-#define LOAD_PROC "_Load@8"
-#define UNLOAD_PROC "_Unload@0"
-#endif
-#endif
+// Names under which the exe finds the two exports of hooks.dll.
+inline constexpr char kLoadProcName[] = "Load";
+inline constexpr char kUnloadProcName[] = "Unload";
 
 // Extra messages for Action Menu
 enum {
@@ -53,37 +45,40 @@ enum {
 // App
 #define APP_NAME L"AltSnap"
 #define APP_NAMEA "AltSnap"
-#define APP_PROPPT APP_NAME L"-RDim"
-#define APP_PROPFL APP_NAME L"-RFlag"
-#define APP_PROPOFFSET APP_NAME L"-ROffset"
-#define APP_PRBDLESS APP_NAME L"-RStyle"
-#define APP_ROLLED APP_NAME L"-Rolled"
-#define APP_ASONOFF APP_NAME L"-ASOnOff"
-#define APP_MOVEONOFF APP_NAME L"-MoveOnOff"
-#define APP_PRODPI APP_NAME L"-ODPI"
-#define FZ_PROPPT L"FancyZones_RestoreSize"
-#define FZ_PROPZONES L"FancyZones_zones"
+// Window properties used to remember per-window state (SetProp/GetProp).
+// Upstream: kPropRestoreSize, kPropRestoreFlag, ... and
+// kPropFancyZonesSize/kPropFancyZonesZones.
+inline constexpr wchar_t kPropRestoreSize[] = APP_NAME L"-RDim";
+inline constexpr wchar_t kPropRestoreFlag[] = APP_NAME L"-RFlag";
+inline constexpr wchar_t kPropRestoreOffset[] = APP_NAME L"-ROffset";
+inline constexpr wchar_t kPropBorderlessStyle[] = APP_NAME L"-RStyle";
+inline constexpr wchar_t kPropRolled[] = APP_NAME L"-Rolled";
+inline constexpr wchar_t kPropAutoSnapOnOff[] = APP_NAME L"-ASOnOff";
+inline constexpr wchar_t kPropMoveOnOff[] = APP_NAME L"-MoveOnOff";
+inline constexpr wchar_t kPropOriginalDpi[] = APP_NAME L"-ODPI";
+inline constexpr wchar_t kPropFancyZonesSize[] = L"FancyZones_RestoreSize";
+inline constexpr wchar_t kPropFancyZonesZones[] = L"FancyZones_zones";
 
 // User Messages
-#define WM_TRAY (WM_USER + 2)
-#define WM_SCLICK (WM_USER + 3)
-#define WM_UPDCFRACTION (WM_USER + 4)
-#define WM_UPDATETRAY (WM_USER + 5)
-#define WM_OPENCONFIG (WM_USER + 6)
-#define WM_CLOSECONFIG (WM_USER + 7)
-#define WM_UPDATESETTINGS (WM_USER + 8)
-#define WM_ADDTRAY (WM_USER + 9)
-#define WM_HIDETRAY (WM_USER + 10)
-#define WM_UNIKEYMENU (WM_USER + 11)
-#define WM_GETCLICKHWND (WM_USER + 12)
-#define WM_STACKLIST (WM_USER + 13)
-#define WM_FINISHMOVEMENT (WM_USER + 14)
-#define WM_CLOSEMODE (WM_USER + 15)
-#define WM_SETLAYOUTNUM (WM_USER + 16)
-#define WM_GETLAYOUTREZ (WM_USER + 17)
-#define WM_GETBESTLAYOUT (WM_USER + 18)
+inline constexpr UINT WM_TRAY = WM_USER + 2;
+inline constexpr UINT WM_SCLICK = WM_USER + 3;
+inline constexpr UINT WM_UPDCFRACTION = WM_USER + 4;
+inline constexpr UINT WM_UPDATETRAY = WM_USER + 5;
+inline constexpr UINT WM_OPENCONFIG = WM_USER + 6;
+inline constexpr UINT WM_CLOSECONFIG = WM_USER + 7;
+inline constexpr UINT WM_UPDATESETTINGS = WM_USER + 8;
+inline constexpr UINT WM_ADDTRAY = WM_USER + 9;
+inline constexpr UINT WM_HIDETRAY = WM_USER + 10;
+inline constexpr UINT WM_UNIKEYMENU = WM_USER + 11;
+inline constexpr UINT WM_GETCLICKHWND = WM_USER + 12;
+inline constexpr UINT WM_STACKLIST = WM_USER + 13;
+inline constexpr UINT WM_FINISHMOVEMENT = WM_USER + 14;
+inline constexpr UINT WM_CLOSEMODE = WM_USER + 15;
+inline constexpr UINT WM_SETLAYOUTNUM = WM_USER + 16;
+inline constexpr UINT WM_GETLAYOUTREZ = WM_USER + 17;
+inline constexpr UINT WM_GETBESTLAYOUT = WM_USER + 18;
 // #define WM_GETZONESLEN    (WM_USER+19)
-#define WM_GETZONES (WM_USER + 20)
+inline constexpr UINT WM_GETZONES = WM_USER + 20;
 
 // List of possible actions
 // ACVALUE(AC_ENUM, IniString, Info)
@@ -158,14 +153,19 @@ using action_t = rgTagAction;
 inline constexpr action_t k_action_none = {AC_NONE, 0, 0};
 inline constexpr action_t k_action_move = {AC_MOVE, 0, 0};
 
-#define PACK_ACTION(x) \
-  ((LPARAM)(x.ac << 24) | (LPARAM)(x.fl << 16) | (LPARAM)(x.wp << 0))
-#define UNPACK_ACTION(dst, lp)  \
-  do {                          \
-    dst.ac = (lp >> 24) & 0xFF; \
-    dst.fl = (lp >> 16) & 0xFF; \
-    dst.wp = lp & 0xFFFF;       \
-  } while (0)
+// An action travels through a window message as one LPARAM.
+[[nodiscard]] inline LPARAM PackAction(action_t action) {
+  return (static_cast<LPARAM>(action.ac) << 24) |
+         (static_cast<LPARAM>(action.fl) << 16) |
+         static_cast<LPARAM>(action.wp);
+}
+[[nodiscard]] inline action_t UnpackAction(LPARAM lp) {
+  action_t action;
+  action.ac = (lp >> 24) & 0xFF;
+  action.fl = (lp >> 16) & 0xFF;
+  action.wp = lp & 0xFFFF;
+  return action;
+}
 
 // List of extra info options
 enum {
@@ -201,7 +201,10 @@ enum {
   ACFL_TOGGLE = 6,
 };
 
-#define MOUVEMENT(action) (action.ac <= AC_RESIZE)
+// True for the actions that move or resize a window. Upstream: MOUVEMENT.
+[[nodiscard]] inline bool IsMovementAction(action_t action) {
+  return action.ac <= AC_RESIZE;
+}
 
 ///////////////////////////////////////////////////////////////////////////
 // Check if key is assigned in the HKlist
@@ -230,8 +233,8 @@ inline wchar_t* ZidxToZonestr(int laynum, int idx, wchar_t zname[32]) {
   wchar_t txt[kUintDigits + 1];
   zname[0] = !laynum ? L'\0' : L'A' + laynum - 1;
   zname[1] = '\0';
-  lstrcat_s(zname, 32, L"Zone");
-  lstrcat_s(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
+  AppendString(zname, 32, L"Zone");
+  AppendString(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
 
   return zname;
 }
@@ -240,13 +243,14 @@ inline char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
   char txt[16];
   zname[0] = !laynum ? '\0' : 'A' + laynum - 1;
   zname[1] = '\0';
-  lstrcat_s(zname, 32, "Zone");
-  lstrcat_s(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
+  AppendString(zname, 32, "Zone");
+  AppendString(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
 
   return zname;
 }
 
-[[nodiscard]] inline wchar_t* is_base_action(const wchar_t* a, const char* b) {
+// Upstream: is_base_action
+[[nodiscard]] inline wchar_t* IsBaseAction(const wchar_t* a, const char* b) {
   while (*a && *a != '=' && *a != '_' && *a == *b) {
     b++;
     a++;
@@ -281,7 +285,7 @@ inline char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
 
   for (ac = 0; ac < std::size(action_map); ac++) {
     wchar_t* params = nullptr;
-    if ((params = is_base_action(txt, action_map[ac]))) {
+    if ((params = IsBaseAction(txt, action_map[ac]))) {
       BYTE flagparam = 0;
       action.ac = ac;
       if (*params == L'_' && *++params) {
@@ -318,7 +322,7 @@ inline char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
 
         if (*params == ('_') && *++params) {
           // We got 2 parameters.
-          action.wp = strtoi(params);  // strtoi stops on any non digit
+          action.wp = ParseInt(params);  // ParseInt stops on any non digit
         }
         // LOGA("Read action %s_%d_%d",  action_map[ac], (int)action.fl,
         // (int)action.wp);

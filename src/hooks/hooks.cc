@@ -46,7 +46,6 @@ HookState state;
 std::vector<RECT> monitors;
 std::vector<snwdata> wnds;
 std::vector<HWND> hwnds;
-struct config conf;
 
 Blacklists BlkLst;  // All the blacklists, read from the ini file
 // Input sequences of the "Shrt0".."ShrtZ" ini options: a count byte followed
@@ -156,14 +155,13 @@ VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
         // Determine if we should actually move the Window by probing with
         // AC_NONE
         state.hittest = 0;  // No specific hittest here.
-        int ret =
-            init_movement_and_actions(pt, nullptr, k_action_move, BT_PROBE);
+        int ret = InitMovementAndActions(pt, nullptr, k_action_move, BT_PROBE);
         if (ret) {  // Release mouse click if we have to move.
           InterlockedIncrement(&state.ignoreclick);
           mouse_event(buttonswaped ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP,
                       0, 0, 0, GetMessageExtraInfo());
           InterlockedDecrement(&state.ignoreclick);
-          init_movement_and_actions(pt, nullptr, k_action_move, 0);
+          InitMovementAndActions(pt, nullptr, k_action_move, 0);
         }
       }
       KillTimer(g_mainhwnd, GRAB_TIMER);
@@ -198,12 +196,12 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
       LOG("Hotkey Pressed, action = %d", action.ac);
     } else if (0x0000 < wParam && wParam < 0x1000) {
       // The user called AltSnap.exe -afACTION
-      UNPACK_ACTION(action, lParam);
+      action = UnpackAction(lParam);
       assert(wParam - 0x0000 == action.ac);
       ptwindow = 0;
     } else if (0x1000 < wParam && wParam < 0x2000) {
       // The user called AltSnap.exe -apACTION
-      UNPACK_ACTION(action, lParam);
+      action = UnpackAction(lParam);
       assert(wParam - 0x1000 == action.ac);
       ptwindow = 1;
     }
@@ -243,7 +241,7 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
           //}
         }
         state.shift = state.ctrl = 0;  // In case...
-        init_movement_and_actions(pt, target_hwnd, action, 0);
+        InitMovementAndActions(pt, target_hwnd, action, 0);
         state.blockmouseup = 0;  // We must not block mouseup in this case...
         state.ignorept = 0;      // Reset...
       }
@@ -281,7 +279,7 @@ void WINAPI Unload() {
   // Quit Worker Thread...
   PostThreadMessage(g_WorkerThreadID, WM_DOWORK, 0, 0);
 
-  conf.keepMousehook = 0;
+  SetKeepMouseHook(false);
   if (mousehook) {
     UnhookWindowsHookEx(mousehook);
     mousehook = nullptr;
@@ -310,16 +308,16 @@ void WINAPI Unload() {
 
   SnapLayoutPreviewCreateDestroy(nullptr /*DESTROY*/);
 
-  freeblacklists();
+  FreeBlacklists();
 
-  freeallinputSequences();
+  FreeAllInputSequences();
 
   monitors = {};
   hwnds = {};
   wnds = {};
   snwnds = {};
   minhwnds = {};
-  freezones();
+  FreeZones();
 
   // Wait for worker thread to have a clean closing...
   WaitForSingleObject(g_WorkerThreadHANDLE, 5000);
@@ -359,10 +357,10 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   g_mainhwnd = mainhwnd;
 
   // read and register all shortcuts related options.
-  registerAllHotkeys(inipath);
+  RegisterAllHotkeys(inipath);
 
   // Hook mouse if a permanent hook is needed
-  if (conf.keepMousehook) {
+  if (KeepMouseHook()) {
     HookMouse();
     SetTimer(g_mainhwnd, REHOOK_TIMER, 5000,
              static_cast<TIMERPROC>(TimerWindowProc));  // Start rehook timer

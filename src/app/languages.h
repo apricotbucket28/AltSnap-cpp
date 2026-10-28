@@ -368,11 +368,12 @@ extern const struct strings en_US;           // Built-in English strings
 void ListAllTranslations();
 void UpdateLanguage();
 void FreeAllLangRelated();
-int GetCUserLanguage_xx_XX(wchar_t txt[16]);
+int GetUserLanguageCode(wchar_t txt[16]);
 void LoadTranslation(const wchar_t* ini);
 extern const struct strings* l10n;
 extern std::vector<langinfoitem> langinfo;
-size_t lstrcpy_noaccel(wchar_t* dest, size_t destlen, const wchar_t* source);
+size_t CopyWithoutAccelerator(wchar_t* dest, size_t destlen,
+                              const wchar_t* source);
 
 }  // namespace altsnap::app
 

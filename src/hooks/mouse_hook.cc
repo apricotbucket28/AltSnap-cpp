@@ -26,7 +26,7 @@ namespace altsnap::hooks {
 static void UnhookMouseOnly();
 /////////////////////////////////////////////////////////////////////////////
 // This is somewhat the main function, it is active only when the ALT key is
-// pressed, or is always on when conf.keepMousehook is enabled.
+// pressed, or is always on when g_keep_mousehook is enabled.
 //
 // We should not call the next Hook for button 6-20 (manual call only).
 
@@ -149,14 +149,14 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
       state.sactiondone = k_action_none;
       state.clickpt = pt;
     }
-    int ret = init_movement_and_actions(pt, nullptr, action, button);
+    int ret = InitMovementAndActions(pt, nullptr, action, button);
     if (ret) {
       // Not balcklisted, action may have been performed!
       if (action.ac) state.alt = 0;  // Done!
       return 1;
     }
 
-    // Window is blacklisted.
+    // Window is IsBlacklisted.
     // So me must forward the click...
     state.alt = 0;                                       // release alt!
     state.fwmouseup = 1;                                 // Forward up click...
@@ -169,7 +169,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     // if (!action) return 1;
     if (!action.ac && (conf.AblockHotclick || state.sactiondone.ac)) return 1;
     // If no action is to be done, we forward the click
-    Send_Click_Thread(button);
+    SendClickThread(button);
     return 1;
   }
 
@@ -221,7 +221,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
           lParam);  // CallNextHookEx(NULL, nCode, wParam, lParam);
     }
     // Start an action (alt is down)
-    int ret = init_movement_and_actions(pt, nullptr, action, button);
+    int ret = InitMovementAndActions(pt, nullptr, action, button);
     if (!ret)
       return CallNextHook(
           button, nCode, wParam,
@@ -257,7 +257,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         // Forward the click if no action was Mapped!
         // Win 10+ does not like receaving button down
         // when the button is already down, so we create a thread.
-        Send_Click_Thread(button);
+        SendClickThread(button);
       }
       return 1;  // block mouseup
     }
@@ -273,9 +273,19 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }  // END OF LL MOUSE PROCK
 
 /////////////////////////////////////////////////////////////////////////////
+// Whether the mouse hook stays installed permanently (needed by some options)
+// instead of only while a button is pressed. Set from the configuration.
+static bool g_keep_mousehook = false;
+void SetKeepMouseHook(bool keep) {
+  g_keep_mousehook = keep;
+}
+bool KeepMouseHook() {
+  return g_keep_mousehook;
+}
+
 void HookMouse() {
   state.moving = 0;  // Used to know the first time we call MouseMove.
-  if (conf.keepMousehook) {
+  if (g_keep_mousehook) {
     PostMessage(g_mainhwnd, WM_TIMER, REHOOK_TIMER, 0);
   }
 
@@ -288,7 +298,7 @@ void HookMouse() {
 /////////////////////////////////////////////////////////////////////////////
 static void UnhookMouseOnly() {
   // Do not unhook if not hooked or if the hook is still used for something
-  if (!mousehook || conf.keepMousehook || state.blockmouseup) return;
+  if (!mousehook || g_keep_mousehook || state.blockmouseup) return;
 
   // Remove mouse hook
   UnhookWindowsHookEx(mousehook);

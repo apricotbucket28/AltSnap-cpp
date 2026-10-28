@@ -18,10 +18,12 @@ void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend);
 void ReadGrids(const IniSection& section);
 void ReadZones(const IniSection& section);
 void SetLayoutNumber(WPARAM number);
+[[nodiscard]] unsigned CurrentLayout();
+void InitCurrentLayout(unsigned layout);
 void ShowSnapLayoutPreview(unsigned char yep);
 void SnapLayoutPreviewCreateDestroy(const IniSection* section);
 extern std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
-void freezones();
+void FreeZones();
 
 }  // namespace altsnap::hooks
 

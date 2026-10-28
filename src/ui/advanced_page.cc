@@ -21,37 +21,32 @@ namespace altsnap::app {
 /////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                         LPARAM lParam) {
-#define V (void*)
-  static const optlst_t optlst[] = {
-      {IDC_AUTOREMAXIMIZE, T_BOL, 0, L"Advanced", "AutoRemaximize", V nullptr},
+  static const DialogOption optlst[] = {
+      {IDC_AUTOREMAXIMIZE, T_BOL, 0, L"Advanced", "AutoRemaximize", 0},
       {IDC_AEROTOPMAXIMIZES, T_BMK, 0, L"Advanced", "AeroTopMaximizes",
-       V 1},  // bit 0
+       1},  // bit 0
       {IDC_AERODBCLICKSHIFT, T_BMK, 1, L"Advanced", "AeroTopMaximizes",
-       V 1},  // bit 1
-      {IDC_MULTIPLEINSTANCES, T_BOL, 0, L"Advanced", "MultipleInstances",
-       V nullptr},
-      {IDC_FULLSCREEN, T_BOL, 0, L"Advanced", "FullScreen", V 1},
-      {IDC_BLMAXIMIZED, T_BOL, 0, L"Advanced", "BLMaximized", V nullptr},
-      {IDC_FANCYZONE, T_BOL, 0, L"Zones", "FancyZone", V nullptr},
-      {IDC_NORESTORE, T_BMK, 2, L"General", "SmartAero", V nullptr},  // bit 2
-      {IDC_MAXWITHLCLICK, T_BMK, 0, L"General", "MMMaximize", V 1},   // bit 0
-      {IDC_RESTOREONCLICK, T_BMK, 1, L"General", "MMMaximize",
-       V nullptr},  // bit 1
-      {IDC_TOPMOSTINDICATOR, T_BOL, 0, L"Advanced", "TopmostIndicator",
-       V nullptr},
+       1},  // bit 1
+      {IDC_MULTIPLEINSTANCES, T_BOL, 0, L"Advanced", "MultipleInstances", 0},
+      {IDC_FULLSCREEN, T_BOL, 0, L"Advanced", "FullScreen", 1},
+      {IDC_BLMAXIMIZED, T_BOL, 0, L"Advanced", "BLMaximized", 0},
+      {IDC_FANCYZONE, T_BOL, 0, L"Zones", "FancyZone", 0},
+      {IDC_NORESTORE, T_BMK, 2, L"General", "SmartAero", 0},        // bit 2
+      {IDC_MAXWITHLCLICK, T_BMK, 0, L"General", "MMMaximize", 1},   // bit 0
+      {IDC_RESTOREONCLICK, T_BMK, 1, L"General", "MMMaximize", 0},  // bit 1
+      {IDC_TOPMOSTINDICATOR, T_BOL, 0, L"Advanced", "TopmostIndicator", 0},
 
-      {IDC_CENTERFRACTION, T_STR, 0, L"General", "CenterFraction", V L"24"},
-      {IDC_SIDESFRACTION, T_STR, 0, L"General", "SidesFraction", V L"255"},
-      {IDC_AEROHOFFSET, T_STR, 0, L"General", "AeroHoffset", V L"50"},
-      {IDC_AEROVOFFSET, T_STR, 0, L"General", "AeroVoffset", V L"50"},
-      {IDC_SNAPTHRESHOLD, T_STR, 0, L"Advanced", "SnapThreshold", V L"20"},
-      {IDC_AEROTHRESHOLD, T_STR, 0, L"Advanced", "AeroThreshold", V L"5"},
-      {IDC_SNAPGAP, T_STR, 0, L"Advanced", "SnapGap", V L"0"},
-      {IDC_AEROSPEED, T_STR, 0, L"Advanced", "AeroMaxSpeed", V L""},
-      {IDC_AEROSPEEDTAU, T_STR, 0, L"Advanced", "AeroSpeedTau", V L"32"},
-      {IDC_MOVETRANS, T_STR, 0, L"General", "MoveTrans", V L""},
+      {IDC_CENTERFRACTION, T_STR, 0, L"General", "CenterFraction", L"24"},
+      {IDC_SIDESFRACTION, T_STR, 0, L"General", "SidesFraction", L"255"},
+      {IDC_AEROHOFFSET, T_STR, 0, L"General", "AeroHoffset", L"50"},
+      {IDC_AEROVOFFSET, T_STR, 0, L"General", "AeroVoffset", L"50"},
+      {IDC_SNAPTHRESHOLD, T_STR, 0, L"Advanced", "SnapThreshold", L"20"},
+      {IDC_AEROTHRESHOLD, T_STR, 0, L"Advanced", "AeroThreshold", L"5"},
+      {IDC_SNAPGAP, T_STR, 0, L"Advanced", "SnapGap", L"0"},
+      {IDC_AEROSPEED, T_STR, 0, L"Advanced", "AeroMaxSpeed", L""},
+      {IDC_AEROSPEEDTAU, T_STR, 0, L"Advanced", "AeroSpeedTau", L"32"},
+      {IDC_MOVETRANS, T_STR, 0, L"General", "MoveTrans", L""},
   };
-#undef V
 
   //    static HWND testwnd=NULL;
   static int have_to_apply = 0;

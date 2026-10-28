@@ -42,15 +42,15 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   compare[ll] = '\"';
   compare[++ll] = '\0';
 
-  if (lstrstr(value, compare) != value) {
+  if (FindSubstring(value, compare) != value) {
     return;
   }
   // Autostart is on, check arguments
   *_on = 1;
-  if (lstrstr(value, L" -hide") != nullptr) {
+  if (FindSubstring(value, L" -hide") != nullptr) {
     *_hidden = 1;
   }
-  if (lstrstr(value, L" -elevate") != nullptr) {
+  if (FindSubstring(value, L" -elevate") != nullptr) {
     *_elevated = 1;
   }
 }
@@ -72,8 +72,8 @@ static void SetAutostart(int on, int hhide, int eelevate) {
     value[ll] = '\"';
     value[++ll] = '\0';
     // Add -hide or -elevate flags
-    if (hhide) lstrcat_s(value, std::size(value), L" -hide");
-    if (eelevate) lstrcat_s(value, std::size(value), L" -elevate");
+    if (hhide) AppendString(value, std::size(value), L" -hide");
+    if (eelevate) AppendString(value, std::size(value), L" -elevate");
     // Set autostart
     RegSetValueEx(key, APP_NAME, 0, REG_SZ, reinterpret_cast<LPBYTE>(value),
                   (lstrlen(value) + 1) * sizeof(value[0]));
@@ -126,22 +126,20 @@ static DWORD IsUACEnabled() {
 /////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam) {
-#define V (void*)
   // Options to bead or written...
-  static const optlst_t optlst[] = {
+  static const DialogOption optlst[] = {
       // dialog id, type, bit number, section name, option name, def val.
-      {IDC_AUTOFOCUS, T_BOL, 0, L"General", "AutoFocus", V nullptr},
-      {IDC_AERO, T_BOL, 0, L"General", "Aero", V 1},
-      {IDC_SMARTAERO, T_BMK, 0, L"General", "SmartAero", V 1},
-      {IDC_SMARTERAERO, T_BMK, 1, L"General", "SmartAero", V nullptr},
-      {IDC_STICKYRESIZE, T_BOL, 0, L"General", "StickyResize", V 1},
-      {IDC_INACTIVESCROLL, T_BOL, 0, L"General", "InactiveScroll", V nullptr},
-      {IDC_MDI, T_BOL, 0, L"General", "MDI", V 1},
-      {IDC_RESIZEALL, T_BOL, 0, L"Advanced", "ResizeAll", V 1},
-      {IDC_USEZONES, T_BMK, 0, L"Zones", "UseZones", V nullptr},
-      {IDC_PIERCINGCLICK, T_BOL, 0, L"Advanced", "PiercingClick", V nullptr},
+      {IDC_AUTOFOCUS, T_BOL, 0, L"General", "AutoFocus", 0},
+      {IDC_AERO, T_BOL, 0, L"General", "Aero", 1},
+      {IDC_SMARTAERO, T_BMK, 0, L"General", "SmartAero", 1},
+      {IDC_SMARTERAERO, T_BMK, 1, L"General", "SmartAero", 0},
+      {IDC_STICKYRESIZE, T_BOL, 0, L"General", "StickyResize", 1},
+      {IDC_INACTIVESCROLL, T_BOL, 0, L"General", "InactiveScroll", 0},
+      {IDC_MDI, T_BOL, 0, L"General", "MDI", 1},
+      {IDC_RESIZEALL, T_BOL, 0, L"Advanced", "ResizeAll", 1},
+      {IDC_USEZONES, T_BMK, 0, L"Zones", "UseZones", 0},
+      {IDC_PIERCINGCLICK, T_BOL, 0, L"Advanced", "PiercingClick", 0},
   };
-#undef V
 
   static const dialogstring_t strlst[] = {
       {IDC_GENERAL_BOX, L10nId::GeneralBox},
@@ -247,7 +245,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
       wchar_t txt[kUintDigits + 1];
-      int val = CB_GetCurSelDlgItem(hwnd, IDC_AUTOSNAP);
+      int val = ComboBoxCurSel(hwnd, IDC_AUTOSNAP);
       WritePrivateProfileString(L"General", L"AutoSnap", Uint2lStr(txt, val),
                                 inipath);
 
@@ -259,14 +257,14 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                 Uint2lStr(txt, val), inipath);
 
       // Load selected Language
-      int i = CB_GetCurSelDlgItem(hwnd, IDC_LANGUAGE);
+      int i = ComboBoxCurSel(hwnd, IDC_LANGUAGE);
       if (static_cast<size_t>(i) < langinfo.size() &&
           lstrcmpi(l10n->Code, langinfo[i].code.c_str())) {
         LoadTranslation(langinfo[i].fn.empty() ? nullptr
                                                : langinfo[i].fn.c_str());
 #ifdef UNICODE
         wchar_t curlang[16];
-        GetCUserLanguage_xx_XX(curlang);
+        GetUserLanguageCode(curlang);
         if (!lstrcmpi(l10n->Code, curlang))  // Use Auto if selected language is
                                              // the current user's one.
           WritePrivateProfileString(L"General", L"Language", L"Auto", inipath);
@@ -310,7 +308,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     wchar_t txt[8];
     GetPrivateProfileString(L"General", L"AutoSnap", L"0", txt, std::size(txt),
                             inipath);
-    ComboBox_SetCurSel(control, strtoi(txt));
+    ComboBox_SetCurSel(control, ParseInt(txt));
 
     // Language
     control = GetDlgItem(hwnd, IDC_LANGUAGE);

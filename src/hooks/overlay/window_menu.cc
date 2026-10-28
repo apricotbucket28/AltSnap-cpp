@@ -143,12 +143,12 @@ void ActionMenu(HWND hwnd) {
   PostMessage(g_mainhwnd, WM_SCLICK, reinterpret_cast<WPARAM>(g_mchwnd),
               (!state.ignorept)  // LP_CURSORPOS
                   | !!(GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
-                        << 1                                   // LP_TOPMOST
-                  | !!GetBorderlessFlag(hwnd) << 2             // LP_BORDERLESS
-                  | IsZoomed(hwnd) << 3                        // LP_MAXIMIZED
-                  | !!(GetRestoreFlag(hwnd) & 2) << 4          // LP_ROLLED
-                  | !!GetProp(state.hwnd, APP_MOVEONOFF) << 5  // LP_MOVEONOFF
-                  | (state.alt <= BT_MB5) << 6                 // LP_NOALTACTION
+                        << 1                                    // LP_TOPMOST
+                  | !!GetBorderlessFlag(hwnd) << 2              // LP_BORDERLESS
+                  | IsZoomed(hwnd) << 3                         // LP_MAXIMIZED
+                  | !!(GetRestoreFlag(hwnd) & 2) << 4           // LP_ROLLED
+                  | !!GetProp(state.hwnd, kPropMoveOnOff) << 5  // LP_MOVEONOFF
+                  | (state.alt <= BT_MB5) << 6  // LP_NOALTACTION
   );
 }
 ///////////////////////////////////////////////////////////////////////////
@@ -347,7 +347,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         // UNIKEY MENU (LOWORD of wParam munst be non NULL.
         // LOG("Unikey menu WM_COMMAND, wp=%X, lp=%X", (UINT)wParam,
         // (UINT)lParam);
-        Send_KEY(VK_BACK);  // Errase old char...
+        SendKey(VK_BACK);  // Errase old char...
 
         // Send UCS-2 or Lower+Upper UTF-16 surrogates of the UNICODE char.
         SendUnicodeKey(LOWORD(wParam));  // USC-2 or Lower surrogate
@@ -366,7 +366,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           if (action.ac == AC_ORICLICK) {
             ShowWindow(hwnd, SW_HIDE);
             SetCursorPos(state.clickpt.x, state.clickpt.y);
-            Send_Click(state.clickbutton);
+            SendClick(state.clickbutton);
           } else {
             SClickActions(state.sclickhwnd, action);
           }

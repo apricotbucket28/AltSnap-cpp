@@ -3,6 +3,7 @@
 #define ALTSNAP_CONFIG_INTERNAL_H_
 
 #include <algorithm>
+#include <variant>
 
 #include "app/altsnap.h"
 #include "app/languages.h"
@@ -22,18 +23,24 @@ struct dialogstring {
 
 using dialogstring_t = dialogstring;
 
-enum opttype { T_BOL = 0, T_BMK = 1, T_STR = 2 };
-
-struct optlst {
-  short idc;
-  UCHAR type;
-  UCHAR bitN;
-  const wchar_t* section;
-  const char* name;
-  const void* def;
+// How a dialog control maps onto an ini option.
+// Upstream: opttype.
+enum OptionKind : UCHAR {
+  T_BOL = 0,  // check box <-> 0/1
+  T_BMK = 1,  // check box <-> one bit of an integer option
+  T_STR = 2,  // text field <-> string option
 };
 
-using optlst_t = optlst;
+// One control of a settings page. Upstream: optlst (its `def` member was a
+// `void*` that held either an integer or a string).
+struct DialogOption {
+  short idc;
+  OptionKind kind;
+  UCHAR bit;  // T_BMK: which bit of the option
+  const wchar_t* section;
+  const char* name;
+  std::variant<int, const wchar_t*> default_value;  // int, or string for T_STR
+};
 
 struct hk_struct {
   unsigned control;

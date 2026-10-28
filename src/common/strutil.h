@@ -23,6 +23,13 @@
 #include <string>
 #include <type_traits>
 
+// Upstream names (nanolibc.h) of the helpers below:
+//   lstrcpy_s -> CopyString          lstrcat_s -> AppendString
+//   lstrstr -> FindSubstring         lstrchr -> FindChar
+//   lstrcmp_star -> WildcardCompare  lstrcmpi_samestart ->
+//   CompareStartIgnoreCase lstrhex2u -> HexToUnsigned       strtoi -> ParseInt
+//   str2tchar -> AsciiToWide         str2tchar_s -> AsciiToWideBounded
+
 // -----------------------------------------------------------------------------
 // Bit helpers
 // -----------------------------------------------------------------------------
@@ -84,14 +91,14 @@ template <typename CharT>
 // Copies the ASCII string `src` into `dest`, widening each char. `dest` must be
 // large enough for the string and its terminator.
 template <typename CharT>
-void str2tchar(CharT* dest, const char* src) {
+void AsciiToWide(CharT* dest, const char* src) {
   while ((*dest++ = static_cast<CharT>(*src++))) {
   }
 }
 
 // Same, but writes at most `n - 1` characters followed by a terminator.
 template <typename CharT>
-void str2tchar_s(CharT* dest, size_t n, const char* src) {
+void AsciiToWideBounded(CharT* dest, size_t n, const char* src) {
   if (n == 0) return;
   size_t i = 0;
   for (; i + 1 < n && src[i]; ++i) dest[i] = static_cast<CharT>(src[i]);
@@ -105,7 +112,7 @@ void str2tchar_s(CharT* dest, size_t n, const char* src) {
 // Copies `src` into `dest` (capacity `n` characters). Returns the resulting
 // length.
 template <typename CharT>
-size_t lstrcpy_s(CharT* dest, size_t n, const CharT* src) {
+size_t CopyString(CharT* dest, size_t n, const CharT* src) {
   if (n == 0) return 0;
   size_t i = 0;
   for (; i + 1 < n && src[i]; ++i) dest[i] = src[i];  // keep room for the NUL
@@ -116,7 +123,7 @@ size_t lstrcpy_s(CharT* dest, size_t n, const CharT* src) {
 // Appends `src` to the NUL-terminated string in `dest` (capacity `n`
 // characters). Truncates instead of overflowing. Returns the resulting length.
 template <typename CharT>
-size_t lstrcat_s(CharT* dest, size_t n, const CharT* src) {
+size_t AppendString(CharT* dest, size_t n, const CharT* src) {
   if (n == 0) return 0;
   size_t len = 0;
   while (len < n && dest[len]) ++len;
@@ -124,32 +131,32 @@ size_t lstrcat_s(CharT* dest, size_t n, const CharT* src) {
     dest[n - 1] = CharT{'\0'};
     return n - 1;
   }
-  return len + lstrcpy_s(dest + len, n - len, src);
+  return len + CopyString(dest + len, n - len, src);
 }
 
 // -----------------------------------------------------------------------------
 // Searching
 // -----------------------------------------------------------------------------
 
-[[nodiscard]] inline const char* lstrstr(const char* haystack,
-                                         const char* needle) {
+[[nodiscard]] inline const char* FindSubstring(const char* haystack,
+                                               const char* needle) {
   return std::strstr(haystack, needle);
 }
-[[nodiscard]] inline const wchar_t* lstrstr(const wchar_t* haystack,
-                                            const wchar_t* needle) {
+[[nodiscard]] inline const wchar_t* FindSubstring(const wchar_t* haystack,
+                                                  const wchar_t* needle) {
   return std::wcsstr(haystack, needle);
 }
 
-[[nodiscard]] inline const char* lstrchr(const char* s, char c) {
+[[nodiscard]] inline const char* FindChar(const char* s, char c) {
   return std::strchr(s, c);
 }
-[[nodiscard]] inline char* lstrchr(char* s, char c) {
+[[nodiscard]] inline char* FindChar(char* s, char c) {
   return std::strchr(s, c);
 }
-[[nodiscard]] inline const wchar_t* lstrchr(const wchar_t* s, wchar_t c) {
+[[nodiscard]] inline const wchar_t* FindChar(const wchar_t* s, wchar_t c) {
   return std::wcschr(s, c);
 }
-[[nodiscard]] inline wchar_t* lstrchr(wchar_t* s, wchar_t c) {
+[[nodiscard]] inline wchar_t* FindChar(wchar_t* s, wchar_t c) {
   return std::wcschr(s, c);
 }
 
@@ -162,7 +169,7 @@ size_t lstrcat_s(CharT* dest, size_t n, const CharT* src) {
 //   * returns 0 on match, non-zero otherwise;
 //   * a null pattern matches everything.
 template <typename CharT>
-[[nodiscard]] int lstrcmp_star(const CharT* a, const CharT* b) {
+[[nodiscard]] int WildcardCompare(const CharT* a, const CharT* b) {
   if (!b) return 0;
 
   if (*b == CharT{'*'}) {  // "*suffix": compare backwards from the ends.
@@ -185,7 +192,7 @@ template <typename CharT>
 
 // Returns 0 if `a` starts with `b`, ignoring ASCII case.
 template <typename CharT>
-[[nodiscard]] int lstrcmpi_samestart(const CharT* a, const CharT* b) {
+[[nodiscard]] int CompareStartIgnoreCase(const CharT* a, const CharT* b) {
   while (*a && AsciiToLower(*a) == AsciiToLower(*b)) {
     ++a;
     ++b;
@@ -200,7 +207,7 @@ template <typename CharT>
 // Parses an optionally signed decimal integer (leading spaces allowed). Stops
 // at the first non-digit. Does not detect overflow.
 template <typename CharT>
-[[nodiscard]] int strtoi(const CharT* s) {
+[[nodiscard]] int ParseInt(const CharT* s) {
   while (*s == CharT{' '}) ++s;
   int sign = 1;
   if (*s == CharT{'-'}) {
@@ -220,7 +227,7 @@ template <typename CharT>
 // Parses hexadecimal digits up to the end of the string or the first character
 // below '0' (so a space, comma or NUL terminates the number).
 template <typename CharT>
-[[nodiscard]] unsigned lstrhex2u(const CharT* s) {
+[[nodiscard]] unsigned HexToUnsigned(const CharT* s) {
   unsigned ret = 0;
   while (*s >= CharT{'0'}) ret = ret << 4 | HexDigitValue(*s++);
   return ret;

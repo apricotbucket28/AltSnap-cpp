@@ -37,7 +37,9 @@ const strings* l10n = &en_US;
 
 /////////////////////////////////////////////////////////////////////////////
 // Copies and remove the accelerators & sign. and txt between ( ).
-size_t lstrcpy_noaccel(wchar_t* dest, size_t destlen, const wchar_t* source) {
+// Upstream: lstrcpy_noaccel
+size_t CopyWithoutAccelerator(wchar_t* dest, size_t destlen,
+                              const wchar_t* source) {
   size_t i = 0, j = 0;
   while (i < destlen && source[i]) {
     dest[j] = source[i];
@@ -55,8 +57,9 @@ size_t lstrcpy_noaccel(wchar_t* dest, size_t destlen, const wchar_t* source) {
   return j;
 }
 
-static void lstrcpy_resolve(wchar_t* dest, size_t dstlen,
-                            const wchar_t* source) {
+// Upstream: lstrcpy_resolve
+static void CopyResolvingEscapes(wchar_t* dest, size_t dstlen,
+                                 const wchar_t* source) {
   // Copy from source to dest, resolving \\n to \n
   for (; --dstlen && *source != '\0'; source++, dest++) {
     if (*source == '\\' && *(source + 1) == 'n') {
@@ -90,13 +93,13 @@ static void LoadTranslationOrTT(const wchar_t* ini, const wchar_t* section_name,
     wchar_t with_version[128];
     if (slot == L10nId::AboutVersion) {
       // Append the version number to the about text.
-      lstrcpy_s(with_version, std::size(with_version), txt);
-      lstrcat_s(with_version, std::size(with_version), L" " APP_VERSION);
+      CopyString(with_version, std::size(with_version), txt);
+      AppendString(with_version, std::size(with_version), L" " APP_VERSION);
       txt = with_version;
     }
     std::wstring& owned = l10n_storage[slot];
     owned.assign(lstrlen(txt) + 1, L'\0');
-    lstrcpy_resolve(owned.data(), owned.size(), txt);
+    CopyResolvingEscapes(owned.data(), owned.size(), txt);
     owned.resize(lstrlen(owned.c_str()));
     (l10n_ini->*kL10nMembers[slot]) = owned.c_str();
   }
@@ -129,7 +132,7 @@ void ListAllTranslations() {
   wchar_t szDir[MAX_PATH];
   GetModuleFileName(nullptr, szDir, std::size(szDir));
   PathRemoveFileSpecL(szDir);
-  lstrcat_s(szDir, std::size(szDir), L"\\Lang\\*.ini");
+  AppendString(szDir, std::size(szDir), L"\\Lang\\*.ini");
   const std::wstring directory(
       szDir, lstrlen(szDir) - lstrlen(L"*.ini"));  // Keep trailing '\\'.
 
@@ -156,7 +159,8 @@ void ListAllTranslations() {
 #ifdef UNICODE
 /////////////////////////////////////////////////////////////////////////////
 // Helper function to get
-int GetCUserLanguage_xx_XX(wchar_t txt[16]) {
+// Upstream: GetCUserLanguage_xx_XX
+int GetUserLanguageCode(wchar_t txt[16]) {
   txt[0] = L'\0';
   return LCIDToLocaleName(GetUserDefaultLCID(), txt, 16, 0);
 }
@@ -171,7 +175,7 @@ void UpdateLanguage() {
 // based on current user's LCID
 #ifdef _UNICODE
   if (!lstrcmpi(txt, L"Auto")) {
-    GetCUserLanguage_xx_XX(txt);
+    GetUserLanguageCode(txt);
   }
 #endif  // _UNICODE
 

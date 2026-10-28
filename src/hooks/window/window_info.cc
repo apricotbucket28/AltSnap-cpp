@@ -16,20 +16,22 @@
 namespace altsnap::hooks {
 
 /////////////////////////////////////////////////////////////////////////////
-static void blacklist_cache_state() {
+// Upstream: blacklist_cache_state
+static void CacheBlacklistState() {
   state.cached_hwnd_blacklist = state.hwnd;
   state.title[0] = state.classname[0] = state.exename[0] = L'\0';
   GetWindowProgName(state.hwnd, state.exename, std::size(state.exename));
   GetWindowText(state.hwnd, state.title, std::size(state.title));
   GetClassName(state.hwnd, state.classname, std::size(state.classname));
 }
-[[nodiscard]] bool blacklisted(HWND hwnd, const Blacklist& list) {
+// Upstream: blacklisted
+[[nodiscard]] bool IsBlacklisted(HWND hwnd, const Blacklist& list) {
   // Null hwnd or empty list
   if (!hwnd || list.empty()) return false;
 
   if (hwnd == state.hwnd) {
     // Magage a simple cache only for the state window
-    if (state.hwnd != state.cached_hwnd_blacklist) blacklist_cache_state();
+    if (state.hwnd != state.cached_hwnd_blacklist) CacheBlacklistState();
     return list.Contains(state.exename, state.title, state.classname);
   }
 
@@ -45,7 +47,8 @@ static void blacklist_cache_state() {
   return list.Contains(exename, title, classname);
 }
 
-int isClassName(HWND hwnd, const wchar_t* str) {
+// Upstream: isClassName
+int IsClassName(HWND hwnd, const wchar_t* str) {
   wchar_t classname[256];
   return GetClassName(hwnd, classname, std::size(classname)) &&
          !lstrcmp(classname, str);
@@ -58,7 +61,7 @@ int isClassName(HWND hwnd, const wchar_t* str) {
             | thickf | (thickf << 1);
 
   if (!ret) ret = !!GetBorderlessFlag(hwnd);
-  if (!ret) ret = !!blacklisted(hwnd, BlkLst.AResize);  // Always resize list
+  if (!ret) ret = !!IsBlacklisted(hwnd, BlkLst.AResize);  // Always resize list
 
   return ret;
 }
@@ -95,7 +98,7 @@ int IsFullScreenBL(HWND hwnd) {
 // WM_ENTERSIZEMOVE or WM_EXITSIZEMOVE...
 void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta) {
   // Don't send WM_ENTER/EXIT SIZEMOVE if the window is in SSizeMove BL
-  if (!blacklisted(hwnd, BlkLst.SSizeMove)) {
+  if (!IsBlacklisted(hwnd, BlkLst.SSizeMove)) {
     PostMessage(hwnd, sta ? WM_ENTERSIZEMOVE : WM_EXITSIZEMOVE, 0, 0);
   }
   // Always send the NotifyWinEvent for IAccessible interface.
@@ -114,8 +117,8 @@ int HitTestTimeoutbl(HWND hwnd, POINT pt) {
 
   // Try first with the ancestor window for some buggy AppX?
   HWND ancestor = state.hwnd = GetAncestor(hwnd, GA_ROOT);
-  if (blacklisted(ancestor, BlkLst.MMBLower)) return 0;
-  if (hwnd != ancestor && blacklisted(ancestor, BlkLst.NCHittest)) {
+  if (IsBlacklisted(ancestor, BlkLst.MMBLower)) return 0;
+  if (hwnd != ancestor && IsBlacklisted(ancestor, BlkLst.NCHittest)) {
     SendMessageTimeout(ancestor, WM_NCHITTEST, 0, MAKELPARAM(pt.x, pt.y),
                        SMTO_NORMAL, 200, &area);
   }
@@ -199,7 +202,7 @@ int ShouldSnapTo(HWND hwnd) {
                  WS_CAPTION ||
              (style & WS_THICKFRAME) ||
              GetBorderlessFlag(hwnd)  //&(WS_THICKFRAME|WS_CAPTION)
-             || blacklisted(hwnd, BlkLst.Snaplist));
+             || IsBlacklisted(hwnd, BlkLst.Snaplist));
 }
 ///////////////////////////////////////////////////////////////////////////
 void GetMonitorRect(const POINT* pt, int full, RECT* _mon) {
@@ -246,8 +249,8 @@ int IsAltTabAble(HWND window) {
              ) &&
          (conf.MenuShowEmptyLabelWin ||
           (GetWindowText(window, txt, std::size(txt)) && txt[0])) &&
-         !blacklisted(window,
-                      BlkLst.Bottommost);  // Exclude bottommost windows
+         !IsBlacklisted(window,
+                        BlkLst.Bottommost);  // Exclude bottommost windows
 }
 int IsToolWindow(HWND hwnd) {
   return GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW;
@@ -258,7 +261,7 @@ HWND MDIorNOT(HWND hwnd, HWND* mdiclient_) {
   HWND mdiclient = nullptr;
   HWND root = GetAncestor(hwnd, GA_ROOT);
 
-  if (conf.MDI && !blacklisted(root, BlkLst.MDIs)) {
+  if (conf.MDI && !IsBlacklisted(root, BlkLst.MDIs)) {
     while (hwnd != root) {
       HWND parent = GetParent(hwnd);
       if (!parent) return root;
@@ -319,7 +322,7 @@ int InTitlebar(POINT pt, action_t action, enum button button) {
     HWND nhwnd = WindowFromPoint(pt);
     if (!nhwnd) return 0;  // Next hook!
     // HWND hwnd = MDIorNOT(nhwnd, &state.mdiclient);
-    // if (blacklisted(hwnd, BlkLst.Windows)) return 0; // Next hook
+    // if (IsBlacklisted(hwnd, BlkLst.Windows)) return 0; // Next hook
 
     // Hittest to see if we are in a caption!
     // Only accept caption buttons as a titlebar for the buttons that are

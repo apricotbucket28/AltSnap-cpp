@@ -60,8 +60,8 @@ Blacklist::Item Blacklist::Item::Parse(std::wstring_view text) {
 
 bool Blacklist::Item::Matches(const wchar_t* exe, const wchar_t* window_title,
                               const wchar_t* window_class) const {
-  return !lstrcmp_star(window_class, OrNull(class_name)) &&
-         !lstrcmp_star(window_title, OrNull(title)) &&
+  return !WildcardCompare(window_class, OrNull(class_name)) &&
+         !WildcardCompare(window_title, OrNull(title)) &&
          (!exename || !lstrcmpi(exe, exename->c_str()));
 }
 

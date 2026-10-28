@@ -21,10 +21,10 @@ namespace altsnap {
 //   exename.exe:title|class  both of the above
 //   exename.exe:title        same as above with any class
 // and a `*` (or an omitted part) matches anything. Titles and classes may also
-// start or end with `*` (see lstrcmp_star()).
+// start or end with `*` (see WildcardCompare()).
 //
 // If the first item is `*|*` the list is a whitelist: every window that is not
-// listed counts as blacklisted.
+// listed counts as IsBlacklisted.
 class Blacklist {
  public:
   Blacklist() = default;
@@ -34,7 +34,7 @@ class Blacklist {
 
   [[nodiscard]] bool empty() const { return items_.empty(); }
 
-  // Whether a window with these names is blacklisted by this list.
+  // Whether a window with these names is IsBlacklisted by this list.
   // Upstream: blacklisted_from_names
   [[nodiscard]] bool Contains(const wchar_t* exename, const wchar_t* title,
                               const wchar_t* class_name) const;

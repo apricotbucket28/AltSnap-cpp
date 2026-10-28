@@ -9,7 +9,7 @@ namespace altsnap::hooks {
 DWORD WINAPI WorkerThread(LPVOID p);
 int ResizeTouchingWindows(LPVOID lwptr);
 void ResizeAllSnappedWindows();
-void MaximizeRestore_atpt(HWND hwnd, UINT sw_cmd, int origin);
+void MaximizeRestoreAtPoint(HWND hwnd, UINT sw_cmd, int origin);
 void RestoreWindowTo(HWND hwnd, int x, int y, int w, int h);
 BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw);
 DWORD WINAPI MoveWindowNow(struct windowRR* lw);

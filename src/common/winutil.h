@@ -6,14 +6,15 @@
  * DO WHAT THE FUCK YOU WANT WITH THIS CODE!                             *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#ifndef _UNFUCK_NT_
-#define _UNFUCK_NT_
+#ifndef ALTSNAP_COMMON_WINUTIL_H_
+#define ALTSNAP_COMMON_WINUTIL_H_
 
 #include <oleacc.h>
 #include <windows.h>
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdarg>
 #include <cstdio>
 #include <memory>
@@ -71,7 +72,6 @@ typedef struct tagMSAAMENUINFO {
 /*#define LOGA(X, ...) {DWORD err=GetLastError(); FILE *LOG=fopen("ad.log",
  * "a"); fprintf(LOG, X, ##__VA_ARGS__); fprintf(LOG,", LastError=%lu\n",err);
  * fclose(LOG); SetLastError(0); }*/
-#define LOGA LOGfunk
 inline void LOGSimple(const char* str, size_t len) {
   DWORD dummy = 0;
   HANDLE h = nullptr;
@@ -94,9 +94,9 @@ inline void LOGSimple(const char* str, size_t len) {
   std::vsnprintf(line, sizeof(line), fmt, args);
   va_end(args);
 
-  lstrcat_s(line, std::size(line), " (");
-  lstrcat_s(line, std::size(line), Uint2lStr(error_text, last_error));
-  lstrcat_s(line, std::size(line), ")\n");
+  AppendString(line, std::size(line), " (");
+  AppendString(line, std::size(line), Uint2lStr(error_text, last_error));
+  AppendString(line, std::size(line), ")\n");
   LOGSimple(line, lstrlenA(line));
 }
 #ifdef LOG_STUFF
@@ -105,19 +105,6 @@ inline void LOGSimple(const char* str, size_t len) {
 #define LOG \
   if (0) LOGdummy
 inline void LOGdummy(const char* fmt, ...) {}
-#endif
-
-#ifdef DEBUG
-#define assert(x)                                        \
-  do {                                                   \
-    if (!(x)) {                                          \
-      LOGA("ASSERT in " __FILE__ ":%d - " #x, __LINE__); \
-      ExitProcess(1);                                    \
-    }                                                    \
-  } while (0)
-#else
-#undef assert
-#define assert(x)
 #endif
 
 /* Helper function to pop a message bow with error code*/
@@ -330,13 +317,10 @@ inline int RGTac(RGTICTAC* tt) {
   return -1;
 }
 
-#ifndef _WIN64
-#define NotifyWinEvent NotifyWinEvent
-#endif
-
 /* Needed on Windows 8+ to recive the WM_POWERBROADCAST mesage */
 
-[[nodiscard]] inline long average(long a, long b) {
+// Upstream: average
+[[nodiscard]] inline long Average(long a, long b) {
   return (a >> 1) + (b >> 1) + (((a & 1) + (b & 1)) >> 1);
 }
 
@@ -537,7 +521,8 @@ struct pid_pair_struct {
   DWORD parent_pid;
   DWORD child_pid;
 };
-inline BOOL CALLBACK GetWindowProgName_subwins_EnumProc(HWND hwnd, LPARAM lp) {
+// Upstream: GetWindowProgName_subwins_EnumProc
+inline BOOL CALLBACK GetWindowProgNameSubwinsEnumProc(HWND hwnd, LPARAM lp) {
   auto* pids = reinterpret_cast<struct pid_pair_struct*>(lp);
   DWORD hwnd_pid = 0;
   if (GetWindowThreadProcessId(hwnd, &hwnd_pid) && hwnd_pid &&
@@ -558,7 +543,7 @@ inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
   pids.parent_pid = parentpid; /* PID of ApplicationFrameHost or similar */
 
   /* Look for a child window with a different PID !*/
-  EnumChildWindows(parenthwnd, GetWindowProgName_subwins_EnumProc,
+  EnumChildWindows(parenthwnd, GetWindowProgNameSubwinsEnumProc,
                    reinterpret_cast<LPARAM>(&pids));
 
   /* if pids.child_pid it means we found a child window tht belongs to another
@@ -578,16 +563,14 @@ inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
  * if the first message timed out (freezing program).
  * Note that ICON_SMALL2 was introduced by Windows XP (I think) */
 inline HICON GetWindowIcon(HWND hwnd) {
-#define TIMEOUT 64
+  constexpr UINT TIMEOUT = 64;  // milliseconds
   HICON icon = nullptr;
   if (SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL, 0, SMTO_ABORTIFHUNG,
                          TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon))) {
     /* The message failed without timeout */
     if (icon) return icon; /* Sucess */
 
-    /* ICON_SMALL2 exists since Windows XP only */
-    if (OredredWinVer() >= 0x05010000 &&
-        SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG,
+    if (SendMessageTimeout(hwnd, WM_GETICON, ICON_SMALL2, 0, SMTO_ABORTIFHUNG,
                            TIMEOUT, reinterpret_cast<DWORD_PTR*>(&icon)) &&
         icon)
       return icon;
@@ -606,7 +589,6 @@ inline HICON GetWindowIcon(HWND hwnd) {
     return icon;
 
   return LoadIcon(nullptr, IDI_WINLOGO); /* Default to generic window icon */
-#undef TIMEOUT
 }
 /* Helper function to get the current system menu font.
  * We need to use the newer NONCLIENTMETRICS for Window 8+ dpi aware
@@ -705,7 +687,9 @@ inline int HitTestTimeoutL(HWND hwnd, LPARAM lParam) {
   }
   return static_cast<int>(area);
 }
-#define HitTestTimeout(hwnd, x, y) HitTestTimeoutL(hwnd, MAKELPARAM(x, y))
+inline int HitTestTimeout(HWND hwnd, int x, int y) {
+  return HitTestTimeoutL(hwnd, MAKELPARAM(x, y));
+}
 
 /* This is used to detect is the window was snapped normally outside of
  * AltDrag, in this case the window appears as normal

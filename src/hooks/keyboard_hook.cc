@@ -41,7 +41,8 @@ static void HotkeyUp() {
   state.alt = 0;
   state.alt1 = 0;
   if (state.action.ac && (conf.GrabWithAlt[0].ac || conf.GrabWithAlt[1].ac) &&
-      (MOUVEMENT(conf.GrabWithAlt[0]) || MOUVEMENT(conf.GrabWithAlt[1]))) {
+      (IsMovementAction(conf.GrabWithAlt[0]) ||
+       IsMovementAction(conf.GrabWithAlt[1]))) {
     FinishMovementAsync();
   }
 
@@ -94,7 +95,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (action.ac) {
           state.blockmouseup = 0;  // In case.
           GetCursorPos(&pt);
-          if (!init_movement_and_actions(pt, nullptr, action, vkey)) {
+          if (!InitMovementAndActions(pt, nullptr, action, vkey)) {
             UnhookMouse();
           }
           state.blockmouseup = 0;  // In case.
@@ -197,8 +198,8 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     } else if (conf.UniKeyHoldMenu && (fhwnd = GetForegroundWindow()) &&
                !IsFullScreenBL(fhwnd) &&
-               !blacklisted(fhwnd, BlkLst.Processes) &&
-               !blacklisted(fhwnd, BlkLst.Windows)) {
+               !IsBlacklisted(fhwnd, BlkLst.Processes) &&
+               !IsBlacklisted(fhwnd, BlkLst.Windows)) {
       // Key lists used below...
       static const UCHAR ctrlaltwinkeys[] = {VK_CONTROL, VK_MENU, VK_LWIN,
                                              VK_RWIN, 0};
