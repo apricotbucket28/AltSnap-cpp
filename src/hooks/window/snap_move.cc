@@ -274,10 +274,10 @@ void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
 static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
                                    int* topHeight, int* bottomHeight,
                                    const RECT* mon) {
-  *leftWidth = CLAMPW((mon->right - mon->left) * conf.AHoff / 100);
-  *rightWidth = CLAMPW((mon->right - mon->left) * (100 - conf.AHoff) / 100);
-  *topHeight = CLAMPH((mon->bottom - mon->top) * conf.AVoff / 100);
-  *bottomHeight = CLAMPH((mon->bottom - mon->top) * (100 - conf.AVoff) / 100);
+  *leftWidth = ClampWidth((mon->right - mon->left) * conf.AHoff / 100);
+  *rightWidth = ClampWidth((mon->right - mon->left) * (100 - conf.AHoff) / 100);
+  *topHeight = ClampHeight((mon->bottom - mon->top) * conf.AVoff / 100);
+  *bottomHeight = ClampHeight((mon->bottom - mon->top) * (100 - conf.AVoff) / 100);
 
   // do not go further is snapping state is toggled or shift is down.
   if (state.snap != conf.AutoSnap) return;
@@ -296,18 +296,18 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
     if (PtInRect(mon, tpt)) {
       // We have a snapped window in the monitor
       if (flag & SNLEFT) {
-        *leftWidth = CLAMPW(wnd->right - wnd->left);
-        *rightWidth = CLAMPW(mon->right - wnd->right);
+        *leftWidth = ClampWidth(wnd->right - wnd->left);
+        *rightWidth = ClampWidth(mon->right - wnd->right);
       } else if (flag & SNRIGHT) {
-        *rightWidth = CLAMPW(wnd->right - wnd->left);
-        *leftWidth = CLAMPW(wnd->left - mon->left);
+        *rightWidth = ClampWidth(wnd->right - wnd->left);
+        *leftWidth = ClampWidth(wnd->left - mon->left);
       }
       if (flag & SNTOP) {
-        *topHeight = CLAMPH(wnd->bottom - wnd->top);
-        *bottomHeight = CLAMPH(mon->bottom - wnd->bottom);
+        *topHeight = ClampHeight(wnd->bottom - wnd->top);
+        *bottomHeight = ClampHeight(mon->bottom - wnd->bottom);
       } else if (flag & SNBOTTOM) {
-        *bottomHeight = CLAMPH(wnd->bottom - wnd->top);
-        *topHeight = CLAMPH(wnd->top - mon->top);
+        *bottomHeight = ClampHeight(wnd->bottom - wnd->top);
+        *topHeight = ClampHeight(wnd->top - mon->top);
       }
     }
   }  // next i
@@ -425,8 +425,8 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
         }
         *posx = mon.left;
         *posy = mon.top;
-        *wndwidth = CLAMPW(mon.right - mon.left);
-        *wndheight = CLAMPH(mon.bottom - mon.top);
+        *wndwidth = ClampWidth(mon.right - mon.left);
+        *wndheight = ClampHeight(mon.bottom - mon.top);
         LastWin.maximize = 1;
         SetRestoreFlag(state.hwnd,
                        SNAPPED | SNCLEAR);  // To clear eventual snapping info
@@ -434,7 +434,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
 
       } else {
         restore = SNAPPED | SNTOP;
-        *wndwidth = CLAMPW(mon.right - mon.left);
+        *wndwidth = ClampWidth(mon.right - mon.left);
         *wndheight = topHeight;
         *posx =
             mon.left + (mon.right - mon.left) / 2 - *wndwidth / 2;  // Center
@@ -443,7 +443,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
     } else if (pt.y > pBottom) {
       // Pure Bottom
       restore = SNAPPED | SNBOTTOM;
-      *wndwidth = CLAMPW(mon.right - mon.left);
+      *wndwidth = ClampWidth(mon.right - mon.left);
       *wndheight = bottomHeight;
       *posx = mon.left + (mon.right - mon.left) / 2 - *wndwidth / 2;  // Center
       *posy = mon.bottom - *wndheight;
@@ -451,14 +451,14 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
       // Pure Left
       restore = SNAPPED | SNLEFT;
       *wndwidth = leftWidth;
-      *wndheight = CLAMPH(mon.bottom - mon.top);
+      *wndheight = ClampHeight(mon.bottom - mon.top);
       *posx = mon.left;
       *posy = mon.top + (mon.bottom - mon.top) / 2 - *wndheight / 2;  // Center
     } else if (pt.x > pRight) {
       // Pure Right
       restore = SNAPPED | SNRIGHT;
       *wndwidth = rightWidth;
-      *wndheight = CLAMPH(mon.bottom - mon.top);
+      *wndheight = ClampHeight(mon.bottom - mon.top);
       *posx = mon.right - *wndwidth;
       *posy = mon.top + (mon.bottom - mon.top) / 2 - *wndheight / 2;  // Center
     } else {
@@ -468,8 +468,8 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
 
   // Aero-move the window?
   if (restore & SNAPPED) {
-    *wndwidth = CLAMPW(*wndwidth);
-    *wndheight = CLAMPH(*wndheight);
+    *wndwidth = ClampWidth(*wndwidth);
+    *wndheight = ClampHeight(*wndheight);
 
     SetRestoreData(state.hwnd, state.origin.width, state.origin.height,
                    restore);
@@ -519,14 +519,14 @@ void AeroResizeSnap(POINT pt, int* posx, int* posy, int* wndwidth,
   if (state.resize.x == RZ_XCENTER && state.resize.y == RZ_TOP &&
       pt.y < state.origin.mon.top + conf.AeroThreshold) {
     restore = SNAPPED | SNMAXH;
-    *wndheight = CLAMPH(state.origin.mon.bottom - state.origin.mon.top +
+    *wndheight = ClampHeight(state.origin.mon.bottom - state.origin.mon.top +
                         borders.bottom + borders.top);
     *posy = state.origin.mon.top - borders.top;
   } else if (state.resize.x == RZ_LEFT && state.resize.y == RZ_YCENTER &&
              pt.x < state.origin.mon.left + conf.AeroThreshold) {
     restore = SNAPPED | SNMAXW;
-    *wndwidth = CLAMPW(state.origin.mon.right - state.origin.mon.left +
-                       borders.left + borders.right);
+    *wndwidth = ClampWidth(state.origin.mon.right - state.origin.mon.left +
+                           borders.left + borders.right);
     *posx = state.origin.mon.left - borders.left;
   }
   // Aero-move the window?

@@ -432,7 +432,7 @@ void ReadZoneOptions(const wchar_t* inipath) {
   ReadAllUchars(zones, Zones_uchars, std::size(Zones_uchars));
 
   if (g_config.UseZones & 1) {  // We are using Zones
-    g_config.MaxLayouts = CLAMP(0, g_config.MaxLayouts, 10);
+    g_config.MaxLayouts = std::clamp<UCHAR>(g_config.MaxLayouts, 0, 10);
     if (g_config.UseZones & 2) {  // Grid Mode
       ReadGrids(zones);
     } else {

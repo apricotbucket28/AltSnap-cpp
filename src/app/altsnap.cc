@@ -8,6 +8,8 @@
 
 #include "app/altsnap.h"
 
+#include <algorithm>
+
 #include "app/languages.h"
 #include "app/tray.h"
 #include "hooks/hooks.h"
@@ -70,8 +72,8 @@ int HookSystem() {
 
   // Reading some config options...
   UseZones = GetPrivateProfileInt(L"Zones", L"UseZones", 0, inipath);
-  SnapGap = CLAMP(
-      -128, GetPrivateProfileInt(L"Advanced", L"SnapGap", 0, inipath), 127);
+  SnapGap = std::clamp<char>(
+      GetPrivateProfileInt(L"Advanced", L"SnapGap", 0, inipath), -128, 127);
   ACMenuItems = GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1, inipath);
   UpdateTray();
   return 0;
@@ -526,7 +528,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
         wchar_t numstr[3] = {layout[2], layout[3], L'\0'};
         if (!IsDigit(numstr[1])) numstr[1] = L'\0';
         // MessageBox(NULL, NULL, NULL, 0);
-        int layoutnumber = CLAMP(0, ParseInt(numstr) - 1, 9);
+        int layoutnumber = std::clamp(ParseInt(numstr) - 1, 0, 9);
         PostMessage(previnst, WM_COMMAND, CMD_SNAPLAYOUT + layoutnumber, 0);
         return 0;
       }

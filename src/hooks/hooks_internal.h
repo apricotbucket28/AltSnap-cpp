@@ -321,17 +321,17 @@ inline BOOL GetWindowRectL(HWND hwnd, RECT* rect) {
 }
 
 // To clamp width and height of windows
-[[nodiscard]] inline int CLAMPW(int width) {
-  return CLAMP(state.mmi.Min.x, width, state.mmi.Max.x);
+[[nodiscard]] inline int ClampWidth(int width) {
+  return std::clamp<int>(width, state.mmi.Min.x, state.mmi.Max.x);
 }
-[[nodiscard]] inline int CLAMPH(int height) {
-  return CLAMP(state.mmi.Min.y, height, state.mmi.Max.y);
+[[nodiscard]] inline int ClampHeight(int height) {
+  return std::clamp<int>(height, state.mmi.Min.y, state.mmi.Max.y);
 }
 [[nodiscard]] inline int CLAMPWL(int width, const rgMMI_t* mmi) {
-  return CLAMP(mmi->Min.x, width, mmi->Max.x);
+  return std::clamp<int>(width, mmi->Min.x, mmi->Max.x);
 }
 [[nodiscard]] inline int CLAMPHL(int height, const rgMMI_t* mmi) {
-  return CLAMP(mmi->Min.y, height, mmi->Max.y);
+  return std::clamp<int>(height, mmi->Min.y, mmi->Max.y);
 }
 
 [[nodiscard]] inline int ISCLAMPEDWL(int x, const rgMMI_t* mmi) {

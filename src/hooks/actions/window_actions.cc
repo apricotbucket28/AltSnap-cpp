@@ -242,10 +242,8 @@ int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
   return 1;
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// Windows 2000+ Only
 int ActionTransparency(HWND hwnd, short delta) {
-  if (IsBlacklisted(hwnd, BlkLst.Windows)) return 0;  // Spetial
+  if (IsBlacklisted(hwnd, BlkLst.Windows)) return 0;
   if (state.action.ac && IsMovementAction(state.action))
     SetWindowTrans(reinterpret_cast<HWND>(-1));
 
@@ -259,7 +257,7 @@ int ActionTransparency(HWND hwnd, short delta) {
     alpha = old_alpha;  // If possible start from the current aplha.
   }
 
-  alpha = CLAMP(conf.MinAlpha, alpha + alpha_delta, 255);  // Limit alpha
+  alpha = std::clamp(alpha + alpha_delta, static_cast<int>(conf.MinAlpha), 255);
 
   SetWindowAlpha(hwnd, alpha);
   return 1;
@@ -282,7 +280,7 @@ void ActionTransparency2(HWND hwnd, action_t action) {
   else if (action.fl == ACFL_TOGGLE)
     alpha = old_alpha == 255 ? action.wp : 255;
 
-  alpha = CLAMP(conf.MinAlpha, alpha, 255);  // Limit alpha
+  alpha = std::clamp(alpha, static_cast<int>(conf.MinAlpha), 255);
 
   SetWindowAlpha(hwnd, static_cast<BYTE>(alpha));
 }

@@ -367,8 +367,8 @@ void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
 
   SetRestoreData(hwnd, state.origin.width, state.origin.height,
                  SNAPPED | SNZONE);
-  MoveWindowAsync(hwnd, fr.left, fr.top, CLAMPW(fr.right - fr.left),
-                  CLAMPH(fr.bottom - fr.top));
+  MoveWindowAsync(hwnd, fr.left, fr.top, ClampWidth(fr.right - fr.left),
+                  ClampHeight(fr.bottom - fr.top));
 }
 // Sets urc as the union of all the rcs array or RECT, of length N
 static void UnionMultiRect(RECT* urc, const RECT* rcs, unsigned N) {
@@ -382,7 +382,7 @@ static void UnionMultiRect(RECT* urc, const RECT* rcs, unsigned N) {
   }
 }
 [[nodiscard]] DWORD GetLayoutRez(int laynum) {
-  laynum = CLAMP(0, laynum, std::size(Zones) - 1);
+  laynum = std::clamp<int>(laynum, 0, std::size(Zones) - 1);
   if (conf.UseZones & 2) {
     // In Grid mode we return the grid dimentions!
     return Grids[laynum];
@@ -611,7 +611,7 @@ void InitCurrentLayout(unsigned layout) {
 void SetLayoutNumber(WPARAM number) {
   int was_visible = IsWindowVisible(g_zphwnd);
   ShowSnapLayoutPreview(0);
-  g_layout_number = CLAMP(0, number, 9);
+  g_layout_number = std::clamp<unsigned int>(number, 0, 9);
   ZonesPrevResetRegion();  // re-calculate
   ShowSnapLayoutPreview(was_visible);
 

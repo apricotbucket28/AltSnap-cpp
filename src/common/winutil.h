@@ -738,11 +738,6 @@ inline void GetMinMaxInfoF(HWND hwnd, POINT* Min, POINT* Max, UCHAR flags) {
   return (a.x == b.x && a.y == b.y);
 }
 
-/* Limit x between l and h */
-[[nodiscard]] inline int CLAMP(int l, int x, int h) {
-  return (x < l) ? l : ((x > h) ? h : x);
-}
-
 /* Says if a rect is inside another one */
 [[nodiscard]] inline BOOL RectInRect(const RECT* big, const RECT* wnd) {
   return wnd->left >= big->left && wnd->top >= big->top &&
@@ -851,8 +846,8 @@ inline void CenterRectInRect(RECT* __restrict__ wnd, const RECT* mon) {
 }
 
 inline void ClampPointInRect(const RECT* rc, POINT* __restrict__ pt) {
-  pt->x = CLAMP(rc->left, pt->x, rc->right - 1);
-  pt->y = CLAMP(rc->top, pt->y, rc->bottom - 1);
+  pt->x = std::clamp(pt->x, rc->left, rc->right - 1);
+  pt->y = std::clamp(pt->y, rc->top, rc->bottom - 1);
 }
 
 /* DownlevelLCIDToLocaleName in NLSDL.DLL */

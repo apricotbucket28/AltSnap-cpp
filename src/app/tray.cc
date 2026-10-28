@@ -8,6 +8,8 @@
 
 #include "app/tray.h"
 
+#include <algorithm>
+
 #include "app/altsnap.h"
 #include "app/languages.h"
 #include "hooks/hooks.h"
@@ -79,8 +81,8 @@ int InitTray() {
       GetPrivateProfileInt(L"Input", L"ScrollLockState", 0, inipath);
   LayoutNumber = GetPrivateProfileInt(L"Zones", L"LayoutNumber", 0, inipath);
   MaxLayouts = GetPrivateProfileInt(L"Zones", L"MaxLayouts", 0, inipath);
-  MaxLayouts = CLAMP(0, MaxLayouts, 10);
-  LayoutNumber = CLAMP(0, LayoutNumber, std::max(0, MaxLayouts - 1));
+  MaxLayouts = std::clamp(MaxLayouts, 0, 10);
+  LayoutNumber = std::clamp(LayoutNumber, 0, std::max(0, MaxLayouts - 1));
 
   LoadAllIcons();
 

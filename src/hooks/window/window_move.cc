@@ -111,15 +111,15 @@ int ResizeTouchingWindows(LPVOID lwptr) {
     } else if (PureRight(flag)) {
       POINT Min, Max;
       GetMinMaxInfo(hwnd, &Min, &Max);
-      nwnd->left =
-          CLAMP(nwnd->right - Max.x, posx + width, nwnd->right - Min.x);
+      nwnd->left = std::clamp<LONG>(posx + width, nwnd->right - Max.x,
+                                    nwnd->right - Min.x);
     } else if (PureTop(flag)) {
       nwnd->bottom = posy;
     } else if (PureBottom(flag)) {
       POINT Min, Max;
       GetMinMaxInfo(hwnd, &Min, &Max);
-      nwnd->top =
-          CLAMP(nwnd->bottom - Max.x, posy + height, nwnd->bottom - Min.x);
+      nwnd->top = std::clamp<LONG>(posy + height, nwnd->bottom - Max.x,
+                                   nwnd->bottom - Min.x);
     } else {
       continue;
     }

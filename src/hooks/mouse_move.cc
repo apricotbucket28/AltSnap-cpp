@@ -100,10 +100,10 @@ static void PlanCenteredResize(POINT pt, const RECT& wnd, TargetRect& target) {
 
   // Keep the window perfectly centered.
   // even when going out of min or max sizes
-  const int width = CLAMPW(target.width);
+  const int width = ClampWidth(target.width);
   target.x += (target.width - width) / 2;
   target.width = width;
-  const int height = CLAMPH(target.height);
+  const int height = ClampHeight(target.height);
   target.y += (target.height - height) / 2;
   target.height = height;
 
@@ -115,7 +115,7 @@ static void PlanCenteredResize(POINT pt, const RECT& wnd, TargetRect& target) {
 static void PlanEdgeResize(POINT pt, const RECT& wnd, TargetRect& target) {
   if (state.resize.y == RZ_TOP) {
     target.height =
-        CLAMPH((wnd.bottom - pt.y + state.offset.y) - state.mdipt.y);
+        ClampHeight((wnd.bottom - pt.y + state.offset.y) - state.mdipt.y);
     target.y = state.origin.bottom - target.height;
   } else if (state.resize.y == RZ_YCENTER) {
     target.y = wnd.top - state.mdipt.y;
@@ -125,7 +125,8 @@ static void PlanEdgeResize(POINT pt, const RECT& wnd, TargetRect& target) {
     target.height = pt.y - target.y + state.offset.y;
   }
   if (state.resize.x == RZ_LEFT) {
-    target.width = CLAMPW((wnd.right - pt.x + state.offset.x) - state.mdipt.x);
+    target.width =
+        ClampWidth((wnd.right - pt.x + state.offset.x) - state.mdipt.x);
     target.x = state.origin.right - target.width;
   } else if (state.resize.x == RZ_XCENTER) {
     target.x = wnd.left - state.mdipt.x;
@@ -134,8 +135,8 @@ static void PlanEdgeResize(POINT pt, const RECT& wnd, TargetRect& target) {
     target.x = wnd.left - state.mdipt.x;
     target.width = pt.x - target.x + state.offset.x;
   }
-  target.width = CLAMPW(target.width);
-  target.height = CLAMPH(target.height);
+  target.width = ClampWidth(target.width);
+  target.height = ClampHeight(target.height);
 
   // Check if the window will snap anywhere
   ResizeSnap(&target.x, &target.y, &target.width, &target.height,
@@ -192,7 +193,9 @@ static void ApplyTarget(const TargetRect& target, RECT& wnd) {
 }
 
 void MouseMoveNow(POINT pt) {
-  if (g_InFinishMovement) return;  // Skip...
+  if (g_InFinishMovement) {  // skip
+    return;
+  }
 
   // Check if window still exists
   if (!IsWindow(state.hwnd)) {
@@ -202,10 +205,10 @@ void MouseMoveNow(POINT pt) {
   }
 
   // Ensure the point is in its clip rectangle (Windows bug)
-  RECT clip;
+  RECT clip = {};
   if (GetClipCursor(&clip)) {
-    pt.x = CLAMP(clip.left, pt.x, clip.right - 1);
-    pt.y = CLAMP(clip.top, pt.y, clip.bottom - 1);
+    pt.x = std::clamp(pt.x, clip.left, clip.right - 1);
+    pt.y = std::clamp(pt.y, clip.top, clip.bottom - 1);
   }
 
   if (conf.UseCursor)  // Draw the invisible cursor window
@@ -213,7 +216,7 @@ void MouseMoveNow(POINT pt) {
 
   if (state.moving == CURSOR_ONLY) {
     if (state.action.ac == AC_RESIZE) {
-      RECT rc;
+      RECT rc = {};
       GetWindowRect(state.hwnd, &rc);
       SetEdgeAndOffset(&rc, pt);
       UpdateCursor(pt);
