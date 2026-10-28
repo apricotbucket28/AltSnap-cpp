@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -149,18 +150,6 @@ inline BOOL PathRemoveFileSpecL(wchar_t* p) {
   p[i] = '\0';
 
   return TRUE;
-}
-
-/* Removes the path and keeps only the file name */
-inline void PathStripPathL(wchar_t* p) {
-  int i = 0, j = 0;
-  if (!p) return;
-
-  while (p[++i] != '\0');
-  while (i >= 0 && p[i] != '\\') i--;
-  i++;
-  for (j = 0; p[i + j] != '\0'; j++) p[j] = p[i + j];
-  p[j] = '\0';
 }
 
 // Sleeps for `duration_ms`, temporarily raising the system timer resolution
@@ -470,58 +459,92 @@ inline LONG NtResumeProcess(HANDLE process) {
   return CallNtProcessFunction("NtResumeProcess", process);
 }
 
-/* PSAPI.DLL */
+struct WindowProcessInfo {
+  DWORD pid;
+  std::wstring executable_name;
+};
 
-inline DWORD GetWindowProgNameFromPid(DWORD pid, wchar_t* title,
-                                      size_t title_len) {
-  DWORD ret = 0;
-  HANDLE proc =
-      OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+class UniqueProcessHandle {
+ public:
+  explicit UniqueProcessHandle(HANDLE handle) noexcept : handle_(handle) {}
 
-  if (proc)
-    ret = GetModuleFileNameEx(proc, nullptr, title, title_len);
-  else
-    proc = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-  if (!proc) return 0;
-
-  /* Try other function */
-  if (!ret) ret = GetProcessImageFileName(proc, title, title_len);
-
-  CloseHandle(proc);
-
-  return ret;
-}
-
-inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
-                                        wchar_t* title, size_t title_len);
-inline DWORD GetWindowProgName(HWND hwnd, wchar_t* title, size_t title_len) {
-  DWORD pid = 0;
-  if (!GetWindowThreadProcessId(hwnd, &pid) || !pid ||
-      !GetWindowProgNameFromPid(pid, title, title_len))
-    return 0;
-
-  PathStripPathL(title);
-
-  if (pid && !lstrcmpi(title, L"ApplicationFrameHost.exe")) {
-    DWORD pid2 = GetWindowProgNameSubWindow(pid, hwnd, title, title_len);
-    if (pid2) {
-      PathStripPathL(title);
-      return pid2;
+  ~UniqueProcessHandle() {
+    if (handle_ && handle_ != INVALID_HANDLE_VALUE) {
+      CloseHandle(handle_);
     }
-    /* If there is no child to ApplicationFrameHost.exe, */
-    /* Then we keep going with that name */
   }
 
-  return pid;
+  UniqueProcessHandle(const UniqueProcessHandle&) = delete;
+  UniqueProcessHandle& operator=(const UniqueProcessHandle&) = delete;
+
+  [[nodiscard]] HANDLE get() const noexcept { return handle_; }
+
+ private:
+  HANDLE handle_;
+};
+
+// Upstream: PathStripPathL
+[[nodiscard]] inline std::wstring_view FileNameFromPath(
+    std::wstring_view path) noexcept {
+  const auto separator = path.find_last_of('\\');
+  return separator == std::wstring_view::npos ? path
+                                              : path.substr(separator + 1);
 }
 
-struct pid_pair_struct {
+// Replacement for `lstrcmpi`
+[[nodiscard]] inline bool EqualsIgnoreCase(std::wstring_view lhs,
+                                           std::wstring_view rhs) {
+  if (lhs.size() != rhs.size() ||
+      lhs.size() > static_cast<size_t>((std::numeric_limits<int>::max()))) {
+    return false;
+  }
+  return CompareStringOrdinal(lhs.data(), static_cast<int>(lhs.size()),
+                              rhs.data(), static_cast<int>(rhs.size()),
+                              TRUE) == CSTR_EQUAL;
+}
+
+// Upstream: GetWindowProgNameFromPid
+[[nodiscard]] inline std::optional<std::wstring> GetExecutablePathFromPid(
+    DWORD pid) {
+  if (pid == 0) {
+    return std::nullopt;
+  }
+
+  HANDLE raw_process =
+      OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+  if (!raw_process) {
+    raw_process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+  }
+
+  UniqueProcessHandle process(raw_process);
+  if (!process.get()) {
+    return std::nullopt;
+  }
+
+  std::array<wchar_t, MAX_PATH> buffer{};
+
+  DWORD length =
+      GetModuleFileNameEx(process.get(), nullptr, buffer.data(), buffer.size());
+  if (length == 0 || length >= buffer.size()) {
+    length =
+        GetProcessImageFileName(process.get(), buffer.data(), buffer.size());
+  }
+
+  if (length == 0 || length >= buffer.size()) {
+    return std::nullopt;
+  }
+
+  return std::wstring(buffer.data(), length);
+}
+
+struct PidPair {
   DWORD parent_pid;
   DWORD child_pid;
 };
+
 // Upstream: GetWindowProgName_subwins_EnumProc
 inline BOOL CALLBACK GetWindowProgNameSubwinsEnumProc(HWND hwnd, LPARAM lp) {
-  auto* pids = reinterpret_cast<struct pid_pair_struct*>(lp);
+  auto* pids = reinterpret_cast<struct PidPair*>(lp);
   DWORD hwnd_pid = 0;
   if (GetWindowThreadProcessId(hwnd, &hwnd_pid) && hwnd_pid &&
       hwnd_pid != pids->parent_pid) {
@@ -532,26 +555,64 @@ inline BOOL CALLBACK GetWindowProgNameSubwinsEnumProc(HWND hwnd, LPARAM lp) {
   return TRUE; /* Next window */
 }
 
-/* This is for UWP applications that are inside an ApplicationFrameHost.exe
- * window In this case it is possible to look for a child window that has a
- * different pid This is crazy I know but it seems to work. */
-inline DWORD GetWindowProgNameSubWindow(DWORD parentpid, HWND parenthwnd,
-                                        wchar_t* title, size_t title_len) {
-  struct pid_pair_struct pids = {0, 0};
-  pids.parent_pid = parentpid; /* PID of ApplicationFrameHost or similar */
+// UWP applications hosted by ApplicationFrameHost.exe can have child windows
+// belonging to a different process. Find that process so we can identify the
+// actual application rather than its host.
+// Upstream: GetWindowProgNameSubWindow
+[[nodiscard]] inline std::optional<WindowProcessInfo> GetHostedProcessInfo(
+    DWORD parent_pid, HWND parent_hwnd) {
+  PidPair pids{
+      .parent_pid = parent_pid,  // PID of ApplicationFrameHost or similar.
+  };
 
-  /* Look for a child window with a different PID !*/
-  EnumChildWindows(parenthwnd, GetWindowProgNameSubwinsEnumProc,
+  // Look for a child window with a PID different from its parent.
+  EnumChildWindows(parent_hwnd, GetWindowProgNameSubwinsEnumProc,
                    reinterpret_cast<LPARAM>(&pids));
 
-  /* if pids.child_pid it means we found a child window tht belongs to another
-   * process */
-  /* hosted by ApplicationFrameHost.exe */
-  if (pids.child_pid &&
-      GetWindowProgNameFromPid(pids.child_pid, title, title_len))
-    return pids.child_pid; /* return relevent pid */
+  // If child_pid is set, we found a child window belonging to another
+  // process hosted by ApplicationFrameHost.exe.
+  if (pids.child_pid == 0) {
+    return std::nullopt;
+  }
 
-  return 0;
+  auto path = GetExecutablePathFromPid(pids.child_pid);
+  if (!path) {
+    return std::nullopt;
+  }
+
+  return WindowProcessInfo{
+      .pid = pids.child_pid,
+      .executable_name = std::wstring(FileNameFromPath(*path)),
+  };
+}
+
+// Upstream: GetWindowProgName
+[[nodiscard]] inline std::optional<WindowProcessInfo> GetWindowProcessInfo(
+    HWND hwnd) {
+  DWORD pid = 0;
+  if (!GetWindowThreadProcessId(hwnd, &pid) || !pid) {
+    return std::nullopt;
+  }
+
+  auto path = GetExecutablePathFromPid(pid);
+  if (!path) {
+    return std::nullopt;
+  }
+
+  const auto filename = FileNameFromPath(*path);
+
+  if (EqualsIgnoreCase(filename, L"ApplicationFrameHost.exe")) {
+    if (auto child = GetHostedProcessInfo(pid, hwnd)) {
+      return child;
+    }
+    // If there is no child window belonging to another process,
+    // keep ApplicationFrameHost.exe as the process name.
+  }
+
+  return WindowProcessInfo{
+      .pid = pid,
+      .executable_name = std::wstring(filename),
+  };
 }
 
 /* Function to get the best possible small icon associated with a window

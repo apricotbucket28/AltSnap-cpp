@@ -343,7 +343,7 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   assert(g_keyhook == nullptr);  // We cannot Load twice again...
 
   // Reset stuff...
-  ZeroObject(state);
+  state = {};
   ZeroObject(LastWin);
 
   ReadConfig(inipath);

@@ -177,7 +177,7 @@ struct HookState {
   action_t action;
   resizexy_t resize;
   HWND cached_hwnd_blacklist;
-  wchar_t exename[MAX_PATH];
+  std::wstring exename;
   wchar_t title[256];
   wchar_t classname[256];
 };

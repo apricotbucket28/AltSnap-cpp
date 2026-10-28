@@ -27,17 +27,21 @@ namespace altsnap::hooks {
 int ActionPause(HWND hwnd, UCHAR pause) {
   //    LOGA("Entering pause/resume %d", (int)pause);
   if (!IsBlacklisted(hwnd, BlkLst.Pause)) {
-    wchar_t tmpname[256];
-    DWORD pid = GetWindowProgName(hwnd, tmpname, std::size(tmpname));
+    const auto process_info = GetWindowProcessInfo(hwnd);
+    if (!process_info) {
+      return 0;
+    }
 
     constexpr DWORD kAccessLevel1 =
         STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xfff;
     constexpr DWORD kAccessLevel2 =
         STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xffff;
-    HANDLE ProcessHandle = OpenProcess(kAccessLevel2, FALSE, pid);
-    if (!ProcessHandle) ProcessHandle = OpenProcess(kAccessLevel1, FALSE, pid);
+    HANDLE ProcessHandle = OpenProcess(kAccessLevel2, FALSE, process_info->pid);
     if (!ProcessHandle)
-      ProcessHandle = OpenProcess(PROCESS_SUSPEND_RESUME, FALSE, pid);
+      ProcessHandle = OpenProcess(kAccessLevel1, FALSE, process_info->pid);
+    if (!ProcessHandle)
+      ProcessHandle =
+          OpenProcess(PROCESS_SUSPEND_RESUME, FALSE, process_info->pid);
 
     if (ProcessHandle) {
       //            LOGA("Going to pause/resume %d", (int)pause);
@@ -61,13 +65,14 @@ static DWORD WINAPI ActionKillThread(LPVOID hwnd) {
     // taskkill.exe /F /FI "status eq NOT RESPONDING" /FI "IMAGENAME ne
     // AltSnap.exe" /FI "IMAGENAME ne dwm.exe"
   } else {
-    wchar_t tmpname[256];
-    DWORD pid =
-        GetWindowProgName(static_cast<HWND>(hwnd), tmpname, std::size(tmpname));
+    const auto process_info = GetWindowProcessInfo(static_cast<HWND>(hwnd));
+    if (!process_info) {
+      return 0;
+    }
     // LOG("pid=%lu", pid);
 
     // Open the process
-    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, process_info->pid);
     // LOG("proc=%lx", (DWORD)proc);
     if (proc) {
       TerminateProcess(proc, 1);

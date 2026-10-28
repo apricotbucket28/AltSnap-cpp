@@ -141,8 +141,9 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       AppendString(txt, std::size(txt), classname);
       SetDlgItemText(page, IDC_NEWRULE, txt);
 
-      if (GetWindowProgName(window, txt, std::size(txt))) {
-        SetDlgItemText(page, IDC_NEWPROGNAME, txt);
+      if (auto process_info = GetWindowProcessInfo(window)) {
+        SetDlgItemText(page, IDC_NEWPROGNAME,
+                       process_info->executable_name.c_str());
       }
       SetDlgItemText(page, IDC_GWLSTYLE,
                      LPTR2Hex(txt, GetWindowLongPtr(window, GWL_STYLE)));

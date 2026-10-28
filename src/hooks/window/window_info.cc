@@ -5,21 +5,25 @@
 #include <array>
 #include <vector>
 
+#include "common/winutil.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/window/snap.h"
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 // Upstream: blacklist_cache_state
 static void CacheBlacklistState() {
   state.cached_hwnd_blacklist = state.hwnd;
-  state.title[0] = state.classname[0] = state.exename[0] = L'\0';
-  GetWindowProgName(state.hwnd, state.exename, std::size(state.exename));
+  state.title[0] = state.classname[0] = L'\0';
+  state.exename.clear();
+  if (auto process_info = GetWindowProcessInfo(state.hwnd)) {
+    state.exename = process_info->executable_name;
+  }
   GetWindowText(state.hwnd, state.title, std::size(state.title));
   GetClassName(state.hwnd, state.classname, std::size(state.classname));
 }
+
 // Upstream: blacklisted
 [[nodiscard]] bool IsBlacklisted(HWND hwnd, const Blacklist& list) {
   // Null hwnd or empty list
@@ -28,19 +32,21 @@ static void CacheBlacklistState() {
   if (hwnd == state.hwnd) {
     // Magage a simple cache only for the state window
     if (state.hwnd != state.cached_hwnd_blacklist) CacheBlacklistState();
-    return list.Contains(state.exename, state.title, state.classname);
+    return list.Contains(state.exename.c_str(), state.title, state.classname);
   }
 
   wchar_t title[256], classname[256];
-  wchar_t exename[MAX_PATH];
-  title[0] = classname[0] = exename[0] = '\0';
+  std::wstring exename;
+  title[0] = classname[0] = '\0';
   GetWindowText(hwnd, title, std::size(title));
   GetClassName(hwnd, classname, std::size(classname));
-  GetWindowProgName(hwnd, exename, std::size(exename));
+  if (auto process_info = GetWindowProcessInfo(hwnd)) {
+    exename = process_info->executable_name;
+  }
 
   // LOGA( "hwnd=%X (%ls:%ls|%ls) blacklist = %X, thread=%d", (UINT)hwnd,
   // exename, title, classname, (UINT)list, (int)GetCurrentThreadId());
-  return list.Contains(exename, title, classname);
+  return list.Contains(exename.c_str(), title, classname);
 }
 
 // Upstream: isClassName
@@ -49,7 +55,7 @@ int IsClassName(HWND hwnd, const wchar_t* str) {
   return GetClassName(hwnd, classname, std::size(classname)) &&
          !lstrcmp(classname, str);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // The second bit (&2) will always correspond to the WS_THICKFRAME flag
 [[nodiscard]] int IsResizable(HWND hwnd) {
   int thickf = !!(GetWindowLongPtr(hwnd, GWL_STYLE) & WS_THICKFRAME);
