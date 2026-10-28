@@ -58,7 +58,7 @@ function(altsnap_add_rc target rcfile)
 endfunction()
 
 set(ALTSNAP_CXX_FLAGS
-    -DUNICODE -D_UNICODE
+    -DUNICODE -D_UNICODE -DNOMINMAX
     # Minimum supported OS: Windows 10 version 1607 (NTDDI_WIN10_RS1).
     -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000002
     -fno-rtti
