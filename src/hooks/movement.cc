@@ -51,37 +51,126 @@ void StopSpeedMes() {
 /////////////////////////////////////////////////////////////////////////////
 // If we pass buttonX BT_PROBE it will tell us if we pass the blacklist.
 // Upstream: init_movement_and_actions
-int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
-  // RGTICTAC tt; RGTic(&tt);
-  LOG("\ninit_movement_and_actions(pt=%d,%d, hwnd=%x, action=%d, button=%d)",
-      static_cast<int>(pt.x), static_cast<int>(pt.y),
-      static_cast<UINT>(reinterpret_cast<INT_PTR>(hwnd)),
-      static_cast<int>(action.ac), buttonX);
-  RECT wnd;
-  state.prevpt = pt;  // in case
-  int button = LOWORD(buttonX);
-  UCHAR probemode = HIWORD(buttonX);
+namespace {
 
-  // Make sure nothing is in the way
-  HideCursor();
-  state.sclickhwnd = nullptr;
-  KillAltSnapMenu();
-  // LOGA("Nothing in the ways in %d us", (int)RGTac(&tt));
-
-  // Get window from point or use the given one.
-  // Get MDI chlild hwnd or root hwnd if not MDI!
+// The window to act on: the given one, or the one under the cursor (the MDI
+// child if it is inside an MDI client). Returns false if there is none.
+bool PickTargetWindow(POINT pt, HWND hwnd) {
   state.mdiclient = nullptr;
   state.hwnd = hwnd ? hwnd : MDIorNOT(WindowFromPoint(pt), &state.mdiclient);
-
-  // LOGA("MDI info got %d us", (int)RGTac(&tt));
   if (!state.hwnd || (g_InMouseMove && state.hwnd == LastWin.hwnd) ||
       !IsWindow(state.hwnd)) {
     LOG("Init failed: state.hwnd=%x, LastWin.hwnd=%x, g_InMouseMove = %d",
         static_cast<UINT>(reinterpret_cast<INT_PTR>(state.hwnd)),
         static_cast<UINT>(reinterpret_cast<INT_PTR>(LastWin.hwnd)),
         static_cast<int>(g_InMouseMove));
-    return 0;
+    return false;
   }
+  return true;
+}
+
+// Whether AltSnap must leave this window alone: blacklisted, our own pin
+// window, a window we cannot query, or a maximized/fullscreen one the user
+// excluded. Also records whether the window is maximized or fullscreen.
+// The checks are ordered: IsBlacklisted() caches the window's names first.
+bool IsExcludedWindow(int button, MONITORINFO& mi, WINDOWPLACEMENT& wndpl,
+                      RECT& wnd) {
+  if (IsBlacklisted(state.hwnd, BlkLst.Processes)) return true;
+  if (!lstrcmp(state.classname, APP_NAME L"-Pin")) return true;
+  // The Windows blacklist does not apply in the titlebar, nor to the wheel.
+  if (IsBlacklisted(state.hwnd, BlkLst.Windows) && !state.hittest &&
+      button < BT_WHEELD) {
+    return true;
+  }
+  if (GetWindowPlacement(state.hwnd, &wndpl) == 0) return true;
+  if (GetWindowRect(state.hwnd, &wnd) == 0) return true;
+  state.origin.maximized = IsZoomed(state.hwnd);
+  if (state.origin.maximized && conf.BLMaximized) return true;
+  state.origin.fullscreen = IsFullscreenF(state.hwnd, &wnd, &mi.rcMonitor);
+  return state.origin.fullscreen && !conf.FullScreen;
+}
+
+// Starts a move or a resize of state.hwnd. Returns what the mouse hook must do:
+// 1 = block the mouse button, 0 = pass it on.
+int StartMoveOrResize(POINT pt, action_t action, RECT& wnd, int button) {
+  state.sactiondone = action;
+  if (GetProp(state.hwnd, kPropMoveOnOff)) {
+    state.action = k_action_none;
+    return 0;  // Movement was disabled for this window.
+  }
+  // AutoFocus on movement/resize.
+  if (conf.AutoFocus || IsCtrlDown()) {
+    SetForegroundWindowL(state.hwnd);
+  }
+  if (conf.DragSendsAltCtrl && !(GetKeyState(VK_MENU) & 0x8000) &&
+      !(GetKeyState(VK_SHIFT) & 0x8000)) {
+    // This will pop down menu and stuff
+    // In case autofocus did not do it.
+    PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
+                      reinterpret_cast<WPARAM>(SendAltCtrlAlt), 0);
+  }
+
+  // Set action state.
+  state.action = action;  // MOVE OR RESIZE
+  state.moving = 0;
+  // Whether or not we will use the zones
+  state.usezones = ((conf.UseZones & 9) == 9) ^ state.shift;
+
+  state.enumed = 0;  // Reset enum stuff
+  StartSpeedMes();   // Speed timer
+
+  int ret;
+  if (state.action.ac == AC_MOVE) {
+    ret = ActionMove(pt, button);
+  } else {
+    ret = ActionResize(pt, &wnd, button);
+  }
+  if (ret == 1) return 1;  // block mouse down!
+  if (ret == 0) return 0;  // Next hook!
+  // else ret == -1: the action started.
+  UpdateCursor(pt);
+  SetWindowTrans(state.hwnd);
+
+  LastWin.start = 1;
+  return -1;
+}
+
+// Restores the size a snapped window had before it was snapped.
+// Returns 0 to pass the click on, 1 to block it.
+int RestoreSnappedWindow(POINT pt, int button) {
+  int rwidth = 0, rheight = 0;
+  if (GetRestoreData(state.hwnd, &rwidth, &rheight) & SNAPPED) {
+    ClearRestoreData(state.hwnd);
+    RECT rc;
+    GetWindowRect(state.hwnd, &rc);
+    const int posx =
+        DoubleClamp(pt.x, rc.left, rc.right, rwidth) - state.mdipt.x;
+    const int posy =
+        DoubleClamp(pt.y, rc.top, rc.bottom, rheight) - state.mdipt.y;
+    MoveWindowAsync(state.hwnd, posx, posy, rwidth, rheight);
+  }
+  if (state.hittest == 2 && button == BT_LMB) return 0;
+  state.blockmouseup = 1;
+  return 1;
+}
+
+}  // namespace
+
+int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
+  LOG("\ninit_movement_and_actions(pt=%d,%d, hwnd=%x, action=%d, button=%d)",
+      static_cast<int>(pt.x), static_cast<int>(pt.y),
+      static_cast<UINT>(reinterpret_cast<INT_PTR>(hwnd)),
+      static_cast<int>(action.ac), buttonX);
+  state.prevpt = pt;  // in case
+  const int button = LOWORD(buttonX);
+  const UCHAR probemode = HIWORD(buttonX);  // (truncated, as before)
+
+  // Make sure nothing is in the way
+  HideCursor();
+  state.sclickhwnd = nullptr;
+  KillAltSnapMenu();
+
+  if (!PickTargetWindow(pt, hwnd)) return 0;
 
   // Get monitor info
   HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -89,7 +178,6 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
   mi.cbSize = sizeof(mi);
   GetMonitorInfo(monitor, &mi);
   CopyRect(&state.origin.mon, &mi.rcWork);
-  // LOGA("MonitorInfo got! in %d us", (int)RGTac(&tt));
 
   // state.mdipt HAS to be set to Zero for ClientToScreen adds the offset
   state.mdipt.x = state.mdipt.y = 0;
@@ -97,38 +185,17 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
     GetMDInfo(&state.mdipt, &mi.rcMonitor);
     CopyRect(&state.origin.mon, &mi.rcMonitor);
   }
-  // LOGA("MDI info got! in %d us", (int)RGTac(&tt));
 
   WINDOWPLACEMENT wndpl;
   wndpl.length = sizeof(wndpl);
-  // Return if window is IsBlacklisted,
-  // if we can't get information about it,
-  // or if the window is fullscreen.
-  // state.hwnd == GetDesktopWindow()
-  // state.hwnd == GetShellWindow()
-  if (IsBlacklisted(state.hwnd, BlkLst.Processes) ||
-      !lstrcmp(state.classname, APP_NAME L"-Pin") ||
-      (IsBlacklisted(state.hwnd, BlkLst.Windows) && !state.hittest &&
-       (button <
-        BT_WHEELD /* || BT_HWHEELU > button*/))  // does not apply in titlebar,
-                                                 // nor for the wheel action...
-      || GetWindowPlacement(state.hwnd, &wndpl) == 0 ||
-      GetWindowRect(state.hwnd, &wnd) == 0 ||
-      ((state.origin.maximized = IsZoomed(state.hwnd)) && conf.BLMaximized) ||
-      ((state.origin.fullscreen =
-            IsFullscreenF(state.hwnd, &wnd, &mi.rcMonitor)) &&
-       !conf.FullScreen)) {
-    return 0;
-  }
+  RECT wnd;
+  if (IsExcludedWindow(button, mi, wndpl, wnd)) return 0;
 
-  // LOGA("Blacklists passed! in %d us", (int)RGTac(&tt));
-
-  // If no action is to be done then we passed all balcklists
+  // If no action is to be done then we passed all blacklists
   if (probemode || action.ac == AC_NONE) return 1;
 
   // Set state
   state.blockaltup = state.alt;  // If alt is down...
-  // return if window has to be moved/resized and does not respond in 1/4 s.
   state.prevpt = pt;
 
   // Set origin width/height by default from current state/wndpl.
@@ -140,52 +207,13 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
   state.origin.height =
       wndpl.rcNormalPosition.bottom - wndpl.rcNormalPosition.top;
   state.resizable = IsResizable(state.hwnd);
-
   GetMinMaxInfo(state.hwnd, &state.mmi.Min,
                 &state.mmi.Max);  // for CLAMPH/W functions
-  // LOGA("Going to start action! in %d us", (int)RGTac(&tt));
 
   // Do things depending on what button was pressed
   if (IsMovementAction(action)) {
-    state.sactiondone = action;
-    if (GetProp(state.hwnd, kPropMoveOnOff)) {
-      state.action = k_action_none;
-      return 0;  // Movement was disabled for this window.
-    }
-    // AutoFocus on movement/resize.
-    if (conf.AutoFocus || IsCtrlDown()) {
-      SetForegroundWindowL(state.hwnd);
-    }
-    if (conf.DragSendsAltCtrl && !(GetKeyState(VK_MENU) & 0x8000) &&
-        !(GetKeyState(VK_SHIFT) & 0x8000)) {
-      // This will pop down menu and stuff
-      // In case autofocus did not do it.
-      PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                        reinterpret_cast<WPARAM>(SendAltCtrlAlt), 0);
-    }
-
-    // Set action statte.
-    state.action = action;  // MOVE OR RESIZE
-    state.moving = 0;
-    // Wether or not we will use the zones
-    state.usezones = ((conf.UseZones & 9) == 9) ^ state.shift;
-
-    state.enumed = 0;  // Reset enum stuff
-    StartSpeedMes();   // Speed timer
-
-    int ret = 0;
-    if (state.action.ac == AC_MOVE) {
-      ret = ActionMove(pt, button);
-    } else {
-      ret = ActionResize(pt, &wnd, button);
-    }
-    if (ret == 1) return 1;  // block mouse down!
-    if (ret == 0) return 0;  // Next hook!
-    // else ret == -1 ...
-    UpdateCursor(pt);
-    SetWindowTrans(state.hwnd);
-
-    LastWin.start = 1;
+    const int ret = StartMoveOrResize(pt, action, wnd, button);
+    if (ret >= 0) return ret;
   } else if (BT_WHEELD <= button && button <= BT_HWHEELU) {
     // Wheel actions, directly return here
     // because maybe the action will not be done
@@ -195,18 +223,7 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
     }
     return DoWheelActions(state.hwnd, action);
   } else if (action.ac == AC_RESTORE) {
-    int rwidth = 0, rheight = 0;
-    if (GetRestoreData(state.hwnd, &rwidth, &rheight) & SNAPPED) {
-      ClearRestoreData(state.hwnd);
-      RECT rc;
-      GetWindowRect(state.hwnd, &rc);
-      int posx = DoubleClamp(pt.x, rc.left, rc.right, rwidth) - state.mdipt.x;
-      int posy = DoubleClamp(pt.y, rc.top, rc.bottom, rheight) - state.mdipt.y;
-
-      MoveWindowAsync(state.hwnd, posx, posy, rwidth, rheight);
-    }
-    if (state.hittest == 2 && button == BT_LMB) return 0;
-    state.blockmouseup = 1;
+    if (RestoreSnappedWindow(pt, button) == 0) return 0;
   } else {
     SClickActions(state.hwnd, action);
     state.blockmouseup = 1;  // because the action is done
