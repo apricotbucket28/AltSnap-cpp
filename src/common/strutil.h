@@ -15,12 +15,10 @@
 
 #include <windows.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
-#include <string>
 #include <type_traits>
 
 // Upstream names (nanolibc.h) of the helpers below:

@@ -11,20 +11,15 @@
 #include <cstddef>
 #include <vector>
 
-#include "common/ini_section.h"
 #include "hooks/actions/click_actions.h"
 #include "hooks/blacklist.h"
 #include "hooks/hook_config.h"
 #include "hooks/hooks_internal.h"
-#include "hooks/input_state.h"
 #include "hooks/keyboard_hook.h"
 #include "hooks/mouse_hook.h"
-#include "hooks/mouse_move.h"
 #include "hooks/movement.h"
 #include "hooks/overlay/pin_window.h"
-#include "hooks/overlay/trans_window.h"
 #include "hooks/overlay/window_menu.h"
-#include "hooks/window/snap.h"
 #include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"

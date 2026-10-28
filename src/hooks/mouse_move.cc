@@ -3,12 +3,7 @@
 #include "hooks/mouse_move.h"
 
 #include <algorithm>
-#include <array>
-#include <cstddef>
-#include <vector>
 
-#include "common/ini_section.h"
-#include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/input_state.h"
 #include "hooks/mouse_hook.h"

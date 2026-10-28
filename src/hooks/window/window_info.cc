@@ -2,16 +2,12 @@
 
 #include "hooks/window/window_info.h"
 
-#include <algorithm>
 #include <array>
-#include <cstddef>
 #include <vector>
 
-#include "common/ini_section.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/window/snap.h"
-#include "hooks/window/zones.h"
 
 namespace altsnap::hooks {
 

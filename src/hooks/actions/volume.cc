@@ -6,20 +6,11 @@
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
 #include <cstdlib>
 #include <limits>
-#include <vector>
 
-#include "common/ini_section.h"
-#include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/send_input.h"
-#include "hooks/window/snap.h"
-#include "hooks/window/zones.h"
-
 
 namespace altsnap::hooks {
 

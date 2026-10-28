@@ -17,9 +17,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
-#include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "common/strutil.h"

@@ -4,21 +4,17 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
 #include <vector>
 
-#include "common/ini_section.h"
 #include "hooks/actions/volume.h"
 #include "hooks/actions/window_actions.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/input_state.h"
-#include "hooks/mouse_move.h"
 #include "hooks/movement.h"
 #include "hooks/overlay/pin_window.h"
 #include "hooks/overlay/window_menu.h"
 #include "hooks/send_input.h"
-#include "hooks/window/snap.h"
 #include "hooks/window/snap_move.h"
 #include "hooks/window/window_enum.h"
 #include "hooks/window/window_info.h"

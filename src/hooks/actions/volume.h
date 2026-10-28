@@ -2,8 +2,6 @@
 #ifndef ALTSNAP_VOLUME_H_
 #define ALTSNAP_VOLUME_H_
 
-#include "hooks/hooks_internal.h"
-
 namespace altsnap::hooks {
 
 int ScaleWheelDelta(int wheel_delta, int step_scale);

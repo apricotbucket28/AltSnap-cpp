@@ -7,13 +7,11 @@
 #include <cstddef>
 #include <vector>
 
-#include "common/ini_section.h"
 #include "hooks/actions/click_actions.h"
 #include "hooks/actions/volume.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/input_state.h"
-#include "hooks/mouse_move.h"
 #include "hooks/movement.h"
 #include "hooks/overlay/pin_window.h"
 #include "hooks/send_input.h"
@@ -22,7 +20,6 @@
 #include "hooks/window/window_enum.h"
 #include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
-#include "hooks/window/zones.h"
 
 namespace altsnap::hooks {
 

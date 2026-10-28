@@ -13,7 +13,6 @@
 #include "app/altsnap.h"
 #include "app/languages.h"
 #include "hooks/hooks.h"
-#include "ui/config.h"
 
 namespace altsnap::app {
 

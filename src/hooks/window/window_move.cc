@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "common/ini_section.h"
 #include "hooks/actions/window_actions.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
@@ -15,7 +14,6 @@
 #include "hooks/window/snap.h"
 #include "hooks/window/window_enum.h"
 #include "hooks/window/window_info.h"
-#include "hooks/window/zones.h"
 
 namespace altsnap::hooks {
 
