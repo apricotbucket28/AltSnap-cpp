@@ -29,7 +29,6 @@
 #include <dwmapi.h>
 #include <highlevelmonitorconfigurationapi.h>
 #include <physicalmonitorenumerationapi.h>
-#include <psapi.h>
 #include <shellscalingapi.h>
 #include <windowsx.h>
 
@@ -510,31 +509,28 @@ class UniqueProcessHandle {
     return std::nullopt;
   }
 
-  HANDLE raw_process =
-      OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
-  if (!raw_process) {
-    raw_process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-  }
-
-  UniqueProcessHandle process(raw_process);
+  UniqueProcessHandle process(
+      OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
   if (!process.get()) {
     return std::nullopt;
   }
 
-  std::array<wchar_t, MAX_PATH> buffer{};
+  // 32767 is the maximum extended-length path size in wchar_t units.
+  constexpr size_t kMaxPathChars = 32768;
 
-  DWORD length =
-      GetModuleFileNameEx(process.get(), nullptr, buffer.data(), buffer.size());
-  if (length == 0 || length >= buffer.size()) {
-    length =
-        GetProcessImageFileName(process.get(), buffer.data(), buffer.size());
+  std::wstring buffer(MAX_PATH, L'\0');
+  while (true) {
+    DWORD size = static_cast<DWORD>(buffer.size());
+    if (QueryFullProcessImageName(process.get(), 0, buffer.data(), &size)) {
+      buffer.resize(size);  // `size` = chars written, excluding the NUL
+      return buffer;
+    }
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+        buffer.size() >= kMaxPathChars) {
+      return std::nullopt;
+    }
+    buffer.resize(buffer.size() * 2);
   }
-
-  if (length == 0 || length >= buffer.size()) {
-    return std::nullopt;
-  }
-
-  return std::wstring(buffer.data(), length);
 }
 
 struct PidPair {

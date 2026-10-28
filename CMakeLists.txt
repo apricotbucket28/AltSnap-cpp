@@ -161,7 +161,7 @@ target_compile_options(hooks PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(hooks PRIVATE
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore psapi ole32 dxva2)
+target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # --- AltSnap.exe ---------------------------------------------------------
 # NOTE: window.rc, AltSnap.exe.manifest and resource.h are pulled in via
@@ -223,7 +223,7 @@ target_link_options(AltSnap PRIVATE
     -Wl,--tsaware
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore psapi ole32 dxva2)
+target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # hooks.dll must exist next to AltSnap.exe at runtime (it's loaded, not linked).
 add_dependencies(AltSnap hooks)
