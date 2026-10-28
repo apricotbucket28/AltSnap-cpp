@@ -6,7 +6,7 @@
 
 namespace altsnap::hooks {
 
-short ScaleDeltaAndAccum(short delta, short tar_delta);
+int ScaleWheelDelta(int wheel_delta, int step_scale);
 void ActionVolume(int delta);
 
 }  // namespace altsnap::hooks

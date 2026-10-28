@@ -247,11 +247,11 @@ int ActionTransparency(HWND hwnd, short delta) {
   if (state.action.ac && IsMovementAction(state.action))
     SetWindowTrans(reinterpret_cast<HWND>(-1));
 
-  static int alpha = 255;
-  short pre_delta = (state.shift) ? conf.AlphaDeltaShift : conf.AlphaDelta;
-  int alpha_delta = ScaleDeltaAndAccum(delta, pre_delta);
+  const int alpha_delta = ScaleWheelDelta(
+      delta, state.shift ? conf.AlphaDeltaShift : conf.AlphaDelta);
   if (!alpha_delta) return 1;
 
+  static int alpha = 255;
   BYTE old_alpha = 0;
   if (GetLayeredWindowAttributes(hwnd, nullptr, &old_alpha, nullptr)) {
     alpha = old_alpha;  // If possible start from the current aplha.

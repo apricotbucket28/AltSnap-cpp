@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "common/ini_section.h"
@@ -18,27 +20,30 @@
 #include "hooks/window/snap.h"
 #include "hooks/window/zones.h"
 
+
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
-// Helper function with a stupid static accululator for
-// The wheel in case we have a fine wheel that is unable to
-// trigger a single step.
-short ScaleDeltaAndAccum(short delta, short tar_delta) {
-  short step =
-      (static_cast<int>(tar_delta) * static_cast<int>(delta)) / WHEEL_DELTA;
-  // Only accumulate
-  if (step == 0) {  // step is too small, we need to accumulate delta
-    static short delta_acc = 0;
-    delta_acc += delta;
-    // Recalculate the step.
-    step = (tar_delta * delta_acc) / WHEEL_DELTA;
-    if (step == 0) return 0;
-    // Reset the value (simpler)
-    delta_acc = 0;
+// Scales mouse wheel deltas into steps, accumulating small movements until
+// they are sufficient to produce a step on high-resolution mouse wheels.
+// Upstream: ScaleDeltaAndAccum
+int ScaleWheelDelta(int wheel_delta, int step_scale) {
+  int steps = (step_scale * wheel_delta) / WHEEL_DELTA;
+
+  if (steps == 0) {
+    static int accumulated_delta = 0;
+    accumulated_delta += wheel_delta;
+
+    steps = (step_scale * accumulated_delta) / WHEEL_DELTA;
+    if (steps == 0) {
+      return 0;
+    }
+
+    accumulated_delta = 0;
   }
-  return step;
+
+  return steps;
 }
+
 namespace {
 
 // Initializes COM on the current thread for the lifetime of the object.
@@ -87,31 +92,44 @@ static HRESULT GetCurrentVolumeMute(UINT* current_volume, UINT* max_volume,
       *max_volume, *muted);
   return hr;
 }
-// Under Vista this will change the main volume with ole interface,
-void ActionVolume(int delta) {
-  int num = (state.shift) ? 5 : 1;
-  num = ScaleDeltaAndAccum(delta, num);
-  num = abs(num);
-  if (!num) return;
 
-  UINT curentvol = 0, maxvol = 0;
+void ActionVolume(int delta) {
+  const int scaled_delta = ScaleWheelDelta(delta, state.shift ? 5 : 1);
+  if (scaled_delta == std::numeric_limits<int>::min()) {
+    return;
+  }
+
+  const int steps = std::abs(scaled_delta);
+  if (steps == 0) {
+    return;
+  }
+
+  UINT current_volume = 0;
+  UINT max_volume = 0;
   BOOL muted = FALSE;
-  if (S_OK == GetCurrentVolumeMute(&curentvol, &maxvol, &muted) && curentvol) {
-    if (delta < 0 && static_cast<UINT>(num) >= curentvol) {
-      // We would Set the volume to Zero
-      // We prefer to mute instead,
-      // because otherwise it resets volume balance.
-      if (!muted) SendKey(VK_VOLUME_MUTE);  // Mute
+
+  if (GetCurrentVolumeMute(&current_volume, &max_volume, &muted) == S_OK &&
+      current_volume != 0) {
+    if (delta < 0 && static_cast<UINT>(steps) >= current_volume) {
+      // Prefer muting over setting the volume to zero, because setting it to
+      // zero resets the volume balance.
+      if (!muted) {
+        SendKey(VK_VOLUME_MUTE);
+      }
       return;
     }
-    if (delta > 0) {
-      if (muted) {
-        SendKey(VK_VOLUME_MUTE);  // UnMute
-        return;
-      }
+
+    if (delta > 0 && muted) {
+      // Unmute without also increasing the volume.
+      SendKey(VK_VOLUME_MUTE);
+      return;
     }
   }
-  while (num--) SendKey(delta > 0 ? VK_VOLUME_UP : VK_VOLUME_DOWN);
+
+  const auto volume_key = delta > 0 ? VK_VOLUME_UP : VK_VOLUME_DOWN;
+  for (int i = 0; i < steps; ++i) {
+    SendKey(volume_key);
+  }
 }
 
 }  // namespace altsnap::hooks
