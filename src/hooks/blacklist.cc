@@ -8,14 +8,17 @@ namespace altsnap {
 
 namespace {
 
-// A lone `*` means "anything", which is stored as an absent value.
+// A pattern that is empty or made only of `*` means "anything", which is
+// stored as an absent value.
 std::optional<std::wstring> PatternOrAny(std::wstring_view text) {
-  if (text == L"*") return std::nullopt;
+  if (text.find_first_not_of(L'*') == text.npos) {
+    return std::nullopt;
+  }
   return std::wstring(text);
 }
 
-const wchar_t* OrNull(const std::optional<std::wstring>& value) {
-  return value ? value->c_str() : nullptr;
+std::wstring_view View(const wchar_t* s) {
+  return s ? s : L"";
 }
 
 }  // namespace
@@ -60,8 +63,8 @@ Blacklist::Item Blacklist::Item::Parse(std::wstring_view text) {
 
 bool Blacklist::Item::Matches(const wchar_t* exe, const wchar_t* window_title,
                               const wchar_t* window_class) const {
-  return !WildcardCompare(window_class, OrNull(class_name)) &&
-         !WildcardCompare(window_title, OrNull(title)) &&
+  return (!class_name || WildcardMatch(View(window_class), *class_name)) &&
+         (!title || WildcardMatch(View(window_title), *title)) &&
          (!exename || !lstrcmpi(exe, exename->c_str()));
 }
 
@@ -94,7 +97,7 @@ Blacklists Blacklists::Read(const IniSection& section) {
   Blacklists lists;
   const struct {
     const char* key;
-    Blacklist Blacklists::*list;
+    Blacklist Blacklists::* list;
   } kLists[] = {
       {"Processes", &Blacklists::Processes},
       {"Windows", &Blacklists::Windows},

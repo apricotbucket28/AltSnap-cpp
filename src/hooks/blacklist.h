@@ -20,11 +20,17 @@ namespace altsnap {
 //   title|class              windows with that title and class
 //   exename.exe:title|class  both of the above
 //   exename.exe:title        same as above with any class
-// and a `*` (or an omitted part) matches anything. Titles and classes may also
-// start or end with `*` (see WildcardCompare()).
+// An omitted or empty part, or one made only of `*`, matches anything.
+// Titles and classes may also use a `*` wildcard (see WildcardMatch()):
+//   foo*   starts with "foo"
+//   *foo   ends with "foo"
+//   *foo*  contains "foo"
+// A `*` anywhere else is a literal character. Matching is case-sensitive for
+// titles and classes, and case-insensitive for exe names, which do not
+// support wildcards.
 //
-// If the first item is `*|*` the list is a whitelist: every window that is not
-// listed counts as IsBlacklisted.
+// If the first item matches anything (e.g. `*|*`) the list is a whitelist:
+// every window that is not listed counts as IsBlacklisted.
 class Blacklist {
  public:
   Blacklist() = default;

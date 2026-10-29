@@ -19,14 +19,20 @@
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <string_view>
 #include <type_traits>
 
 // Upstream names (nanolibc.h) of the helpers below:
-//   lstrcpy_s -> CopyString          lstrcat_s -> AppendString
-//   lstrstr -> FindSubstring         lstrchr -> FindChar
-//   lstrcmp_star -> WildcardCompare  lstrcmpi_samestart ->
-//   CompareStartIgnoreCase lstrhex2u -> HexToUnsigned       strtoi -> ParseInt
-//   str2tchar -> AsciiToWide         str2tchar_s -> AsciiToWideBounded
+//   lstrcpy_s -> CopyString
+//   lstrcat_s -> AppendString
+//   lstrstr -> FindSubstring
+//   lstrchr -> FindChar
+//   lstrcmp_star -> WildcardMatch (inverted: true = match)
+//   lstrcmpi_samestart -> CompareStartIgnoreCase
+//   lstrhex2u -> HexToUnsigned
+//   strtoi -> ParseInt
+//   str2tchar -> AsciiToWide
+//   str2tchar_s -> AsciiToWideBounded
 
 // -----------------------------------------------------------------------------
 // Bit helpers
@@ -162,30 +168,21 @@ size_t AppendString(CharT* dest, size_t n, const CharT* src) {
 // Matching
 // -----------------------------------------------------------------------------
 
-// Compares `a` with the pattern `b`, where `b` may contain a '*' wildcard at
-// its very start (suffix match) or at its very end (prefix match).
-//   * returns 0 on match, non-zero otherwise;
-//   * a null pattern matches everything.
-template <typename CharT>
-[[nodiscard]] int WildcardCompare(const CharT* a, const CharT* b) {
-  if (!b) return 0;
+// Returns true if `text` matches `pattern`. A leading '*' matches a suffix,
+// a trailing '*' a prefix, and both ("*foo*") a substring. A '*' anywhere
+// else is a literal character. "*" and "**" match everything; an empty
+// pattern matches only the empty string. Case-sensitive.
+[[nodiscard]] inline bool WildcardMatch(std::wstring_view text,
+                                        std::wstring_view pattern) {
+  const bool lead = pattern.starts_with(L'*');
+  if (lead) pattern.remove_prefix(1);
+  const bool trail = pattern.ends_with(L'*');
+  if (trail) pattern.remove_suffix(1);
 
-  if (*b == CharT{'*'}) {  // "*suffix": compare backwards from the ends.
-    const CharT *oa = a, *ob = b;
-    while (*a) ++a;
-    while (*b) ++b;
-    while (a > oa && b > ob && *a == *b) {
-      --a;
-      --b;
-    }
-    return (*a != *b) & (*b != CharT{'*'});
-  }
-
-  while (*a && *a == *b) {  // "prefix*": stops at the end of `a` or a mismatch.
-    ++a;
-    ++b;
-  }
-  return (*a != *b) & (*b != CharT{'*'});
+  if (lead && trail) return text.contains(pattern);
+  if (lead) return text.ends_with(pattern);
+  if (trail) return text.starts_with(pattern);
+  return text == pattern;
 }
 
 // Returns 0 if `a` starts with `b`, ignoring ASCII case.

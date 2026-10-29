@@ -29,29 +29,50 @@ int main() {
   CHECK(CopyString(buf, 8, L"abc") == 3 && std::wstring(buf) == L"abc");
   CHECK(CopyString(buf, 4, L"abcdef") == 3 &&
         std::wstring(buf) == L"abc");  // truncates
+
   CHECK(AppendString(buf, 8, L"de") == 5 && std::wstring(buf) == L"abcde");
   CHECK(AppendString(buf, 8, L"fghijk") == 7 &&
         std::wstring(buf) == L"abcdefg");  // truncates
+
   CHECK(CopyString(buf, 0, L"x") == 0);
+
   CHECK(ParseInt(L"  -42xyz") == -42 && ParseInt(L"+7") == 7 &&
         ParseInt(L"") == 0);
+
   CHECK(HexToUnsigned(L"A4 A5") == 0xA4 && HexToUnsigned(L"ff") == 0xFF);
+
   wchar_t num[kIntDigits + 1];
   CHECK(std::wstring(Int2lStr(num, -2147483647 - 1)) == L"-2147483648");
   CHECK(std::wstring(Int2lStr(num, 0)) == L"0");
+
   wchar_t unum[kUintDigits + 1];
   CHECK(std::wstring(Uint2lStr(unum, 4294967295u)) == L"4294967295");
+
   wchar_t hex[kPtrHexDigits + 1];
   CHECK(std::wstring(LPTR2Hex(hex, 0xBEEF)) == L"BEEF");
+
   CHECK(AsciiToLower(L'A') == L'a' && AsciiToLower(L'Z') == L'z' &&
         AsciiToLower(L'[') == L'[');
+
   CHECK(CompareStartIgnoreCase(L"Alwaysontop=1", L"alwaysontop=") == 0);
   CHECK(CompareStartIgnoreCase(L"Alwaysontop=1", L"zzz=") != 0);
-  CHECK(WildcardCompare(L"notepad.exe", L"note*") == 0);
-  CHECK(WildcardCompare(L"notepad.exe", L"*.exe") == 0);
-  CHECK(WildcardCompare(L"notepad.exe", L"*.dll") != 0);
-  CHECK(WildcardCompare(L"anything", static_cast<const wchar_t*>(nullptr)) ==
-        0);
+
+  CHECK(WildcardMatch(L"notepad.exe", L"notepad.exe"));
+  CHECK(!WildcardMatch(L"notepad.exe", L"notepad.dll"));
+  CHECK(WildcardMatch(L"", L""));
+  CHECK(!WildcardMatch(L"notepad.exe", L""));
+  CHECK(WildcardMatch(L"notepad.exe", L"note*"));
+  CHECK(!WildcardMatch(L"notepad.exe", L"epad*"));
+  CHECK(!WildcardMatch(L"no", L"note*"));
+  CHECK(WildcardMatch(L"notepad.exe", L"*.exe"));
+  CHECK(!WildcardMatch(L"notepad.exe", L"*.dll"));
+  CHECK(!WildcardMatch(L"exe", L"*.exe"));
+  CHECK(WildcardMatch(L"notepad.exe", L"*pad*"));
+  CHECK(!WildcardMatch(L"notepad.exe", L"*xyz*"));
+  CHECK(WildcardMatch(L"", L"*"));
+  CHECK(WildcardMatch(L"anything", L"**"));
+  CHECK(WildcardMatch(L"a*b", L"a*b"));
+  CHECK(!WildcardMatch(L"axb", L"a*b"));
 
   // ---- IniSection ----
   wchar_t path[MAX_PATH];
@@ -140,6 +161,30 @@ int main() {
           spaced.Contains(L"c.exe", L"", L""));
     CHECK(
         !spaced.Contains(L"", L"", L""));  // a trailing comma is not a wildcard
+
+    // "*foo*" is a substring match on titles and classes.
+    const Blacklist contains(L"*|*Frame*, *pad*|*");
+    CHECK(contains.Contains(L"x", L"t", L"MyFrameWnd"));
+    CHECK(contains.Contains(L"x", L"Notepad", L"c"));
+    CHECK(!contains.Contains(L"x", L"Calc", L"Button"));
+
+    // Empty or all-star parts mean "any".
+    const Blacklist any_title(L"|MyClass");
+    CHECK(any_title.Contains(L"x.exe", L"whatever", L"MyClass"));
+    CHECK(!any_title.Contains(L"x.exe", L"whatever", L"Other"));
+    const Blacklist empty_title(L"calc.exe:|Cls");
+    CHECK(empty_title.Contains(L"calc.exe", L"anything", L"Cls"));
+    CHECK(!empty_title.Contains(L"other.exe", L"anything", L"Cls"));
+
+    // "**|**" counts as "anything", so it enables whitelist mode like "*|*".
+    const Blacklist whitelist2(L"**|**, notepad.exe");
+    CHECK(!whitelist2.Contains(L"notepad.exe", L"t", L"c"));
+    CHECK(whitelist2.Contains(L"calc.exe", L"t", L"c"));
+
+    // Whitespace-only items must not become match-anything.
+    const Blacklist blanks(L"calc.exe, ,   ");
+    CHECK(blanks.Contains(L"calc.exe", L"", L""));
+    CHECK(!blanks.Contains(L"other.exe", L"t", L"c"));
 
     // Whitelist mode: a leading `*|*` blacklists everything that is NOT listed.
     const Blacklist whitelist(L"*|*, notepad.exe");
