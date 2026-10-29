@@ -279,9 +279,4 @@ template <typename CharT, size_t N>
   return buf + i;
 }
 
-// -----------------------------------------------------------------------------
-// Heap duplicate (release with std::free). Prefer std::basic_string in new
-// code; this only exists for the few structs that still own raw C strings.
-// -----------------------------------------------------------------------------
-
 #endif  // ALTSNAP_STRUTIL_H_
