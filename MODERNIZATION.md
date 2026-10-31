@@ -81,5 +81,3 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
   the module headers are still wide (about 150 cross-module functions in hooks.dll)
 - Win32 `A/W` macros (`GetWindowText` ...) instead of explicit `...W` calls;
   `lstrcmpiA`/`lstrlenA` remain for the narrow log text
-
-If this tree is imported into an existing repo, run `git add --renormalize .` once.
