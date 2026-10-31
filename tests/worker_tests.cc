@@ -217,8 +217,11 @@ void TestDirectExecutionAndOwnership() {
 }
 
 constexpr UINT kSend = WM_APP + 100;
+constexpr UINT kPosted = WM_APP + 101;
+int posted_messages = 0;
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
   if (message == kSend) return 123;
+  if (message == kPosted) ++posted_messages;
   return DefWindowProcW(window, message, wp, lp);
 }
 
@@ -235,9 +238,21 @@ void TestSynchronousSend() {
   Worker worker(
       [&](WorkerCommand) { result = SendMessageW(window, kSend, 0, 0); });
   CHECK(worker.Start());
+  CHECK(PostMessageW(window, kPosted, 0, 0));
+  CHECK(PostThreadMessageW(GetCurrentThreadId(), WM_QUIT, 42, 0));
   CHECK(worker.Post(ClickCommand{BT_LMB}));
   worker.Stop();
   CHECK(result == 123);
+  // Joining services synchronous sends without consuming queued UI work or
+  // losing the application's quit request.
+  CHECK(posted_messages == 0);
+  MSG message{};
+  CHECK(PeekMessageW(&message, window, kPosted, kPosted, PM_REMOVE));
+  CHECK(message.message == kPosted);
+  DispatchMessageW(&message);
+  CHECK(posted_messages == 1);
+  CHECK(PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE));
+  CHECK(message.message == WM_QUIT && message.wParam == 42);
   CHECK(DestroyWindow(window));
   CHECK(UnregisterClassW(wc.lpszClassName, wc.hInstance));
 }

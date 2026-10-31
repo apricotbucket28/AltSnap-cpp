@@ -11,6 +11,9 @@
 #include "hooks/input_options.h"
 #include "hooks/keyboard_hook.h"
 #include "hooks/mouse_hook.h"
+#include "hooks/window/snap.h"
+#include "hooks/window/snap_move.h"
+#include "hooks/window/window_enum.h"
 #include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"
@@ -203,6 +206,206 @@ void TestMessages() {
       CHECK(HooksWinProc(nullptr, WM_GETLAYOUTREZ, layout, 0) == 0);
   }
   FreeZones();
+}
+
+void TestConfigReload(const std::wstring& path) {
+  // Avoid display-dependent defaults and overlay creation in these reads.
+  CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin", L"1",
+                                   path.c_str()));
+  CHECK(ReadConfig(path.c_str()));
+  CHECK(conf.Aero == 1 && conf.SmartAero == 1 && conf.AutoSnap == 0);
+  CHECK(conf.CenterFraction == 24 && conf.SidesFraction == 24);
+  CHECK(conf.AHoff == 50 && conf.AVoff == 50 && conf.SnapThreshold == 20);
+  CHECK(conf.ResizeAll == 1 && conf.MoveRate == 2 && conf.ResizeRate == 4);
+  CHECK(conf.Hotkeys[0] == VK_LMENU && conf.Hotkeys[1] == VK_RMENU &&
+        conf.Hotkeys[2] == 0 && conf.EndSendKey == VK_CONTROL);
+  CHECK(!KeepMouseHook());
+
+  struct Setting {
+    const wchar_t* section;
+    const wchar_t* key;
+    const wchar_t* value;
+  };
+  constexpr Setting settings[] = {
+      {L"General", L"CenterFraction", L"150"},
+      {L"General", L"AeroHoffset", L"125"},
+      {L"General", L"AeroVoffset", L"37"},
+      {L"General", L"AutoSnap", L"2"},
+      {L"Advanced", L"ZoomFrac", L"0"},
+      {L"Advanced", L"ZoomFracShift", L"1"},
+      {L"Advanced", L"SnapGap", L"-3"},
+      {L"Performance", L"MoveRate", L"0"},
+      {L"Performance", L"ResizeRate", L"0"},
+      {L"Performance", L"RezTimer", L"3"},
+      {L"Performance", L"RefreshRate", L"17"},
+      {L"Input", L"Hotkeys", L""},
+      {L"Input", L"Hotclicks", L"06"},
+      {L"Input", L"LMB", L"Resize"},
+      {L"Input", L"Shrt0", L"41 01 41 02"},
+      {L"Blacklist", L"Windows", L"*|RegressionWindow"},
+  };
+  for (const Setting& setting : settings)
+    CHECK(WritePrivateProfileStringW(setting.section, setting.key,
+                                     setting.value, path.c_str()));
+  CHECK(ReadConfig(path.c_str()));
+  CHECK(conf.CenterFraction == 100 && conf.SidesFraction == 100);
+  CHECK(conf.AHoff == 100 && conf.AVoff == 37 && state.snap == 2);
+  CHECK(conf.ZoomFrac == 2 && conf.ZoomFracShift == 2 && conf.SnapGap == -3);
+  CHECK(conf.MoveRate == 1 && conf.ResizeRate == 1 && conf.RefreshRate == 0);
+  CHECK(conf.Hotkeys[0] == 0 && KeepMouseHook());
+  CHECK(conf.actions.GetMouse(BT_LMB, ActionContext::kNormal, false).ac ==
+        AC_RESIZE);
+  CHECK((g_inputSequences[0] == std::vector<UCHAR>{2, 0x41, 1, 0x41, 2}));
+  CHECK(BlkLst.Windows.Contains(L"x.exe", L"x", L"RegressionWindow"));
+
+  for (const wchar_t* section :
+       {L"General", L"Advanced", L"Input", L"Blacklist", L"Performance"})
+    CHECK(WritePrivateProfileStringW(section, nullptr, nullptr, path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin", L"1",
+                                   path.c_str()));
+  CHECK(ReadConfig(path.c_str()));
+  CHECK(conf.CenterFraction == 24 && conf.SidesFraction == 24);
+  CHECK(conf.ZoomFrac == 16 && conf.SnapGap == 0 && state.snap == 0);
+  CHECK(conf.Hotkeys[0] == VK_LMENU && conf.Hotclick[0] == 0);
+  CHECK(!KeepMouseHook() && BlkLst.Windows.empty());
+  for (const auto& sequence : g_inputSequences) CHECK(sequence.empty());
+}
+
+void TestSnapGeometry() {
+  // Supply the already-enumerated desktop geometry. No real desktop windows,
+  // monitor arrangement, DWM borders, or input timing influence the decisions.
+  state = {};
+  state.enumed = 1;
+  state.snap = 1;
+  monitors = {{-1000, -800, 0, 0}};
+  wnds.clear();
+  const auto move = [](int x, int y, int width, int height, int expected_x,
+                       int expected_y) {
+    MoveSnap(&x, &y, width, height, 20);
+    CHECK(x == expected_x && y == expected_y);
+  };
+  move(-990, -790, 200, 100, -1000, -800);
+  move(-210, -110, 200, 100, -200, -100);
+  move(-980, -780, 200, 100, -1000, -800);  // Threshold is inclusive.
+  move(-979, -779, 200, 100, -979, -779);  // Outside threshold.
+  state.snap = 0;
+  move(-990, -790, 200, 100, -990, -790);
+  state.snap = 1;
+  state.Speed = static_cast<unsigned>(conf.AeroMaxSpeed) + 1;
+  move(-990, -790, 200, 100, -990, -790);
+  state.Speed = 0;
+  monitors.clear();
+  wnds = {{{100, 100, 300, 300}, nullptr, 0}};
+  move(305, 150, 100, 100, 300, 150);  // Outside edge.
+  move(105, 150, 100, 100, 100, 150);  // Inside edge.
+  state.snap = 2;
+  move(105, 150, 100, 100, 105, 150);  // Outside-only mode.
+  move(305, 150, 100, 100, 300, 150);
+  wnds[0].flag = BD_HIDDEN_R;
+  move(305, 150, 100, 100, 305, 150);
+  wnds[0].flag = 0;
+  wnds.push_back({{100, 100, 295, 300}, nullptr, 0});
+  move(292, 150, 100, 100, 295, 150);  // Closer positive-distance edge wins.
+
+  wnds.clear();
+  monitors = {{0, 0, 1000, 800}};
+  state.snap = 1;
+  state.resize = {RZ_LEFT, RZ_TOP};
+  int x = 10, y = 10, width = 200, height = 100;
+  ResizeSnap(&x, &y, &width, &height, 20, 20);
+  CHECK(x == 0 && y == 0 && width == 210 && height == 110);
+  state.resize = {RZ_RIGHT, RZ_BOTTOM};
+  x = 700;
+  y = 600;
+  width = 290;
+  height = 190;
+  ResizeSnap(&x, &y, &width, &height, 20, 20);
+  CHECK(x == 700 && y == 600 && width == 300 && height == 200);
+  monitors.clear();
+  state = {};
+}
+
+std::vector<UINT> movement_messages;
+LRESULT CALLBACK MovementWindowProc(HWND window, UINT message, WPARAM wp,
+                                    LPARAM lp) {
+  if (message == WM_ENTERSIZEMOVE || message == WM_EXITSIZEMOVE ||
+      message == WM_SIZING)
+    movement_messages.push_back(message);
+  if (message == WM_SIZING) {
+    CHECK(wp == WMSZ_BOTTOMRIGHT);
+    // Model a terminal accepting only whole character cells.
+    RECT& rect = *reinterpret_cast<RECT*>(lp);
+    rect.right = rect.left + 240;
+    rect.bottom = rect.top + 160;
+    return TRUE;
+  }
+  return DefWindowProcW(window, message, wp, lp);
+}
+
+void TestMovementResults() {
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  WNDCLASSW wc{};
+  wc.hInstance = instance;
+  wc.lpfnWndProc = MovementWindowProc;
+  wc.lpszClassName = L"AltSnapMovementRegression";
+  CHECK(RegisterClassW(&wc));
+  // Hidden popup avoids frame minimum sizes and desktop activation.
+  HWND window = CreateWindowExW(0, wc.lpszClassName, L"", WS_POPUP, 40, 50, 200,
+                                100, nullptr, nullptr, instance, nullptr);
+  CHECK(window);
+  if (window) {
+    windowRR request{};
+    request.hwnd = window;
+    request.x = 70;
+    request.y = 80;
+    request.width = 253;
+    request.height = 177;
+    request.odpi = GetDpiForWindow(window);
+    request.resize = {RZ_RIGHT, RZ_BOTTOM};
+    request.start = request.end = 1;
+    movement_messages.clear();
+    MoveWindowNow(&request);
+    RECT rect{};
+    CHECK(GetWindowRect(window, &rect));
+    CHECK(rect.left == 70 && rect.top == 80 && rect.right == 310 &&
+          rect.bottom == 240);
+    CHECK((movement_messages == std::vector<UINT>{WM_SIZING}));
+    // Start/end notifications are posted; sizing is synchronous.
+    MSG message{};
+    while (PeekMessageW(&message, window, 0, 0, PM_REMOVE))
+      DispatchMessageW(&message);
+    CHECK((movement_messages ==
+           std::vector<UINT>{WM_SIZING, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE}));
+    CHECK(!request.hwnd && !request.start && !request.end);
+
+    // Move-only requests must preserve size and must not send WM_SIZING.
+    request.hwnd = window;
+    request.x = 90;
+    request.y = 100;
+    request.width = 999;
+    request.height = 999;
+    request.moveonly = 1;
+    movement_messages.clear();
+    MoveWindowNow(&request);
+    CHECK(GetWindowRect(window, &rect));
+    CHECK(rect.left == 90 && rect.top == 100 && rect.right == 330 &&
+          rect.bottom == 260);
+    CHECK(movement_messages.empty());
+
+    // Restore dimensions use full 32-bit components on this x64 build.
+    SetRestoreData(window, 70001, 80002, SNAPPED | SNLEFT);
+    int width = 0, height = 0;
+    CHECK(GetRestoreData(window, &width, &height) == (SNAPPED | SNLEFT));
+    CHECK(width == 70001 && height == 80002);
+    SetRestoreFlag(window, SNAPPED | SNZONE);
+    CHECK(GetRestoreData(window, &width, &height) == (SNAPPED | SNZONE));
+    CHECK(width == 70001 && height == 80002);
+    ClearRestoreData(window);
+    CHECK(GetRestoreData(window, &width, &height) == 0);
+    CHECK(width == 0 && height == 0 && GetRestoreFlag(window) == 0);
+    CHECK(DestroyWindow(window));
+  }
+  CHECK(UnregisterClassW(wc.lpszClassName, instance));
 }
 
 constexpr UINT kLifecycleSend = WM_APP + 101;
@@ -466,6 +669,9 @@ int main() {
     return 1;
   }
   const std::wstring path = temp_file.data();
+  TestConfigReload(path);
+  TestSnapGeometry();
+  TestMovementResults();
   TestBindings(path);
   TestByteReaders(path);
   TestMessages();
