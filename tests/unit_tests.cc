@@ -59,9 +59,6 @@ int main() {
   wchar_t unum[kUintDigits + 1];
   CHECK(std::wstring(Uint2lStr(unum, 4294967295u)) == L"4294967295");
 
-  wchar_t hex[kPtrHexDigits + 1];
-  CHECK(std::wstring(LPTR2Hex(hex, 0xBEEF)) == L"BEEF");
-
   CHECK(AsciiToLower(L'A') == L'a' && AsciiToLower(L'Z') == L'z' &&
         AsciiToLower(L'[') == L'[');
 

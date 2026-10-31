@@ -231,7 +231,6 @@ template <typename CharT>
 // Digits needed by the largest values, excluding the terminator.
 inline constexpr size_t kIntDigits = 11;   // "-2147483648"
 inline constexpr size_t kUintDigits = 10;  // "4294967295"
-inline constexpr size_t kPtrHexDigits = sizeof(UINT_PTR) * 2;
 
 // The functions below format into the *end* of a caller-supplied buffer and
 // return a pointer to the first character, so no allocation or reversal is
@@ -261,20 +260,6 @@ template <typename CharT, size_t N>
   do {
     buf[--i] = static_cast<CharT>(CharT{'0'} + n % 10);
     n /= 10;
-  } while (n != 0);
-  return buf + i;
-}
-
-// Upper-case hexadecimal, no prefix, no leading zeros.
-template <typename CharT, size_t N>
-[[nodiscard]] const CharT* LPTR2Hex(CharT (&buf)[N], UINT_PTR n) {
-  static_assert(N >= kPtrHexDigits + 1, "buffer too small for a pointer");
-  constexpr char kDigits[] = "0123456789ABCDEF";
-  buf[kPtrHexDigits] = CharT{'\0'};
-  size_t i = kPtrHexDigits;
-  do {
-    buf[--i] = static_cast<CharT>(kDigits[n & 15]);
-    n >>= 4;
   } while (n != 0);
   return buf + i;
 }
