@@ -10,6 +10,7 @@
 #include "common/ini_section.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks.h"
+#include "hooks/input_options.h"
 
 namespace altsnap::hooks {
 
@@ -40,13 +41,6 @@ enum {
   RESET_OFFSET = 22,
   DRAG_WAIT = 77
 };
-
-// Number of actions per button!
-//  2 for Alt+Clikc
-// +2 for Titlebar action
-// +2 for Action while moving
-// +2 for action while resizing
-enum { NACPB = 8 };
 
 enum { STACK = 0x1000 };
 
@@ -294,13 +288,7 @@ struct config {
   UCHAR MenuAccelMap[36 + 1];
   UCHAR pad0[3];
 
-  action_t Mouse[NACPB * (20 + 4)];  // Up to 20 buttons + vertical and
-                                     // horizontal wheels D/U;
-  action_t GrabWithAlt[NACPB];       // Actions without click
-  action_t MoveUp[NACPB];            // Actions on (long) Move Up w/o drag
-  action_t ResizeUp[NACPB];          // Actions on (long) Resize Up w/o drag
-
-  action_t KBShortcutsList[64];
+  InputActions actions;
 };
 extern const struct config& conf;  // Read-only; written by hook_config.cc
 
@@ -369,12 +357,6 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h);
 void SetOriginFromRestoreData(HWND hwnd, action_t action);
 VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                               DWORD dwTime);
-unsigned ReadHotkeys(const IniSection& section, const char* name,
-                     const wchar_t* def, UCHAR* keys, unsigned max_keys);
-// Reads `count` hex bytes ("RR GG BB") as a packed little-endian COLORREF.
-uint32_t ReadColor(const IniSection& section, const char* key,
-                   const wchar_t* def, unsigned count);
-
 // Types and constants shared by the hooks.dll modules.
 enum { SW_FULLSCREEN = 28 };
 

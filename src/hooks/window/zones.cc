@@ -13,6 +13,11 @@
 
 namespace altsnap::hooks {
 
+std::span<RECT> GetZones(size_t layout) {
+  if (layout >= Zones.size()) return {};
+  return Zones[layout];
+}
+
 std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
 static DWORD Grids[MAX_LAYOUTS] = {};
 
@@ -537,9 +542,10 @@ static void ZonesPrevResetRegion() {
 void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
   if (!conf.ShowZonesPrevw) return;
   if (section) {
-    const COLORREF bgcol =
-        ReadColor(*section, "ZonesPrevwBGCol", L"FF FF FF", 3);
-    g_ZPrevBDCol = ReadColor(*section, "ZonesPrevwBDCol", L"00 00 00", 3);
+    const COLORREF bgcol = ReadColor(*section, "ZonesPrevwBGCol", L"FF FF FF",
+                                     ColorChannels::kRgb);
+    g_ZPrevBDCol = ReadColor(*section, "ZonesPrevwBDCol", L"00 00 00",
+                             ColorChannels::kRgb);
     const UCHAR opacity = conf.ZonesPrevwOpacity;
     const UCHAR usetrans = opacity != 0 && opacity != 255;
     const WNDPROC wproc = opacity == 0 ? DefWindowProc : SnapLayoutWinProc;

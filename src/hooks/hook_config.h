@@ -13,6 +13,11 @@ void ReadConfig(const wchar_t* inipath);
 // Registers the keyboard shortcuts of the [KBShortcuts] section.
 void RegisterAllHotkeys(const wchar_t* inipath);
 
+// Successful registrations only; the span is invalidated by registration or
+// teardown.
+std::span<const action_t> RegisteredHotkeys();
+void UnregisterAllHotkeys();
+
 // Releases the memory held by the blacklists and the input sequences.
 void FreeBlacklists();
 void FreeAllInputSequences();

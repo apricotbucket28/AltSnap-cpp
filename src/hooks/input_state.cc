@@ -30,25 +30,17 @@ namespace altsnap::hooks {
 ///////////////////////////////////////////////////////////////////////////
 // Get action of button
 action_t GetAction(const int button) {
-  if (button) {  // Ugly pointer arithmetic (LMB <==> button == 2)
-    return conf.Mouse[(button - 2) * NACPB + ModKey()];
-  }
-  return k_action_none;
+  return conf.actions.GetMouse(button, ActionContext::kNormal, ModKey());
 }
 action_t GetActionT(const int button) {
-  if (button) {  // Ugly pointer arithmetic +2 compared to non titlebar
-    return conf.Mouse[2 + (button - 2) * NACPB + ModKey()];
-  }
-  return k_action_none;
+  return conf.actions.GetMouse(button, ActionContext::kTitlebar, ModKey());
 }
 action_t GetActionMR(const int button) {
-  if (button) {
-    // Ugly pointer arithmetic
-    // state.action == 1 or 2
-    // MB[4/5] == Action/Alt while moving
-    // MB[6/7] == Action/Alt while Resizing
-    int offset = state.action.ac << 1;  // 2 or 4
-    return conf.Mouse[2 + offset + (button - 2) * NACPB + ModKey()];
+  if (state.action.ac == AC_MOVE) {
+    return conf.actions.GetMouse(button, ActionContext::kMoving, ModKey());
+  }
+  if (state.action.ac == AC_RESIZE) {
+    return conf.actions.GetMouse(button, ActionContext::kResizing, ModKey());
   }
   return k_action_none;
 }

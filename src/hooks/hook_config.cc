@@ -10,6 +10,7 @@
 #include "common/ini_section.h"
 #include "hooks/blacklist.h"
 #include "hooks/hooks_internal.h"
+#include "hooks/hotkey_message.h"
 #include "hooks/mouse_hook.h"
 #include "hooks/overlay/trans_window.h"
 #include "hooks/window/snap.h"
@@ -22,117 +23,27 @@ namespace altsnap::hooks {
 static config g_config;
 const config& conf = g_config;
 
+namespace {
+std::vector<action_t> g_registered_hotkeys;
+}  // namespace
+
+std::span<const action_t> RegisteredHotkeys() {
+  return g_registered_hotkeys;
+}
+
+void UnregisterAllHotkeys() {
+  for (size_t i = 0; i < g_registered_hotkeys.size(); ++i) {
+    UnregisterHotKey(g_mainhwnd, kFirstRegisteredHotkey + i);
+  }
+  g_registered_hotkeys.clear();
+}
+
 // Upstream: freeblacklists
 void FreeBlacklists() {
   BlkLst = {};
 }
 /////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////
-// Used to read Hotkeys and Hotclicks
-// Reads a list of hexadecimal key codes ("A4 A5") into `keys` and
-// zero-terminates it, so `keys` needs room for `max_keys + 1` entries.
-// Returns the number of keys read.
-// Upstream: readhotkeys
-unsigned ReadHotkeys(const IniSection& section, const char* name,
-                     const wchar_t* def, UCHAR* keys, unsigned MaxKeys) {
-  const wchar_t* txt = section.GetString(name, def);
-  size_t i = 0;
-  if (!txt || !*txt) return i;
-  const wchar_t* pos = txt;
-  while (*pos) {
-    // Store key
-    if (i == MaxKeys) break;
-    keys[i++] = HexToUnsigned(pos);
-
-    while (*pos && *pos >= '0') pos++;  // go to the end of the word
-    while (*pos && *pos < '0') pos++;   // go to next char after spaces.
-  }
-  keys[i] = 0;
-  return i;
-}
-// Reads up to `count` (at most 4) hexadecimal bytes ("RR GG BB [AA]") packed
-// little-endian into one value, e.g. a COLORREF.
-static uint32_t ReadPackedBytes(const IniSection& section, const char* key,
-                                const wchar_t* def, unsigned count) {
-  UCHAR bytes[MAXKEYS + 1];
-  ReadHotkeys(section, key, def, bytes, count);
-  uint32_t value = 0;
-  for (unsigned i = 0; i < count; i++) value |= uint32_t{bytes[i]} << (8 * i);
-  return value;
-}
-uint32_t ReadColor(const IniSection& section, const char* key,
-                   const wchar_t* def, unsigned count) {
-  return ReadPackedBytes(section, key, def, count);
-}
-
-/* TOTO: IMPLEMENT action parameters */
-// Upstream: readaction
-static action_t ReadAction(const IniSection& section, const char* key) {
-  const wchar_t* txt = section.GetString(key, L"Nothing");
-  if (!txt || !*txt) return k_action_none;
-
-  return MapActionW(txt);
-}
-// Read all buttons actions from inipath
-// Upstream: readbuttonactions
-static void ReadButtonActions(const IniSection& inputsection) {
-  static const char* buttons[] = {
-      "LMB",         "RMB",    "MMB",      "MB4",      "MB5",     "MB6",
-      "MB7",         "MB8",    "MB9",      "MB10",     "MB11",    "MB12",
-      "MB13",        "MB14",   "MB15",     "MB16",     "MB17",    "MB18",
-      "MB19",        "MB20",   "Scroll",   "ScrollUp", "HScroll", "HScrollUp",
-
-      "GrabWithAlt", "MoveUp", "ResizeUp",
-  };
-
-  for (size_t i = 0; i < std::size(buttons); i++) {
-    action_t* const actionptr = &g_config.Mouse[0];  // first action in list
-
-    char key[32];
-    CopyString(key, std::size(key) - 8, buttons[i]);
-    int len = lstrlenA(key);
-    // Read primary action (no sufix)
-    actionptr[NACPB * i + 0] = ReadAction(inputsection, key);
-    key[len] = 'B';
-    key[len + 1] = '\0';  // Secondary B sufixe
-    actionptr[NACPB * i + 1] = ReadAction(inputsection, key);
-
-    // Titlbar actions
-    key[len] = 'T';
-    key[len + 1] = '\0';  // Titlebar T sufixes
-    actionptr[NACPB * i + 2] = ReadAction(inputsection, key);
-    key[len + 1] = 'B';
-    key[len + 2] = '\0';  // TB
-    actionptr[NACPB * i + 3] = ReadAction(inputsection, key);
-
-    // Action while moving
-    key[len] = 'M';
-    key[len + 1] = '\0';  // Action while Moving M sufixe
-    actionptr[NACPB * i + 4] = ReadAction(inputsection, key);
-    key[len + 1] = 'B';
-    key[len + 2] = '\0';  // MB
-    actionptr[NACPB * i + 5] = ReadAction(inputsection, key);
-
-    // Action while resizing
-    key[len] = 'R';
-    key[len + 1] = '\0';  // Action while Moving M sufixe
-    actionptr[NACPB * i + 6] = ReadAction(inputsection, key);
-    key[len + 1] = 'B';
-    key[len + 2] = '\0';  // MB
-    actionptr[NACPB * i + 7] = ReadAction(inputsection, key);
-  }
-
-  for (size_t j = 0; j < NACPB; j++) {
-    // ScrollUp
-    if (g_config.Mouse[21 * NACPB + j].ac == AC_NONE)
-      g_config.Mouse[21 * NACPB + j] = g_config.Mouse[20 * NACPB + j];
-
-    // HScrollUp
-    if (g_config.Mouse[23 * NACPB + j].ac == AC_NONE)
-      g_config.Mouse[23 * NACPB + j] = g_config.Mouse[22 * NACPB + j];
-  }
-}
-
 // Upstream: registerAllHotkeys
 void RegisterAllHotkeys(const wchar_t* inipath) {
   LOG("RegisterAllHotkeys START");
@@ -149,9 +60,10 @@ void RegisterAllHotkeys(const wchar_t* inipath) {
   static const char* action_names[] = {ACTION_MAP};
 #undef ACVALUE
 
-  size_t idx = 0;
+  UnregisterAllHotkeys();
   for (const wchar_t* p : section.lines()) {
-    if (idx >= std::size(g_config.KBShortcutsList)) break;
+    const size_t idx = g_registered_hotkeys.size();
+    if (idx >= kMaxRegisteredHotkeys) break;
     if (*p == ';') continue;
 
     action_t action = MapActionW(p);
@@ -163,13 +75,13 @@ void RegisterAllHotkeys(const wchar_t* inipath) {
     WORD HK = ParseInt(p = ++pp);  // Read HOTKEY
     if (LOBYTE(HK) && HIBYTE(HK)) {
       // Lobyte is the virtual key code and hibyte is the mod_key
-      if (RegisterHotKey(g_mainhwnd, 0xC001 + idx, HIBYTE(HK), LOBYTE(HK))) {
-        g_config.KBShortcutsList[idx] = action;  // Add action to the list
+      if (RegisterHotKey(g_mainhwnd, kFirstRegisteredHotkey + idx, HIBYTE(HK),
+                         LOBYTE(HK))) {
+        g_registered_hotkeys.push_back(action);
         LOG("OK registering hotkey %s_%d_%d=%x, [idx=%d]",
             action_names[action.ac], static_cast<int>(action.fl),
             static_cast<int>(action.wp), static_cast<unsigned>(HK),
             static_cast<int>(idx));
-        idx++;
       } else {
         LOG("Error registering hotkey %s=%x", action_names[action.ac],
             static_cast<unsigned>(HK));
@@ -295,8 +207,9 @@ static void ReadAllInputSequences(const IniSection& section) {
 
   for (size_t i = 0; i < g_inputSequences.size(); i++) {
     shrtN[4] = i < 10 ? '0' + i : 'A' - 10 + i;
-    unsigned len =
-        ReadHotkeys(section, shrtN, L"\0", buf + 1, std::size(buf) - 4) / 2;
+    unsigned len = ReadHotkeys(section, shrtN, L"\0",
+                               std::span(buf).subspan(1, std::size(buf) - 3)) /
+                   2;
     buf[0] = len;  // We store the amount of input, not characters; the input
                    // includes up or down.
     if (len) g_inputSequences[i].assign(buf, buf + len * 2 + 1);
@@ -375,7 +288,7 @@ void ReadHotkeyLists(const IniSection& input) {
   static const struct {
     const char* name;
     const wchar_t* def;
-    UCHAR* dst;
+    std::span<UCHAR> dst;
   } kHotkeyLists[] = {
       {"Hotkeys", L"A4 A5", g_config.Hotkeys},      // VK_LMENU VK_RMENU
       {"Shiftkeys", L"A0 A1", g_config.Shiftkeys},  // VK_LSHIFT VK_RSHIFT
@@ -387,18 +300,17 @@ void ReadHotkeyLists(const IniSection& input) {
       {"ESCKeys", L"1B", g_config.ESCkeys},        // VK_ESCAPE
   };
   for (const auto& list : kHotkeyLists) {
-    ReadHotkeys(input, list.name, list.def, list.dst, MAXKEYS);
+    ReadHotkeys(input, list.name, list.def, list.dst);
   }
   UCHAR end_keys[MAXKEYS + 1];  // Key to be sent at the end of a movement.
-  ReadHotkeys(input, "EndSendKey", L"11", end_keys, MAXKEYS);
+  ReadHotkeys(input, "EndSendKey", L"11", end_keys);
   g_config.EndSendKey = end_keys[0];
 }
 
 // Accelerators of the window list menu.
 void ReadMenuAccelerators(const IniSection& input) {
   const size_t read =
-      ReadHotkeys(input, "MenuAccelMap", nullptr, g_config.MenuAccelMap,
-                  std::size(g_config.MenuAccelMap) - 1);
+      ReadHotkeys(input, "MenuAccelMap", nullptr, g_config.MenuAccelMap);
   // Fill the rest with the usual accelerators.
   for (size_t j = read; j < std::size(g_config.MenuAccelMap); j++) {
     if (g_config.NumberMenuItems) {
@@ -413,10 +325,11 @@ void ReadMenuAccelerators(const IniSection& input) {
 void ReadInputOptions(const wchar_t* inipath) {
   const IniSection input = IniSection::Read(inipath, L"Input");
   ReadAllUchars(input, Input_uchars, std::size(Input_uchars));
-  ReadButtonActions(input);
+  g_config.actions = ReadButtonActions(input);
 
   if (g_config.TopmostIndicator) {
-    g_config.PinColor = ReadColor(input, "PinColor", L"FF FF 00 54", 4);
+    g_config.PinColor =
+        ReadColor(input, "PinColor", L"FF FF 00 54", ColorChannels::kRgba);
   }
   if (!g_config.FullWin) {
     CreateTransWin(input);  // The hollow window used while moving.

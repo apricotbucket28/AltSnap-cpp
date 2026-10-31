@@ -106,7 +106,8 @@ void HandleMouseMove(const MSLLHOOKSTRUCT& msg) {
 // Another click while we are already busy with an action: a click combo.
 std::optional<LRESULT> HandleComboClick(const MouseEvent& e) {
   if (e.buttonstate != STATE_DOWN || !state.action.ac ||
-      state.action.ac == conf.GrabWithAlt[ModKey()].ac) {
+      state.action.ac ==
+          conf.actions.grab_with_alt.Get(ActionContext::kNormal, ModKey()).ac) {
     return std::nullopt;
   }
   DoComboActions(e.action, e.button);
@@ -246,10 +247,12 @@ std::optional<LRESULT> HandleButtonUp(const MouseEvent& e) {
     // Mouse UP actions here only in case of MOVEMENT!:
     // Perform an action on mouse up without drag on move/resize
     action_t action = e.action;
-    const int in_titlebar =
-        2 * (!!state.hittest);  // If in the titlebar add two
-    if (action.ac == AC_MOVE) action = conf.MoveUp[ModKey() + in_titlebar];
-    if (action.ac == AC_RESIZE) action = conf.ResizeUp[ModKey() + in_titlebar];
+    const ActionContext context =
+        state.hittest ? ActionContext::kTitlebar : ActionContext::kNormal;
+    if (action.ac == AC_MOVE)
+      action = conf.actions.move_up.Get(context, ModKey());
+    if (action.ac == AC_RESIZE)
+      action = conf.actions.resize_up.Get(context, ModKey());
 
     if (action.ac > AC_RESIZE) {
       SClickActions(state.hwnd, action);

@@ -15,6 +15,7 @@
 #include "hooks/blacklist.h"
 #include "hooks/hook_config.h"
 #include "hooks/hooks_internal.h"
+#include "hooks/hotkey_message.h"
 #include "hooks/keyboard_hook.h"
 #include "hooks/mouse_hook.h"
 #include "hooks/movement.h"
@@ -180,26 +181,11 @@ static void KillAllTimers() {
 LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
   if (msg == WM_HOTKEY) {
-    int ptwindow = 0;
-    action_t action = k_action_none;
-    if (wParam > 0xC000) {  // HOTKEY
-      // The user Pressed a hotkey.
-      size_t action_idx = wParam - 0xC001;  // Remove the Offset
-      assert(action_idx < std::size(conf.KBShortcutsList));
-      action = conf.KBShortcutsList[action_idx];
-      ptwindow = conf.UsePtWindow;
-      LOG("Hotkey Pressed, action = %d", action.ac);
-    } else if (0x0000 < wParam && wParam < 0x1000) {
-      // The user called AltSnap.exe -afACTION
-      action = UnpackAction(lParam);
-      assert(wParam - 0x0000 == action.ac);
-      ptwindow = 0;
-    } else if (0x1000 < wParam && wParam < 0x2000) {
-      // The user called AltSnap.exe -apACTION
-      action = UnpackAction(lParam);
-      assert(wParam - 0x1000 == action.ac);
-      ptwindow = 1;
-    }
+    const auto request = DecodeHotkeyMessage(
+        wParam, lParam, RegisteredHotkeys(), conf.UsePtWindow);
+    if (!request) return 0;
+    const action_t action = request->action;
+    const bool ptwindow = request->point_window;
 
     if (action.ac > AC_RESIZE) {  // Exclude resize action in case...
       POINT pt;
@@ -249,14 +235,15 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
     SetLayoutNumber(wParam);
     return 0;
   } else if (msg == WM_GETLAYOUTREZ) {
-    return GetLayoutRez(wParam);
+    if (wParam >= Zones.size()) return 0;
+    return GetLayoutRez(static_cast<int>(wParam));
   } else if (msg == WM_GETBESTLAYOUT) {
     return GetBestLayoutFromMonitors();
   } else if (msg == WM_GETZONES) {
-    auto layout_idx = static_cast<unsigned>(wParam);
-    RECT** dZones = reinterpret_cast<RECT**>(lParam);
-    if (dZones) *dZones = Zones[layout_idx].data();
-    return Zones[layout_idx].size();  // Return number of zones on the layout
+    const auto zones = GetZones(wParam);
+    RECT** output = reinterpret_cast<RECT**>(lParam);
+    if (output) *output = zones.empty() ? nullptr : zones.data();
+    return zones.size();
   }
 
   return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -291,8 +278,7 @@ void WINAPI Unload() {
     }
   }
 
-  for (size_t idx = 0; idx < std::size(conf.KBShortcutsList); idx++)
-    UnregisterHotKey(g_mainhwnd, 0xC001 + idx);
+  UnregisterAllHotkeys();
 
   EnumThreadWindows(GetCurrentThreadId(), PostPinWindowsProcMessage, WM_CLOSE);
   UnregisterClass(APP_NAME L"-Timers", hinstDLL);

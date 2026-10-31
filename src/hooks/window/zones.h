@@ -23,6 +23,8 @@ void InitCurrentLayout(unsigned layout);
 void ShowSnapLayoutPreview(unsigned char yep);
 void SnapLayoutPreviewCreateDestroy(const IniSection* section);
 extern std::array<std::vector<RECT>, MAX_LAYOUTS> Zones;
+// Borrowed until the layouts are modified or freed. Invalid indices are empty.
+[[nodiscard]] std::span<RECT> GetZones(size_t layout);
 void FreeZones();
 
 }  // namespace altsnap::hooks

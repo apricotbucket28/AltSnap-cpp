@@ -181,7 +181,8 @@ void UpdateCursor(POINT pt) {
 ///////////////////////////////////////////////////////////////////////////
 void CreateTransWin(const IniSection& section) {
   // Read the color for the TransWin from ini file
-  const COLORREF color = ReadColor(section, "FrameColor", L"80 00 80", 3);
+  const COLORREF color =
+      ReadColor(section, "FrameColor", L"80 00 80", ColorChannels::kRgb);
   WNDCLASS wnd;
   ZeroObject(wnd);
   //    wnd.style = CS_SAVEBITS;

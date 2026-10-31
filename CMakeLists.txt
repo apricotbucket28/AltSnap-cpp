@@ -117,6 +117,7 @@ add_library(hooks SHARED
     src/hooks/keyboard_hook.cc
     src/hooks/mouse_hook.cc
     src/hooks/movement.cc
+    src/hooks/input_options.cc
     src/hooks/hook_config.cc
     src/hooks/window/window_info.h
     src/hooks/window/window_enum.h
@@ -274,4 +275,16 @@ if(ALTSNAP_BUILD_TESTS)
   target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
   target_link_options(unit_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   add_test(NAME unit_tests COMMAND unit_tests)
+
+  # Compile the production hook implementation into the test executable so its
+  # internal message boundary can be exercised without installing system hooks
+  # or expanding the DLL's public exports.
+  get_target_property(ALTSNAP_HOOK_TEST_SOURCES hooks SOURCES)
+  list(FILTER ALTSNAP_HOOK_TEST_SOURCES INCLUDE REGEX "\\.cc$")
+  add_executable(hook_tests tests/hook_tests.cc ${ALTSNAP_HOOK_TEST_SOURCES})
+  target_include_directories(hook_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(hook_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
+  target_link_options(hook_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  target_link_libraries(hook_tests PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
+  add_test(NAME hook_tests COMMAND hook_tests)
 endif()

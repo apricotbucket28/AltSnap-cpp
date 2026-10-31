@@ -40,9 +40,11 @@ static void HotkeyUp() {
   // Hotkeys have been released
   state.alt = 0;
   state.alt1 = 0;
-  if (state.action.ac && (conf.GrabWithAlt[0].ac || conf.GrabWithAlt[1].ac) &&
-      (IsMovementAction(conf.GrabWithAlt[0]) ||
-       IsMovementAction(conf.GrabWithAlt[1]))) {
+  if (state.action.ac &&
+      (conf.actions.grab_with_alt.normal[0].ac ||
+       conf.actions.grab_with_alt.normal[1].ac) &&
+      (IsMovementAction(conf.actions.grab_with_alt.normal[0]) ||
+       IsMovementAction(conf.actions.grab_with_alt.normal[1]))) {
     FinishMovementAsync();
   }
 
@@ -70,10 +72,11 @@ void StartAltAction(UCHAR vkey) {
 
   // Hook mouse
   HookMouse();
-  if (conf.GrabWithAlt[0].ac || conf.GrabWithAlt[1].ac) {
-    const action_t action =
-        conf.GrabWithAlt[IsModKey(vkey) ||
-                         (!IsHotkey(conf.ModKey[0]) && ModKey())];
+  if (conf.actions.grab_with_alt.normal[0].ac ||
+      conf.actions.grab_with_alt.normal[1].ac) {
+    const action_t action = conf.actions.grab_with_alt.Get(
+        ActionContext::kNormal,
+        IsModKey(vkey) || (!IsHotkey(conf.ModKey[0]) && ModKey()));
     if (action.ac) {
       state.blockmouseup = 0;  // In case.
       POINT pt;
@@ -239,7 +242,9 @@ bool HandleKeyDown(const KBDLLHOOKSTRUCT& kb) {
     ToggleSnapState();
     return true;  // Block to avoid sys menu.
   }
-  if (state.alt && state.action.ac == conf.GrabWithAlt[ModKey()].ac &&
+  if (state.alt &&
+      state.action.ac ==
+          conf.actions.grab_with_alt.Get(ActionContext::kNormal, ModKey()).ac &&
       IsKillkey(vkey)) {
     // Release Hook on Alt+KillKey
     // eg: DisplayFusion Alt+Tab elevated windows captures AltUp
