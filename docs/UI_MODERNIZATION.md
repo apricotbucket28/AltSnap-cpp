@@ -59,25 +59,67 @@ resident Win32 host and hooks DLL remain the runtime architecture.
   grounds to make this preview the default. Installer/retirement work stays in
   later milestones.
 
+### Snapping settings migration (2026-10-31)
+
+- Added a complete **Snapping** page for screen-edge tiling, all three
+  documented SmartAero bits, automatic boundary snapping, and sticky resizing
+  (off / while Shift / unless Shift). Zone layouts and INI-only fine tuning
+  retain their existing tools. General retains AutoFocus; startup, language,
+  and other General options remain in the legacy frontend.
+- `src/settings/model.h` inventories keys, engine defaults, editable ranges,
+  and bit masks, and owns the UI-independent draft. Missing StickyResize is
+  shown as off (engine default 0, unlike the old dialog's 1); AutoSnap uses
+  missing-key default 0 rather than the template's 2. StickyResize 1 and 3
+  display the same Shift behavior. Untouched raw text, absence, custom scalar
+  values, and unrelated bits are preserved; dependent controls retain drafts.
+- Protocol **v2** carries a bounded changed-option mask, typed scalar values,
+  and raw/presence/effective snapshot values. Old peers fail closed; deploy the
+  companion and host together. Apply validates the entire patch, checks the
+  full-file revision under the existing writer lock, coalesces edits to each
+  key, verifies each write, then reloads enabled hooks once. Disabled hosts
+  remain disabled; native test windows refresh. Partial profile-write failure
+  still cannot promise rollback; the host re-reads actual persisted values and
+  the UI retains its draft pending explicit Reload.
+- Migrated legacy General controls use the same checked repository and only
+  write changed migrated options. Frontend leases and the conservative
+  multi-host refusal remain. Other legacy/tray/zone writers are not yet
+  universally routed; full writer unification remains future work.
+- Navigation retains drafts, Apply reflects actual changes, and Reload,
+  Cancel/window close, and legacy handoff confirm before discarding edits.
+  Standard controls, theme resources, scrolling, descriptions, and grouped
+  cards establish the next-page pattern. New UI text remains English-only;
+  theme selection remains session-only.
+- Verified: Release MinGW build, all four CTest suites, MSVC shared model tests,
+  WinUI build and Publish. Regression tests cover defaults, byte conversions,
+  custom/empty/absent values, bit preservation, validation, dirty/revert,
+  complete protocol round trips/truncation, stale drafts and runtime failures.
+  The explicit native test below launches an isolated portable installation and
+  passed real pipe read/batch Apply/re-read, external-write conflicts,
+  disabled Apply and re-enable, and orderly shutdown:
+
+  `build/core/release/settings_host_tests.exe build/core/release/AltSnap.exe`
+
+  Run it on an interactive Windows desktop with other AltSnap hosts closed.
+  It builds with ALTSNAP_BUILD_TESTS but deliberately is not registered with
+  unattended CTest because it installs real hooks temporarily. Test fixtures
+  remain under the build directory for inspection.
+- The companion was launched successfully. Visual/theme, keyboard/Narrator,
+  mixed-DPI/high-contrast, and actual drag acceptance remain unverified:
+  both desktop automation APIs misidentify this executable as Windows Settings
+  and refuse its window binding. Clean-machine deployment, elevation
+  acceptance, failed native activation, disconnect/shutdown races, and complete
+  peer/competing-frontend integration acceptance remain open. Existing adapter
+  tests cover injected activation failures. The preview stays opt-in.
+
 ### Next development handoff
 
-Close the remaining first-milestone acceptance gates before extending the set
-of writable options. Add transport/host integration coverage for peer rejection,
-disconnect during apply, shutdown cancellation, competing frontends, and shared
-INI writers; current automated coverage exercises the codec, repository, and
-runtime adapter, not the complete pipe service. Exercise actual disabled-state
-preservation and failed activation in addition to the adapter's injected tests.
-Check hook responsiveness during companion launch: Explorer COM automation
-currently runs synchronously on the host window thread, so launch latency must
-be assessed before treating isolation from the input path as proven.
-
-Then proceed with milestone 2's option inventory, localization, per-window
-draft/controller, and broader host writer routing before migrating the rest of
-General. The current repository and protocol deliberately expose only AutoFocus;
-do not use the engine's effective config struct as the new settings schema.
-Continue page by page toward parity, switch the default entry points only after
-the delivery/accessibility/runtime gates pass, and retire the property-sheet
-pages and their dialog resources after the documented fallback period.
+Complete the remaining delivery/accessibility/runtime acceptance above before
+switching defaults. Continue cohesive page migrations using the explicit
+settings draft and patch, not the engine's effective config struct. General's
+remaining startup/elevation and language options require host-specific commands,
+localization, and checked cache refresh. Finish shared writer routing before
+relaxing conservative multi-host editing. Preserve the legacy fallback until
+feature parity and the default-switch gates pass.
 
 ## Recommendation and alternatives
 

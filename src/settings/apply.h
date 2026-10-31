@@ -11,14 +11,19 @@ class Runtime {
 };
 // Called only on the runtime owner's thread. Never start after a failed stop,
 // never enable a disabled host, and never reload after a failed persistence.
-inline Result ApplyAutoFocus(Repository& repository, uint64_t revision,
-                             bool value, Runtime& runtime) {
+inline Result ApplyPatch(Repository& repository, uint64_t revision,
+                         const Patch& patch, Runtime& runtime) {
   const bool was_enabled = runtime.Enabled();
-  const Result persisted = repository.Write(revision, value);
+  const Result persisted = repository.Write(revision, patch);
   if (persisted != Result::kOk) return persisted;
-  if (was_enabled && (!runtime.Stop() || !runtime.Start()))
+  if (patch.changed && was_enabled && (!runtime.Stop() || !runtime.Start()))
     return Result::kActivationFailed;
   return Result::kOk;
+}
+inline Result ApplyAutoFocus(Repository& repository, uint64_t revision,
+                             bool value, Runtime& runtime) {
+  return ApplyPatch(repository, revision,
+                    SingleChange(Option::kAutoFocus, value), runtime);
 }
 }  // namespace altsnap::settings
 #endif

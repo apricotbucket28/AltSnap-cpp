@@ -11,7 +11,11 @@ class Repository {
  public:
   explicit Repository(std::wstring path) : path_(std::move(path)) {}
   Snapshot Read() const;
-  Result Write(uint64_t revision, bool value) const;
+  Result Write(uint64_t revision, const Patch& patch) const;
+  Result Write(uint64_t revision, bool value) const {
+    return Write(revision, SingleChange(Option::kAutoFocus, value));
+  }
+  Result WriteIfUnchanged(const Snapshot& base, const Patch& patch) const;
   Result WriteIfAutoFocusUnchanged(const Snapshot& base, bool value) const;
 
  private:

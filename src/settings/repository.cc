@@ -40,28 +40,39 @@ Snapshot Repository::Read() const {
     snapshot.result = Result::kReadFailed;
     return snapshot;
   }
-  for (const wchar_t* line = section.data(); *line;
-       line += std::wcslen(line) + 1) {
-    if (!_wcsnicmp(line, L"AutoFocus=", 10)) {
-      snapshot.present = true;
-      snapshot.raw = line + 10;
-      break;
+  for (size_t i = 0; i < kOptionCount; ++i) {
+    Value& value = snapshot.values[i];
+    const auto& definition = kOptions[i];
+    const std::wstring prefix = std::wstring(definition.key) + L"=";
+    for (const wchar_t* line = section.data(); *line;
+         line += std::wcslen(line) + 1) {
+      if (!_wcsnicmp(line, prefix.c_str(), prefix.size())) {
+        value.present = true;
+        value.raw = line + prefix.size();
+        break;
+      }
     }
+    if (value.raw.size() > 4095) {
+      snapshot.result = Result::kReadFailed;
+      return snapshot;
+    }
+    const uint8_t number =
+        value.present ? static_cast<uint8_t>(ParseInt(value.raw.c_str()))
+                      : static_cast<uint8_t>(definition.engine_default);
+    value.effective =
+        definition.mask
+            ? (definition.mask == 3 ? (number & 1 ? 1u : number & 2)
+                                    : uint32_t((number & definition.mask) != 0))
+            : (definition.kind == ValueKind::kToggle ? uint32_t(number != 0)
+                                                     : number);
   }
-  if (snapshot.raw.size() > 4095) {
-    snapshot.result = Result::kReadFailed;
-    return snapshot;
-  }
-  // The engine parses decimal text and narrows this option to UCHAR, rather
-  // than treating every nonzero UINT returned by GetPrivateProfileInt as true.
-  snapshot.auto_focus =
-      static_cast<uint8_t>(ParseInt(snapshot.raw.c_str())) != 0;
   if (Revision() != revision) snapshot.result = Result::kConflict;
   return snapshot;
 }
-Result Repository::Write(uint64_t revision, bool value) const {
-  // Cooperating hosts serialize this key even if one starts during an apply.
-  // Other keys remain legacy-owned; the companion rejects multi-host editing.
+Result Repository::Write(uint64_t revision, const Patch& patch) const {
+  if (!patch.Valid()) return Result::kInvalid;
+  // Cooperating modern writers serialize the batch. The frontend lease excludes
+  // the legacy dialog; multi-host editing remains conservatively refused.
   const std::wstring lock_path = path_ + L".settings-lock";
   HANDLE lock = CreateFileW(
       lock_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
@@ -74,24 +85,58 @@ Result Repository::Write(uint64_t revision, bool value) const {
   const Snapshot before = Read();
   if (before.result != Result::kOk) return before.result;
   if (before.revision != revision) return Result::kConflict;
-  if (!WritePrivateProfileStringW(L"General", L"AutoFocus", value ? L"1" : L"0",
-                                  path_.c_str()))
-    return Result::kWriteFailed;
-  const Snapshot after = Read();
-  return after.result == Result::kOk && after.present &&
-                 after.raw == (value ? L"1" : L"0")
-             ? Result::kOk
-             : Result::kWriteFailed;
+  // Coalesce edits to the same bit field into one checked key write.
+  for (size_t i = 0; i < kOptionCount; ++i) {
+    if (!(patch.changed & (1u << i))) continue;
+    const auto& definition = kOptions[i];
+    bool already_written = false;
+    for (size_t j = 0; j < i; ++j)
+      if ((patch.changed & (1u << j)) &&
+          std::wcscmp(kOptions[j].key, definition.key) == 0)
+        already_written = true;
+    if (already_written) continue;
+    // Preserve unedited bits, including bits above the engine's byte.
+    uint32_t number =
+        before.values[i].present
+            ? static_cast<uint32_t>(ParseInt(before.values[i].raw.c_str()))
+            : definition.engine_default;
+    for (size_t j = i; j < kOptionCount; ++j) {
+      if (!(patch.changed & (1u << j)) ||
+          std::wcscmp(kOptions[j].key, definition.key) != 0)
+        continue;
+      const uint32_t mask = kOptions[j].mask;
+      const uint32_t value = patch.values[j];
+      number = mask
+                   ? (number & ~mask) | (mask == 3 ? value : (value ? mask : 0))
+                   : value;
+    }
+    const std::wstring text = std::to_wstring(number);
+    if (!WritePrivateProfileStringW(L"General", definition.key, text.c_str(),
+                                    path_.c_str()))
+      return Result::kWriteFailed;
+    const Snapshot after = Read();
+    if (after.result != Result::kOk || !after.values[i].present ||
+        after.values[i].raw != text)
+      return Result::kWriteFailed;
+  }
+  return Result::kOk;
 }
-Result Repository::WriteIfAutoFocusUnchanged(const Snapshot& base,
-                                             bool value) const {
-  // Other legacy pages can write unrelated keys after General receives Apply.
-  // Compare the original key before rebasing onto the latest file revision.
+Result Repository::WriteIfUnchanged(const Snapshot& base,
+                                    const Patch& patch) const {
+  if (!patch.Valid()) return Result::kInvalid;
   if (base.result != Result::kOk) return base.result;
   const Snapshot current = Read();
   if (current.result != Result::kOk) return current.result;
-  if (current.present != base.present || current.raw != base.raw)
-    return Result::kConflict;
-  return Write(current.revision, value);
+  for (size_t i = 0; i < kOptionCount; ++i) {
+    if (!(patch.changed & (1u << i))) continue;
+    if (current.values[i].present != base.values[i].present ||
+        current.values[i].raw != base.values[i].raw)
+      return Result::kConflict;
+  }
+  return Write(current.revision, patch);
+}
+Result Repository::WriteIfAutoFocusUnchanged(const Snapshot& base,
+                                             bool value) const {
+  return WriteIfUnchanged(base, SingleChange(Option::kAutoFocus, value));
 }
 }  // namespace altsnap::settings

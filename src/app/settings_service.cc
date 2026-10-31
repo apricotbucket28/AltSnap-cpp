@@ -11,6 +11,7 @@
 #include "settings/apply.h"
 #include "ui/config.h"
 #include "ui/config_internal.h"
+#include "ui/test_window.h"
 namespace altsnap::app {
 SettingsService* settings_service = nullptr;
 namespace {
@@ -110,14 +111,13 @@ bool SettingsService::FocusFrontend() {
   }
   return false;
 }
-settings::Snapshot SettingsService::ReadLegacyAutoFocus() const {
+settings::Snapshot SettingsService::ReadLegacySettings() const {
   return repository_.Read();
 }
-bool SettingsService::WriteLegacyAutoFocus(const settings::Snapshot& base,
-                                           bool value) {
+bool SettingsService::WriteLegacySettings(const settings::Snapshot& base,
+                                          const settings::Patch& patch) {
   if (FrontendActive() || MultipleHosts()) return false;
-  return repository_.WriteIfAutoFocusUnchanged(base, value) ==
-         settings::Result::kOk;
+  return repository_.WriteIfUnchanged(base, patch) == settings::Result::kOk;
 }
 settings::Snapshot SettingsService::Execute(const settings::Request& request,
                                             DWORD client, bool stopping) {
@@ -153,8 +153,10 @@ settings::Snapshot SettingsService::Execute(const settings::Request& request,
       bool Stop() override { return UnhookSystem() == 0; }
       bool Start() override { return HookSystem() == 0; }
     } runtime;
-    const Result result = settings::ApplyAutoFocus(
-        repository_, request.revision, request.auto_focus, runtime);
+    const Result result = settings::ApplyPatch(repository_, request.revision,
+                                               request.patch, runtime);
+    if (result == Result::kOk || result == Result::kActivationFailed)
+      EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);
     snapshot = repository_.Read();
     snapshot.result = result;
     snapshot.enabled = IsEnabled();

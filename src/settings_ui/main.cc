@@ -1,7 +1,9 @@
+// Windows SDK headers depend on windows.h being included first.
+// clang-format off
 #include <windows.h>
-
 #include <shellapi.h>
 #include <shobjidl.h>
+// clang-format on
 #undef GetCurrentTime
 #include <microsoft.ui.xaml.window.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
@@ -27,7 +29,11 @@ using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
 using settings::Operation;
+using settings::Option;
 using settings::Result;
+constexpr std::array<const wchar_t*, settings::kOptionCount> kControlNames{
+    L"AutoFocus",   L"Aero",         L"SmartSizing", L"SmartCandidates",
+    L"KeepSnapped", L"StickyResize", L"AutoSnap"};
 struct Handle {
   HANDLE value = INVALID_HANDLE_VALUE;
   explicit Handle(HANDLE handle = INVALID_HANDLE_VALUE) : value(handle) {}
@@ -165,7 +171,8 @@ class Shell : public std::enable_shared_from_this<Shell> {
           if (auto self = weak.lock()) {
             const hstring tag =
                 args.SelectedItemContainer().Tag().as<hstring>();
-            for (const wchar_t* page : {L"General", L"Appearance", L"About"})
+            for (const wchar_t* page :
+                 {L"General", L"Snapping", L"Appearance", L"About"})
               self->Find<FrameworkElement>(
                       (std::wstring(page) + L"Page").c_str())
                   .Visibility(tag == page ? Visibility::Visible
@@ -185,26 +192,59 @@ class Shell : public std::enable_shared_from_this<Shell> {
       if (auto self = weak.lock()) self->UpdateTitleTheme();
     });
     UpdateTitleTheme();
-    Find<ToggleSwitch>(L"AutoFocus").Toggled([weak](auto&&, auto&&) {
-      if (auto self = weak.lock()) self->UpdateApply();
+    for (size_t i = 0; i < settings::kOptionCount; ++i) {
+      if (settings::kOptions[i].kind == settings::ValueKind::kToggle) {
+        Find<ToggleSwitch>(kControlNames[i])
+            .Toggled([weak, i](auto&& sender, auto&&) {
+              if (auto self = weak.lock(); self && !self->loading_) {
+                self->draft_.Set(static_cast<Option>(i),
+                                 sender.template as<ToggleSwitch>().IsOn());
+                self->UpdateApply();
+              }
+            });
+      } else {
+        Find<ComboBox>(kControlNames[i])
+            .SelectionChanged([weak, i](auto&& sender, auto&&) {
+              if (auto self = weak.lock(); self && !self->loading_) {
+                const int selected =
+                    sender.template as<ComboBox>().SelectedIndex();
+                if (selected >= 0 &&
+                    selected <= static_cast<int>(settings::kOptions[i].maximum))
+                  self->draft_.Set(static_cast<Option>(i),
+                                   static_cast<uint32_t>(selected));
+                self->UpdateApply();
+              }
+            });
+      }
+    }
+    window_.AppWindow().Closing([weak](auto&&, auto&& args) {
+      if (auto self = weak.lock(); self && !self->allow_close_) {
+        if (self->busy_ || self->dialog_open_) {
+          args.Cancel(true);
+          return;
+        }
+        if (self->draft_.Changes().changed) {
+          args.Cancel(true);
+          self->ConfirmDiscard(std::nullopt);
+        }
+      }
     });
     Find<Button>(L"Apply").Click([weak](auto&&, auto&&) {
       if (auto s = weak.lock()) s->Request(Operation::kApply);
     });
     Find<Button>(L"Okay").Click([weak](auto&&, auto&&) {
       if (auto self = weak.lock()) {
-        if (self->Find<ToggleSwitch>(L"AutoFocus").IsOn() !=
-            self->snapshot_.auto_focus)
+        if (self->draft_.Changes().changed)
           self->Request(Operation::kApply, true);
         else
           self->window_.Close();
       }
     });
     Find<Button>(L"Reload").Click([weak](auto&&, auto&&) {
-      if (auto s = weak.lock()) s->Request(Operation::kRead);
+      if (auto s = weak.lock()) s->ConfirmDiscard(Operation::kRead);
     });
     Find<Button>(L"Legacy").Click([weak](auto&&, auto&&) {
-      if (auto s = weak.lock()) s->Request(Operation::kLegacy);
+      if (auto s = weak.lock()) s->ConfirmDiscard(Operation::kLegacy);
     });
     Find<Button>(L"Cancel").Click([weak](auto&&, auto&&) {
       if (auto s = weak.lock()) s->window_.Close();
@@ -249,11 +289,84 @@ class Shell : public std::enable_shared_from_this<Shell> {
     status.Message(message);
     status.Severity(severity);
   }
+  fire_and_forget ConfirmDiscard(std::optional<Operation> operation) {
+    if (busy_ || dialog_open_) co_return;
+    const auto lifetime = shared_from_this();
+    if (draft_.Changes().changed) {
+      dialog_open_ = true;
+      ContentDialog dialog;
+      dialog.XamlRoot(root_.XamlRoot());
+      dialog.RequestedTheme(root_.ActualTheme());
+      dialog.Title(box_value(L"Discard unsaved changes?"));
+      dialog.Content(
+          box_value(L"Your changes have not been applied to AltSnap."));
+      dialog.PrimaryButtonText(L"Discard changes");
+      dialog.CloseButtonText(L"Keep editing");
+      dialog.DefaultButton(ContentDialogButton::Close);
+      ContentDialogResult result = ContentDialogResult::None;
+      try {
+        result = co_await dialog.ShowAsync();
+      } catch (const hresult_error& error) {
+        dialog_open_ = false;
+        Status(L"Could not open confirmation", error.message().c_str(),
+               InfoBarSeverity::Error);
+        co_return;
+      }
+      dialog_open_ = false;
+      if (closed_ || result != ContentDialogResult::Primary) co_return;
+    }
+    if (operation)
+      Request(*operation);
+    else {
+      allow_close_ = true;
+      window_.Close();
+    }
+  }
+  void SetControlsEnabled(bool enabled) {
+    for (size_t i = 0; i < settings::kOptionCount; ++i)
+      Find<Control>(kControlNames[i]).IsEnabled(enabled);
+    // Dependent options keep their draft values while the parent is off.
+    Find<Control>(L"SmartSizing")
+        .IsEnabled(enabled && draft_.Get(Option::kAero));
+    Find<Control>(L"SmartCandidates")
+        .IsEnabled(enabled && draft_.Get(Option::kAero) &&
+                   draft_.Get(Option::kSmartSizing));
+    Find<Control>(L"KeepSnapped")
+        .IsEnabled(enabled && draft_.Get(Option::kAero));
+  }
+  void ShowDraft() {
+    loading_ = true;
+    for (size_t i = 0; i < settings::kOptionCount; ++i) {
+      const uint32_t value = draft_.Get(static_cast<Option>(i));
+      if (settings::kOptions[i].kind == settings::ValueKind::kToggle)
+        Find<ToggleSwitch>(kControlNames[i]).IsOn(value != 0);
+      else {
+        const auto combo = Find<ComboBox>(kControlNames[i]);
+        const uint32_t count = settings::kOptions[i].maximum + 1;
+        while (combo.Items().Size() > count) combo.Items().RemoveAtEnd();
+        if (value >= count) {
+          ComboBoxItem custom;
+          custom.Content(
+              box_value(L"Custom value (" + std::to_wstring(value) + L")"));
+          custom.IsEnabled(false);
+          combo.Items().Append(custom);
+          combo.SelectedIndex(static_cast<int>(count));
+        } else
+          combo.SelectedIndex(static_cast<int>(value));
+      }
+    }
+    loading_ = false;
+  }
   void UpdateApply() {
-    Find<Button>(L"Okay").IsEnabled(connected_ && !busy_);
-    Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ &&
-                                     Find<ToggleSwitch>(L"AutoFocus").IsOn() !=
-                                         snapshot_.auto_focus);
+    const auto patch = draft_.Changes();
+    Find<Button>(L"Okay").IsEnabled(connected_ && !busy_ && patch.Valid());
+    Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ && patch.changed &&
+                                     patch.Valid());
+    Find<Button>(L"Cancel").IsEnabled(!busy_);
+    Find<TextBlock>(L"DraftStatus")
+        .Text(patch.changed ? L"You have unsaved changes."
+                            : L"All changes are saved.");
+    SetControlsEnabled(connected_ && !busy_);
   }
   void UpdateTitleTheme() {
     using Microsoft::UI::Windowing::TitleBarTheme;
@@ -267,13 +380,13 @@ class Shell : public std::enable_shared_from_this<Shell> {
     UpdateApply();
     Find<Button>(L"Reload").IsEnabled(false);
     Find<Button>(L"Legacy").IsEnabled(false);
-    Find<ToggleSwitch>(L"AutoFocus").IsEnabled(false);
+    SetControlsEnabled(false);
     Status(operation == Operation::kApply ? L"Saving changes"
                                           : L"Reading settings",
            L"Waiting for the AltSnap host.", InfoBarSeverity::Informational);
-    const settings::Request request{++request_id_, operation,
-                                    snapshot_.revision,
-                                    Find<ToggleSwitch>(L"AutoFocus").IsOn()};
+    const settings::Request request{
+        ++request_id_, operation, snapshot_.revision,
+        operation == Operation::kApply ? draft_.Changes() : settings::Patch{}};
     const auto dispatcher = root_.DispatcherQueue();
     const DWORD host = host_;
     const auto cancellation = cancellation_;
@@ -305,7 +418,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
                  response->result != Result::kReadFailed;
     Find<Button>(L"Reload").IsEnabled(true);
     Find<Button>(L"Legacy").IsEnabled(connected_);
-    Find<ToggleSwitch>(L"AutoFocus").IsEnabled(connected_);
+
     if (!response) {
       connected_ = false;
       Status(L"Connection interrupted",
@@ -314,7 +427,8 @@ class Shell : public std::enable_shared_from_this<Shell> {
              InfoBarSeverity::Error);
     } else if (response->result == Result::kOk) {
       snapshot_ = *response;
-      Find<ToggleSwitch>(L"AutoFocus").IsOn(snapshot_.auto_focus);
+      draft_.Load(snapshot_.values);
+      ShowDraft();
       Find<TextBlock>(L"ConfigPath").Text(L"Configuration\n" + snapshot_.path);
       Status(operation == Operation::kApply ? L"Changes saved"
                                             : L"Connected to AltSnap",
@@ -323,6 +437,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
                                  L"effect when AltSnap is enabled.",
              InfoBarSeverity::Success);
       if (operation == Operation::kLegacy || close_after) {
+        allow_close_ = true;
         window_.Close();
         return;
       }
@@ -358,6 +473,8 @@ class Shell : public std::enable_shared_from_this<Shell> {
   DWORD host_;
   uint32_t request_id_ = 0;
   bool closed_ = false, busy_ = false, connected_ = false;
+  bool loading_ = false, allow_close_ = false, dialog_open_ = false;
+  settings::Draft draft_;
   settings::Snapshot snapshot_;
   std::shared_ptr<Handle> cancellation_;
   Window window_{nullptr};

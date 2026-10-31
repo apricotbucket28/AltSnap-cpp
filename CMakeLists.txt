@@ -256,6 +256,12 @@ if(ALTSNAP_BUILD_TESTS)
   target_compile_options(settings_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
   target_link_options(settings_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   add_test(NAME settings_tests COMMAND settings_tests)
+
+  # Explicit desktop acceptance: do not start hooks in unattended CTest runs.
+  add_executable(settings_host_tests tests/settings_host_tests.cc)
+  target_include_directories(settings_host_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(settings_host_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(settings_host_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   add_executable(unit_tests tests/unit_tests.cc src/common/ini_section.cc src/hooks/blacklist.cc)
   target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})

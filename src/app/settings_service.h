@@ -24,8 +24,9 @@ class SettingsService {
   void Dispatch(bool stopping);
   bool FrontendActive();
   bool FocusFrontend();
-  settings::Snapshot ReadLegacyAutoFocus() const;
-  bool WriteLegacyAutoFocus(const settings::Snapshot& base, bool value);
+  settings::Snapshot ReadLegacySettings() const;
+  bool WriteLegacySettings(const settings::Snapshot& base,
+                           const settings::Patch& patch);
 
  private:
   void Serve();
