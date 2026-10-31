@@ -1,2 +1,20 @@
+# Line endings: stored as LF in the repository; checked out with the platform's
+# native endings (CRLF on Windows when core.autocrlf=true or core.eol=native).
+* text=auto
+
+*.cc  text diff=cpp
+*.h   text diff=cpp
+*.rc  text
+*.txt text
+*.md  text diff=markdown
+*.xml text
+*.manifest text
+*.nsi text
+
+# Windows scripts must keep CRLF even when checked out elsewhere.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Translation / ini files are UTF-16LE with BOM in the working tree.
 *.dni diff merge text linguist-language=ini working-tree-encoding=utf-16le-bom
 Lang/* diff merge text linguist-language=ini working-tree-encoding=utf-16le-bom

@@ -4,7 +4,8 @@ project(AltSnap CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
-# set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
   message(FATAL_ERROR "AltSnap targets Windows only (build natively with MinGW-w64, "
@@ -16,7 +17,7 @@ endif()
 
 # Standalone LLVM installs (e.g. C:\Program Files\LLVM) default to the MSVC
 # ABI/target triple on Windows, which defines _MSC_VER for Windows-SDK
-# compatibility. hooks.cc has real `#if defined(_MSC_VER)` branches meant
+# compatibility. src/hooks/hooks.cc has real `#if defined(_MSC_VER)` branches meant
 # ONLY for cl.exe/clang-cl (they use __FUNCDNAME__ and a linker pragma that
 # plain clang.exe does not implement) - a MSVC-ABI clang trips that branch
 # without being able to satisfy it, and fails deep in the build with a
@@ -40,56 +41,27 @@ if(NOT ALTSNAP_COMPILER_IS_NOT_MSVC_ABI)
 endif()
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
-  message(WARNING "Original build used GCC/MinGW-w64. Untested with ${CMAKE_C_COMPILER_ID}.")
+  message(WARNING "Original build used GCC/MinGW-w64. Untested with ${CMAKE_CXX_COMPILER_ID}.")
 endif()
 
 # --- Resource compilation ------------------------------------------------
-# GNU windres (MinGW-w64 GCC, or llvm-mingw's own *-windres wrapper)
-# compiles .rc -> a COFF .o that's linked like any other object.
-# llvm-mingw's clang normally pairs with llvm-rc instead, which mimics
-# MSVC's rc.exe: it produces a .res file that lld links directly,
-# with no separate compile-to-object step.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  get_filename_component(_altsnap_clang_bin ${CMAKE_CXX_COMPILER} DIRECTORY)
-  find_program(ALTSNAP_RC_COMPILER
-        NAMES llvm-rc llvm-rc.exe
-        HINTS ${_altsnap_clang_bin}
-        DOC "llvm-rc from the same llvm-mingw distribution as the compiler")
-  if(NOT ALTSNAP_RC_COMPILER)
-    message(FATAL_ERROR "Could not find llvm-rc next to ${CMAKE_C_COMPILER}. "
-                             "Set -DALTSNAP_RC_COMPILER=/path/to/llvm-rc.exe explicitly.")
-  endif()
-else()
-  enable_language(RC)
-endif()
+# Resources are compiled with the toolchain's windres (CMAKE_RC_COMPILER),
+# which produces a COFF object that is linked like any other object file.
+enable_language(RC)
 
 # altsnap_add_rc(<target> <rcfile> [EXTRA_DEPENDS dep...])
-# Adds an .rc as a resource input to <target>, using whichever pipeline
-# matches the active compiler.
+# Adds an .rc file to <target> and rebuilds it when an #included file changes.
 function(altsnap_add_rc target rcfile)
   cmake_parse_arguments(ARG "" "" "EXTRA_DEPENDS" ${ARGN})
-  if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    get_filename_component(_name ${rcfile} NAME_WE)
-    set(_res ${CMAKE_CURRENT_BINARY_DIR}/${_name}.res)
-    add_custom_command(
-            OUTPUT ${_res}
-            # TODO: remove constant /I E:/llvm-mingw/include
-            COMMAND ${ALTSNAP_RC_COMPILER} /I ${CMAKE_CURRENT_SOURCE_DIR} /I E:/llvm-mingw/include /FO ${_res} ${rcfile}
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${rcfile} ${ARG_EXTRA_DEPENDS}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "llvm-rc ${rcfile}"
-            VERBATIM
-        )
-    # A prebuilt .res, not something to compile - hand it straight to the linker.
-    set_source_files_properties(${_res} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-    target_sources(${target} PRIVATE ${_res})
-  else()
-    target_sources(${target} PRIVATE ${rcfile})
-    set_source_files_properties(${rcfile} PROPERTIES OBJECT_DEPENDS "${ARG_EXTRA_DEPENDS}")
-  endif()
+  target_sources(${target} PRIVATE ${rcfile})
+  set_source_files_properties(${rcfile} PROPERTIES OBJECT_DEPENDS "${ARG_EXTRA_DEPENDS}")
 endfunction()
 
-set(ALTSNAP_C_FLAGS
+set(ALTSNAP_CXX_FLAGS
+    -DUNICODE -D_UNICODE -DNOMINMAX
+    # Minimum supported OS: Windows 10 version 1607 (NTDDI_WIN10_RS1).
+    -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000002
+    -fno-rtti
     -fno-ident
     -mno-stack-arg-probe
     -march=x86-64
@@ -102,7 +74,7 @@ set(ALTSNAP_C_FLAGS
 
 set(ALTSNAP_WARNINGS
     -Wall -Wformat-security -Wstrict-overflow -Wsign-compare
-    -Wempty-body -Wignored-qualifiers -Wuninitialized -Wtype-limits -Woverride-init
+    -Wempty-body -Wignored-qualifiers -Wuninitialized -Wtype-limits
     -Wno-multichar -Wno-attributes
     -Wnull-dereference -Wno-unused-function -Wshadow
     -pedantic
@@ -112,39 +84,87 @@ set(ALTSNAP_WARNINGS
 # GCC-only: clang either doesn't implement these or spells them differently
 # (e.g. -Wclobbered, -Wlogical-op, -Wduplicated-cond/
 # -branches, -Wstack-usage don't exist in clang).
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   list(APPEND ALTSNAP_WARNINGS -Wclobbered -Wlogical-op -Wduplicated-cond
         -Wduplicated-branches -Wstack-usage=4096)
 endif()
 
+# The C++ runtime is linked statically: hooks.dll is injected into other
+# processes, where a dependency on libc++.dll/libstdc++-6.dll cannot be
+# guaranteed to resolve.
 set(ALTSNAP_LINK_FLAGS
+    -static
     -Wl,-dynamicbase,-nxcompat
     -Wl,--disable-runtime-pseudo-reloc,--enable-auto-import,--disable-stdcall-fixup
 )
 
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
-    hooks.cc
-    hooks.h
+    src/hooks/hooks.cc
+    src/hooks/worker.cc
+    src/hooks/worker.h
+    src/hooks/window/window_info.cc
+    src/hooks/window/window_enum.cc
+    src/hooks/window/window_move.cc
+    src/hooks/window/snap_move.cc
+    src/hooks/input_state.cc
+    src/hooks/overlay/trans_window.cc
+    src/hooks/mouse_move.cc
+    src/hooks/send_input.cc
+    src/hooks/actions/volume.cc
+    src/hooks/overlay/pin_window.cc
+    src/hooks/actions/window_actions.cc
+    src/hooks/actions/click_actions.cc
+    src/hooks/overlay/window_menu.cc
+    src/hooks/keyboard_hook.cc
+    src/hooks/mouse_hook.cc
+    src/hooks/movement.cc
+    src/hooks/input_options.cc
+    src/hooks/hook_config.cc
+    src/hooks/window/window_info.h
+    src/hooks/window/window_enum.h
+    src/hooks/window/window_move.h
+    src/hooks/window/snap_move.h
+    src/hooks/input_state.h
+    src/hooks/overlay/trans_window.h
+    src/hooks/mouse_move.h
+    src/hooks/send_input.h
+    src/hooks/actions/volume.h
+    src/hooks/overlay/pin_window.h
+    src/hooks/actions/window_actions.h
+    src/hooks/actions/click_actions.h
+    src/hooks/overlay/window_menu.h
+    src/hooks/keyboard_hook.h
+    src/hooks/mouse_hook.h
+    src/hooks/movement.h
+    src/hooks/hook_config.h
+    src/hooks/blacklist.cc
+    src/hooks/blacklist.h
+    src/common/ini_section.cc
+    src/common/ini_section.h
+    src/hooks/window/snap.cc
+    src/hooks/window/zones.cc
+    src/hooks/hooks.h
+    src/hooks/hooks_internal.h
+    src/hooks/window/snap.h
+    src/hooks/window/zones.h
 )
 altsnap_add_rc(hooks hooks.rc)
-# Included via #include, not compiled separately (unity build) -
-# listed here only so they show up in IDEs and are tracked as deps.
-set_source_files_properties(zones.cc snap.cc unfuck.h nanolibc.h
-    PROPERTIES HEADER_FILE_ONLY TRUE)
-target_sources(hooks PRIVATE zones.cc snap.cc unfuck.h nanolibc.h)
+target_sources(hooks PRIVATE src/common/winutil.h src/common/strutil.h)
 
 set_target_properties(hooks PROPERTIES
     PREFIX ""
     OUTPUT_NAME "hooks"
     SUFFIX ".dll"
 )
-target_compile_options(hooks PRIVATE ${ALTSNAP_C_FLAGS} ${ALTSNAP_WARNINGS})
+# Sources include each other relative to src/ (e.g. "hooks/window/snap.h");
+# resource.h lives next to the .rc files in the project root.
+target_include_directories(hooks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(hooks PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(hooks PRIVATE
-    -mdll
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm)
+target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # --- AltSnap.exe ---------------------------------------------------------
 # NOTE: window.rc, AltSnap.exe.manifest and resource.h are pulled in via
@@ -152,9 +172,34 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm)
 # windres inputs. Only altsnap.rc gets compiled; the rest are tracked
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
-    altsnap.cc
-    hooks.h
-    languages.h
+    src/app/altsnap.cc
+    src/ui/dialog_util.cc
+    src/ui/general_page.cc
+    src/ui/mouse_page.cc
+    src/ui/keyboard_page.cc
+    src/ui/blacklist_page.cc
+    src/ui/about_page.cc
+    src/ui/advanced_page.cc
+    src/ui/test_window.cc
+    src/ui/config_internal.h
+    src/ui/dialog_util.h
+    src/ui/general_page.h
+    src/ui/mouse_page.h
+    src/ui/keyboard_page.h
+    src/ui/blacklist_page.h
+    src/ui/about_page.h
+    src/ui/advanced_page.h
+    src/ui/test_window.h
+    src/common/ini_section.cc
+    src/common/ini_section.h
+    src/ui/config.cc
+    src/app/languages.cc
+    src/app/tray.cc
+    src/app/altsnap.h
+    src/ui/config.h
+    src/hooks/hooks.h
+    src/app/languages.h
+    src/app/tray.h
 )
 altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/window.rc
@@ -167,21 +212,21 @@ altsnap_add_rc(AltSnap altsnap.rc EXTRA_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/media/tray-enabled.ico
 )
 set_source_files_properties(
-    tray.cc config.cc languages.cc unfuck.h nanolibc.h
     window.rc AltSnap.exe.manifest resource.h
     PROPERTIES HEADER_FILE_ONLY TRUE)
 target_sources(AltSnap PRIVATE
-    tray.cc config.cc languages.cc unfuck.h nanolibc.h
+    src/common/winutil.h src/common/strutil.h
     window.rc AltSnap.exe.manifest resource.h)
 
 set_target_properties(AltSnap PROPERTIES OUTPUT_NAME "AltSnap")
-target_compile_options(AltSnap PRIVATE ${ALTSNAP_C_FLAGS} ${ALTSNAP_WARNINGS})
+target_include_directories(AltSnap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(AltSnap PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
 target_link_options(AltSnap PRIVATE
     -mwindows
     -Wl,--tsaware
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm)
+target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # hooks.dll must exist next to AltSnap.exe at runtime (it's loaded, not linked).
 add_dependencies(AltSnap hooks)
@@ -219,3 +264,38 @@ add_custom_target(stage ALL
         ${CMAKE_SOURCE_DIR}/Themes ${ALTSNAP_STAGE_DIR}/Themes
 )
 add_dependencies(stage AltSnap hooks)
+
+# --- Unit tests ---------------------------------------------------------------
+# cmake -DALTSNAP_BUILD_TESTS=ON ... && cmake --build build && ctest --test-dir build
+# When cross-compiling (e.g. llvm-mingw on Linux) set CMAKE_CROSSCOMPILING_EMULATOR
+# to wine64 to run them.
+option(ALTSNAP_BUILD_TESTS "Build the unit tests" OFF)
+if(ALTSNAP_BUILD_TESTS)
+  enable_testing()
+  add_executable(unit_tests tests/unit_tests.cc src/common/ini_section.cc src/hooks/blacklist.cc)
+  target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(unit_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  add_test(NAME unit_tests COMMAND unit_tests)
+
+  # Compile the production hook implementation into the test executable so its
+  # internal message boundary and native lifecycle (including real low-level
+  # hooks) can be exercised without expanding the DLL's public exports.
+  get_target_property(ALTSNAP_HOOK_TEST_SOURCES hooks SOURCES)
+  list(FILTER ALTSNAP_HOOK_TEST_SOURCES INCLUDE REGEX "\\.cc$")
+  add_executable(hook_tests tests/hook_tests.cc ${ALTSNAP_HOOK_TEST_SOURCES})
+  target_include_directories(hook_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(hook_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
+  target_link_options(hook_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  target_link_libraries(hook_tests PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
+  add_test(NAME hook_tests COMMAND hook_tests)
+  set_tests_properties(hook_tests PROPERTIES TIMEOUT 30)
+
+  add_executable(worker_tests tests/worker_tests.cc src/hooks/worker.cc)
+  target_include_directories(worker_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(worker_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
+  target_link_options(worker_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  target_link_libraries(worker_tests PRIVATE kernel32 user32)
+  add_test(NAME worker_tests COMMAND worker_tests)
+  set_tests_properties(worker_tests PROPERTIES TIMEOUT 30)
+endif()
