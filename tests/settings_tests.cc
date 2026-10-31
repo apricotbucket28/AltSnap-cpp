@@ -29,11 +29,18 @@ int main() {
   bytes.push_back(0);
   CHECK(!Decode(bytes, decoded));
   bytes.pop_back();
-  for (size_t offset : {0u, 4u, 12u, 24u, 28u}) {
+  for (size_t offset : {0u, 4u, 12u, 28u}) {
     auto bad = bytes;
     bad[offset] = 255;
     CHECK(!Decode(bad, decoded));
   }
+  auto bad_mask = bytes;
+  bad_mask[27] = 128;
+  CHECK(!Decode(bad_mask, decoded));
+  Request tool{74, Operation::kTestWindow};
+  CHECK(Decode(Encode(tool), decoded));
+  tool.patch = SingleChange(Option::kAero, 1);
+  CHECK(!Decode(Encode(tool), decoded));
   Snapshot snapshot, restored;
   snapshot.result = Result::kConflict;
   snapshot.revision = 0xfedcba9876543210ull;
@@ -50,6 +57,11 @@ int main() {
   CHECK(!Decode(oversized, 73, restored));
   bytes[28] = 255;
   CHECK(!Decode(bytes, 73, restored));
+  Snapshot largest;
+  largest.path.assign(32767, L'p');
+  for (auto& value : largest.values) value.raw.assign(4095, L'x');
+  bytes = Encode(largest, 73);
+  CHECK(bytes.size() <= kMaxReply && Decode(bytes, 73, restored));
   wchar_t temp[MAX_PATH], filename[MAX_PATH];
   CHECK(GetTempPathW(MAX_PATH, temp));
   CHECK(GetTempFileNameW(temp, L"ast", 0, filename));
@@ -220,6 +232,86 @@ int main() {
   CHECK(Decode(bytes, decoded) && decoded.patch.changed == batch.changed);
   bytes[4] = 1;
   CHECK(!Decode(bytes, decoded));  // Old peers must fail closed.
+  // Advanced page: typed widths, signed editing, cross-section writes, and
+  // both shared bit fields. Parsing for edits is stricter than reading old
+  // INIs.
+  CHECK(ParseNumber(Option::kSnapGap, L"-128") == uint32_t(-128));
+  CHECK(ParseNumber(Option::kSnapGap, L"127") == 127u);
+  CHECK(!ParseNumber(Option::kSnapGap, L"-129"));
+  CHECK(!ParseNumber(Option::kSnapGap, L"128"));
+  CHECK(ParseNumber(Option::kAeroMaxSpeed, L"65535") == 65535u);
+  for (const auto text :
+       {L"65536", L"-1", L"", L"1.5", L"12px", L" 1", L"+1", L"999999999999"})
+    CHECK(!ParseNumber(Option::kAeroMaxSpeed, text));
+  CHECK(!ParseNumber(Option::kCenterFraction, L"101"));
+  CHECK(ParseNumber(Option::kSidesFraction, L"255") == 255u);
+  CHECK(WritePrivateProfileStringW(L"General", L"AeroTopMaximizes",
+                                   L"untouched", path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Advanced", L"AeroTopMaximizes", L"257",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"General", L"MMMaximize", L"258",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Advanced", L"AeroMaxSpeed", L"65534",
+                                   path.c_str()));
+  CHECK(
+      WritePrivateProfileStringW(L"Advanced", L"SnapGap", L"-7", path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"General", L"CenterFraction", L"custom",
+                                   path.c_str()));
+  current = repository.Read();
+  CHECK(current.values[Index(Option::kAeroSpeedTau)].effective == 64);
+  CHECK(WritePrivateProfileStringW(L"Advanced", L"MultipleInstances", L"256",
+                                   path.c_str()));
+  CHECK(repository.Read().values[Index(Option::kMultipleInstances)].effective ==
+        1);
+  current = repository.Read();
+  CHECK(current.values[Index(Option::kMoveTrans)].effective == 255);
+  CHECK(current.values[Index(Option::kSidesFraction)].effective == 255);
+  CHECK(current.values[Index(Option::kFullScreen)].effective == 1);
+  CHECK(current.values[Index(Option::kAeroMaxSpeed)].effective == 65534);
+  CHECK(SignedNumber(current.values[Index(Option::kSnapGap)].effective) == -7);
+  draft.Load(current.values);
+  draft.Set(Option::kAeroTopMaximizes, 0);
+  draft.Set(Option::kAeroDoubleClickShift, 1);
+  draft.Set(Option::kMaximizeOnClick, 1);
+  draft.Set(Option::kRestoreOnClick, 0);
+  draft.Set(Option::kFancyZone, 1);
+  draft.Set(Option::kSnapGap, uint32_t(-128));
+  draft.Set(Option::kAeroMaxSpeed, 1024);
+  runtime.enabled = true;
+  const int advanced_stops = runtime.stops;
+  CHECK(ApplyPatch(repository, current.revision, draft.Changes(), runtime) ==
+        Result::kOk);
+  CHECK(runtime.stops == advanced_stops + 1);
+  current = repository.Read();
+  CHECK(current.values[Index(Option::kAeroTopMaximizes)].raw == L"258");
+  CHECK(current.values[Index(Option::kMaximizeOnClick)].raw == L"257");
+  CHECK(current.values[Index(Option::kFancyZone)].raw == L"1");
+  CHECK(current.values[Index(Option::kSnapGap)].raw == L"-128");
+  CHECK(current.values[Index(Option::kCenterFraction)].raw == L"custom");
+  GetPrivateProfileStringW(L"General", L"AeroTopMaximizes", L"", value, 64,
+                           path.c_str());
+  CHECK(std::wstring(value) == L"untouched");
+  CHECK(repository.Write(current.revision,
+                         SingleChange(Option::kSnapGap, uint32_t(-129))) ==
+        Result::kInvalid);
+  CHECK(repository.Write(current.revision,
+                         SingleChange(Option::kAeroMaxSpeed, 65536)) ==
+        Result::kInvalid);
+  CHECK(repository.Read().revision == current.revision);
+  CHECK(repository.WriteIfUnchanged(
+            initial, SingleChange(Option::kFancyZone, 0)) == Result::kConflict);
+  bytes = Encode(current, 321);
+  CHECK(Decode(bytes, 321, restored));
+  CHECK(SignedNumber(restored.values[Index(Option::kSnapGap)].effective) ==
+        -128);
+  CHECK(restored.values[Index(Option::kAeroMaxSpeed)].effective == 1024);
+  // Every option can be written and read through its own declared section/key.
+  for (size_t i = 0; i < kOptionCount; ++i) {
+    const auto option = static_cast<Option>(i);
+    CHECK(repository.Write(repository.Read().revision,
+                           SingleChange(option, 0)) == Result::kOk);
+    CHECK(repository.Read().values[i].effective == 0);
+  }
   CHECK(DeleteFileW(path.c_str()));
   CHECK(DeleteFileW(filename));
   CHECK(repository.Read().result == Result::kReadFailed);

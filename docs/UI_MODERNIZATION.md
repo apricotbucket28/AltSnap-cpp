@@ -111,8 +111,63 @@ resident Win32 host and hooks DLL remain the runtime architecture.
   peer/competing-frontend integration acceptance remain open. Existing adapter
   tests cover injected activation failures. The preview stays opt-in.
 
+### Remaining-page inventory and Advanced batch (2026-10-31)
+
+Inventory checked against all six legacy page procedures, dialog option tables,
+input action tables, and engine readers. INI-only options retain the existing
+manual INI workflow; they are not new page requirements.
+
+| Page | Controls and behavior still requiring parity after this batch |
+| --- | --- |
+| General | InactiveScroll, MDI, ResizeAll, UseZones bit 0, PiercingClick, four ResizeCenter choices; language/Auto and translation refresh; autostart enabled/hidden/elevated registry state and Elevate now/UAC cancellation. AutoFocus and Snapping are already migrated. |
+| Mouse | Five contexts (primary, alternate, title bar, moving, resizing); five mouse buttons plus both wheels; MoveUp/ResizeUp in the first three contexts; custom action IDs and parameters, wheel fallback; TTBActions bits, LongClickMove, three hotclick checkboxes preserving hidden keys. Alternate/title-bar dependencies must retain drafts. Legacy MB5 resizing writes MB5M; engine reads MB5R: characterize before correction. |
+| Keyboard | Six activation-key checkboxes preserving hidden keys; ModKey/custom lists, KeyCombo, two GrabWithAlt actions; ScrollLockState bits and host cache update, UniKeyHoldMenu; foreground/pointed-window shortcuts, modifier/virtual-key editing, capture/Clear, parameterized action editor and immediate Set/reload semantics. |
+| Blacklist | Processes, Windows, Scroll, MDIs, Pause editors with existing wildcard/whitelist syntax and conditional enablement; cancellable crosshair picker producing executable, title/class rule, styles, child/root hit tests, caption-button hit, rectangle and handles. |
+| Advanced | Implemented: ten new behavior switches, ten numeric fields and native test-window launch. SmartAero bit 2 (keep snapped sizes) remains on Snapping, with a note on Advanced. Native visual/accessibility and gesture acceptance remains open. |
+| About | Existing shell attribution/license text is incomplete: add actual version, project link, translation catalog/credits and localized text. |
+
+Advanced extends the existing model/repository/draft rather than adding a writer.
+It inventories General's CenterFraction, SidesFraction, AeroHoffset, AeroVoffset,
+MoveTrans and MMMaximize bits; Advanced's AutoRemaximize, AeroTopMaximizes bits,
+MultipleInstances, FullScreen, BLMaximized, TopmostIndicator, SnapThreshold,
+AeroThreshold, signed SnapGap, 16-bit AeroMaxSpeed and AeroSpeedTau; and
+Zones/FancyZone. Section identity participates in read/write coalescing. The host's
+MultipleInstances is a full integer toggle, unlike hook byte toggles. Missing
+AeroSpeedTau uses engine default 64 (legacy dialog 32); missing MoveTrans uses
+255. Untouched absence, empty/custom text and unedited bits are preserved.
+FullScreen follows the movement eligibility flag: enabling it permits moving
+and resizing full-screen windows. Its separate Unicode hold-menu check remains
+unchanged. No engine behavior was changed.
+
+The new page uses scrolling Fluent cards, theme resources, descriptive labels,
+strict whole-number validation and per-field errors. Invalid edits survive
+navigation, block Apply/OK and participate in discard confirmation. The test
+window button requires a clean draft and sends an allowlisted command to the
+host thread, without writing settings or reloading hooks. The legacy Advanced
+page remains functional through the same checked repository and validation;
+other fallback writers remain as previously documented. Protocol **v3** extends
+snapshots and adds that command; deploy host and companion together. Old peers
+fail closed.
+
+Verification: Release configured with ALTSNAP_BUILD_TESTS=ON, core build and all
+four CTest suites passed; MSVC shared-source tests passed; WinUI build/Publish
+passed. Native host tests passed outside the process sandbox, including signed
+and word values, cross-section batch Apply, test-window creation/closure,
+conflicts, disabled Apply/re-enable and orderly shutdown. Tests also cover all
+option writes, defaults, unrelated sections, bit preservation, numeric rejection
+before persistence, and maximum-size snapshot transport bounds. NuGet restore
+reported unavailable vulnerability metadata; cached pinned packages built.
+The preview started and exposed an AltSnap Preferences window. Desktop automation
+again misidentified it as Windows Settings and refused binding; no visual,
+light/dark, keyboard-only, Narrator, high-contrast or mixed-DPI acceptance is
+claimed. Real drag gestures with the new settings, legacy dialog interaction,
+elevation, deployment and the earlier failure/race gates still require native
+acceptance. Legacy remains the default.
+
 ### Next development handoff
 
+Next migrate complete Mouse and Keyboard pages with their specialized editors,
+then Blacklist and its picker, General host commands/localization, and About.
 Complete the remaining delivery/accessibility/runtime acceptance above before
 switching defaults. Continue cohesive page migrations using the explicit
 settings draft and patch, not the engine's effective config struct. General's

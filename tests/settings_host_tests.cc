@@ -97,6 +97,38 @@ int Client(DWORD pid) {
   CHECK(saved.values[Index(Option::kStickyResize)].raw == L"2");
   CHECK(saved.values[Index(Option::kAutoSnap)].raw == L"2");
   CHECK(Exchange(pid, Operation::kRead).revision == saved.revision);
+  draft.Load(saved.values);
+  draft.Set(Option::kFancyZone, 1);
+  draft.Set(Option::kSnapGap, uint32_t(-8));
+  draft.Set(Option::kAeroMaxSpeed, 1024);
+  draft.Set(Option::kAeroDoubleClickShift, 1);
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kOk && saved.enabled);
+  CHECK(saved.values[Index(Option::kSnapGap)].raw == L"-8");
+  CHECK(saved.values[Index(Option::kFancyZone)].raw == L"1");
+  CHECK(saved.values[Index(Option::kAeroMaxSpeed)].raw == L"1024");
+  const auto opened = Exchange(pid, Operation::kTestWindow);
+  CHECK(opened.result == Result::kOk && opened.revision == saved.revision);
+  struct TestSearch {
+    DWORD pid;
+    HWND window = nullptr;
+  } search{pid};
+  EnumWindows(
+      [](HWND window, LPARAM data) -> BOOL {
+        auto& search = *reinterpret_cast<TestSearch*>(data);
+        DWORD owner = 0;
+        GetWindowThreadProcessId(window, &owner);
+        wchar_t name[64];
+        GetClassNameW(window, name, 64);
+        if (owner == search.pid && std::wstring_view(name) == L"AltSnap-Test") {
+          search.window = window;
+          return FALSE;
+        }
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&search));
+  CHECK(search.window);
+  PostMessageW(search.window, WM_CLOSE, 0, 0);
   CHECK(Exchange(pid, Operation::kApply, initial.revision,
                  SingleChange(Option::kAero, 0))
             .result == Result::kConflict);

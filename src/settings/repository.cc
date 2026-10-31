@@ -1,5 +1,7 @@
 #include "settings/repository.h"
 
+#include <map>
+
 #include "common/strutil.h"
 namespace altsnap::settings {
 std::optional<uint64_t> Repository::Revision() const {
@@ -32,15 +34,20 @@ Snapshot Repository::Read() const {
     return snapshot;
   }
   snapshot.revision = *revision;
-  std::vector<wchar_t> section(65536, L'\0');
-  const DWORD length = GetPrivateProfileSectionW(
-      L"General", section.data(), static_cast<DWORD>(section.size()),
-      path_.c_str());
-  if (length >= section.size() - 2) {
-    snapshot.result = Result::kReadFailed;
-    return snapshot;
-  }
+  std::map<std::wstring, std::vector<wchar_t>> sections;
   for (size_t i = 0; i < kOptionCount; ++i) {
+    auto [entry, inserted] = sections.try_emplace(kOptions[i].section);
+    auto& section = entry->second;
+    if (inserted) {
+      section.resize(65536, L'\0');
+      const DWORD length = GetPrivateProfileSectionW(
+          kOptions[i].section, section.data(),
+          static_cast<DWORD>(section.size()), path_.c_str());
+      if (length >= section.size() - 2) {
+        snapshot.result = Result::kReadFailed;
+        return snapshot;
+      }
+    }
     Value& value = snapshot.values[i];
     const auto& definition = kOptions[i];
     const std::wstring prefix = std::wstring(definition.key) + L"=";
@@ -56,15 +63,22 @@ Snapshot Repository::Read() const {
       snapshot.result = Result::kReadFailed;
       return snapshot;
     }
-    const uint8_t number =
-        value.present ? static_cast<uint8_t>(ParseInt(value.raw.c_str()))
-                      : static_cast<uint8_t>(definition.engine_default);
+    const uint32_t parsed =
+        value.present ? static_cast<uint32_t>(ParseInt(value.raw.c_str()))
+                      : definition.engine_default;
+    const uint32_t number = definition.storage == Storage::kDword ? parsed
+                            : definition.storage == Storage::kWord
+                                ? static_cast<uint16_t>(parsed)
+                                : static_cast<uint8_t>(parsed);
     value.effective =
         definition.mask
             ? (definition.mask == 3 ? (number & 1 ? 1u : number & 2)
                                     : uint32_t((number & definition.mask) != 0))
             : (definition.kind == ValueKind::kToggle ? uint32_t(number != 0)
                                                      : number);
+    if (definition.storage == Storage::kSignedByte)
+      value.effective = std::bit_cast<uint32_t>(
+          static_cast<int32_t>(static_cast<int8_t>(number)));
   }
   if (Revision() != revision) snapshot.result = Result::kConflict;
   return snapshot;
@@ -92,7 +106,8 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
     bool already_written = false;
     for (size_t j = 0; j < i; ++j)
       if ((patch.changed & (1u << j)) &&
-          std::wcscmp(kOptions[j].key, definition.key) == 0)
+          std::wcscmp(kOptions[j].key, definition.key) == 0 &&
+          std::wcscmp(kOptions[j].section, definition.section) == 0)
         already_written = true;
     if (already_written) continue;
     // Preserve unedited bits, including bits above the engine's byte.
@@ -102,7 +117,8 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
             : definition.engine_default;
     for (size_t j = i; j < kOptionCount; ++j) {
       if (!(patch.changed & (1u << j)) ||
-          std::wcscmp(kOptions[j].key, definition.key) != 0)
+          std::wcscmp(kOptions[j].key, definition.key) != 0 ||
+          std::wcscmp(kOptions[j].section, definition.section) != 0)
         continue;
       const uint32_t mask = kOptions[j].mask;
       const uint32_t value = patch.values[j];
@@ -110,9 +126,11 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
                    ? (number & ~mask) | (mask == 3 ? value : (value ? mask : 0))
                    : value;
     }
-    const std::wstring text = std::to_wstring(number);
-    if (!WritePrivateProfileStringW(L"General", definition.key, text.c_str(),
-                                    path_.c_str()))
+    const std::wstring text = definition.kind == ValueKind::kSignedNumber
+                                  ? std::to_wstring(SignedNumber(number))
+                                  : std::to_wstring(number);
+    if (!WritePrivateProfileStringW(definition.section, definition.key,
+                                    text.c_str(), path_.c_str()))
       return Result::kWriteFailed;
     const Snapshot after = Read();
     if (after.result != Result::kOk || !after.values[i].present ||

@@ -145,6 +145,11 @@ settings::Snapshot SettingsService::Execute(const settings::Request& request,
     PostMessageW(window_, WM_OPENCONFIG, 0, 1);
     return snapshot;
   }
+  if (request.operation == settings::Operation::kTestWindow &&
+      snapshot.result == Result::kOk) {
+    if (!NewTestWindow()) snapshot.result = Result::kActivationFailed;
+    return snapshot;
+  }
   if (request.operation == settings::Operation::kApply &&
       snapshot.result == Result::kOk) {
     class HostRuntime final : public settings::Runtime {

@@ -18,6 +18,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -32,8 +33,20 @@ using settings::Operation;
 using settings::Option;
 using settings::Result;
 constexpr std::array<const wchar_t*, settings::kOptionCount> kControlNames{
-    L"AutoFocus",   L"Aero",         L"SmartSizing", L"SmartCandidates",
-    L"KeepSnapped", L"StickyResize", L"AutoSnap"};
+    L"AutoFocus",         L"Aero",
+    L"SmartSizing",       L"SmartCandidates",
+    L"KeepSnapped",       L"StickyResize",
+    L"AutoSnap",          L"AutoRemaximize",
+    L"AeroTopMaximizes",  L"AeroDoubleClickShift",
+    L"MultipleInstances", L"FullScreen",
+    L"BLMaximized",       L"FancyZone",
+    L"MaximizeOnClick",   L"RestoreOnClick",
+    L"TopmostIndicator",  L"CenterFraction",
+    L"SidesFraction",     L"AeroHoffset",
+    L"AeroVoffset",       L"SnapThreshold",
+    L"AeroThreshold",     L"SnapGap",
+    L"AeroMaxSpeed",      L"AeroSpeedTau",
+    L"MoveTrans"};
 struct Handle {
   HANDLE value = INVALID_HANDLE_VALUE;
   explicit Handle(HANDLE handle = INVALID_HANDLE_VALUE) : value(handle) {}
@@ -171,8 +184,8 @@ class Shell : public std::enable_shared_from_this<Shell> {
           if (auto self = weak.lock()) {
             const hstring tag =
                 args.SelectedItemContainer().Tag().as<hstring>();
-            for (const wchar_t* page :
-                 {L"General", L"Snapping", L"Appearance", L"About"})
+            for (const wchar_t* page : {L"General", L"Snapping", L"Advanced",
+                                        L"Appearance", L"About"})
               self->Find<FrameworkElement>(
                       (std::wstring(page) + L"Page").c_str())
                   .Visibility(tag == page ? Visibility::Visible
@@ -202,6 +215,24 @@ class Shell : public std::enable_shared_from_this<Shell> {
                 self->UpdateApply();
               }
             });
+      } else if (settings::kOptions[i].kind == settings::ValueKind::kNumber ||
+                 settings::kOptions[i].kind ==
+                     settings::ValueKind::kSignedNumber) {
+        Find<TextBox>(kControlNames[i])
+            .TextChanged([weak, i](auto&& sender, auto&&) {
+              if (auto self = weak.lock(); self && !self->loading_) {
+                const auto text = sender.template as<TextBox>().Text();
+                const auto value = settings::ParseNumber(
+                    static_cast<Option>(i), std::wstring_view(text));
+                self->invalid_[i] = !value;
+                if (value) self->draft_.Set(static_cast<Option>(i), *value);
+                self->Find<TextBlock>(
+                        (std::wstring(kControlNames[i]) + L"Error").c_str())
+                    .Visibility(value ? Visibility::Collapsed
+                                      : Visibility::Visible);
+                self->UpdateApply();
+              }
+            });
       } else {
         Find<ComboBox>(kControlNames[i])
             .SelectionChanged([weak, i](auto&& sender, auto&&) {
@@ -223,18 +254,21 @@ class Shell : public std::enable_shared_from_this<Shell> {
           args.Cancel(true);
           return;
         }
-        if (self->draft_.Changes().changed) {
+        if (self->HasChanges()) {
           args.Cancel(true);
           self->ConfirmDiscard(std::nullopt);
         }
       }
+    });
+    Find<Button>(L"TestWindow").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) self->Request(Operation::kTestWindow);
     });
     Find<Button>(L"Apply").Click([weak](auto&&, auto&&) {
       if (auto s = weak.lock()) s->Request(Operation::kApply);
     });
     Find<Button>(L"Okay").Click([weak](auto&&, auto&&) {
       if (auto self = weak.lock()) {
-        if (self->draft_.Changes().changed)
+        if (self->HasChanges())
           self->Request(Operation::kApply, true);
         else
           self->window_.Close();
@@ -292,7 +326,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
   fire_and_forget ConfirmDiscard(std::optional<Operation> operation) {
     if (busy_ || dialog_open_) co_return;
     const auto lifetime = shared_from_this();
-    if (draft_.Changes().changed) {
+    if (HasChanges()) {
       dialog_open_ = true;
       ContentDialog dialog;
       dialog.XamlRoot(root_.XamlRoot());
@@ -322,7 +356,13 @@ class Shell : public std::enable_shared_from_this<Shell> {
       window_.Close();
     }
   }
+  bool ValidInput() const {
+    return std::none_of(invalid_.begin(), invalid_.end(),
+                        [](bool value) { return value; });
+  }
+  bool HasChanges() const { return draft_.Changes().changed || !ValidInput(); }
   void SetControlsEnabled(bool enabled) {
+    Find<Button>(L"TestWindow").IsEnabled(enabled && !HasChanges());
     for (size_t i = 0; i < settings::kOptionCount; ++i)
       Find<Control>(kControlNames[i]).IsEnabled(enabled);
     // Dependent options keep their draft values while the parent is off.
@@ -340,7 +380,18 @@ class Shell : public std::enable_shared_from_this<Shell> {
       const uint32_t value = draft_.Get(static_cast<Option>(i));
       if (settings::kOptions[i].kind == settings::ValueKind::kToggle)
         Find<ToggleSwitch>(kControlNames[i]).IsOn(value != 0);
-      else {
+      else if (settings::kOptions[i].kind == settings::ValueKind::kNumber ||
+               settings::kOptions[i].kind ==
+                   settings::ValueKind::kSignedNumber) {
+        const std::wstring text =
+            settings::kOptions[i].kind == settings::ValueKind::kSignedNumber
+                ? std::to_wstring(settings::SignedNumber(value))
+                : std::to_wstring(value);
+        Find<TextBox>(kControlNames[i]).Text(text);
+        invalid_[i] = false;
+        Find<TextBlock>((std::wstring(kControlNames[i]) + L"Error").c_str())
+            .Visibility(Visibility::Collapsed);
+      } else {
         const auto combo = Find<ComboBox>(kControlNames[i]);
         const uint32_t count = settings::kOptions[i].maximum + 1;
         while (combo.Items().Size() > count) combo.Items().RemoveAtEnd();
@@ -359,13 +410,14 @@ class Shell : public std::enable_shared_from_this<Shell> {
   }
   void UpdateApply() {
     const auto patch = draft_.Changes();
-    Find<Button>(L"Okay").IsEnabled(connected_ && !busy_ && patch.Valid());
+    Find<Button>(L"Okay").IsEnabled(connected_ && !busy_ && patch.Valid() &&
+                                    ValidInput());
     Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ && patch.changed &&
-                                     patch.Valid());
+                                     patch.Valid() && ValidInput());
     Find<Button>(L"Cancel").IsEnabled(!busy_);
     Find<TextBlock>(L"DraftStatus")
-        .Text(patch.changed ? L"You have unsaved changes."
-                            : L"All changes are saved.");
+        .Text(HasChanges() ? L"You have unsaved changes."
+                           : L"All changes are saved.");
     SetControlsEnabled(connected_ && !busy_);
   }
   void UpdateTitleTheme() {
@@ -375,14 +427,16 @@ class Shell : public std::enable_shared_from_this<Shell> {
                                                   : TitleBarTheme::Light);
   }
   fire_and_forget Request(Operation operation, bool close_after = false) {
-    if (busy_ || closed_) co_return;
+    if (busy_ || closed_ || (operation == Operation::kApply && !ValidInput()))
+      co_return;
     busy_ = true;
     UpdateApply();
     Find<Button>(L"Reload").IsEnabled(false);
     Find<Button>(L"Legacy").IsEnabled(false);
     SetControlsEnabled(false);
-    Status(operation == Operation::kApply ? L"Saving changes"
-                                          : L"Reading settings",
+    Status(operation == Operation::kApply        ? L"Saving changes"
+           : operation == Operation::kTestWindow ? L"Opening test window"
+                                                 : L"Reading settings",
            L"Waiting for the AltSnap host.", InfoBarSeverity::Informational);
     const settings::Request request{
         ++request_id_, operation, snapshot_.revision,
@@ -426,6 +480,13 @@ class Shell : public std::enable_shared_from_this<Shell> {
              L"before applying again. Your draft is retained.",
              InfoBarSeverity::Error);
     } else if (response->result == Result::kOk) {
+      if (operation == Operation::kTestWindow) {
+        Status(L"Test window opened",
+               L"The test window uses your saved settings.",
+               InfoBarSeverity::Success);
+        UpdateApply();
+        return;
+      }
       snapshot_ = *response;
       draft_.Load(snapshot_.values);
       ShowDraft();
@@ -441,6 +502,10 @@ class Shell : public std::enable_shared_from_this<Shell> {
         window_.Close();
         return;
       }
+    } else if (operation == Operation::kTestWindow &&
+               response->result == Result::kActivationFailed) {
+      Status(L"Could not open the test window",
+             L"Your saved settings are unchanged.", InfoBarSeverity::Error);
     } else {
       // Preserve both the original revision and draft on conflict/error. Reload
       // is explicit; never blindly repeat an uncertain mutation.
@@ -474,6 +539,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
   uint32_t request_id_ = 0;
   bool closed_ = false, busy_ = false, connected_ = false;
   bool loading_ = false, allow_close_ = false, dialog_open_ = false;
+  std::array<bool, settings::kOptionCount> invalid_{};
   settings::Draft draft_;
   settings::Snapshot snapshot_;
   std::shared_ptr<Handle> cancellation_;
