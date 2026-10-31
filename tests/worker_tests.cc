@@ -100,6 +100,8 @@ void TestOverflow() {
     if (std::holds_alternative<AltCtrlCommand>(command)) {
       SetEvent(entered);
       WaitForSingleObject(release, INFINITE);
+    } else if (const auto* move = std::get_if<MouseMoveCommand>(&command)) {
+      CHECK(ran == 64 && move->point.x == 2);
     } else {
       if (std::holds_alternative<ClickCommand>(command)) CHECK(ran == 64);
       ++ran;
@@ -111,6 +113,9 @@ void TestOverflow() {
   for (size_t i = 0; i < Worker::kMaxPendingTasks; ++i)
     CHECK(worker.Post(MoveWindowCommand{}));
   CHECK(!worker.Post(MoveWindowCommand{}));
+  // Mouse moves bypass task capacity and still coalesce at saturation.
+  CHECK(worker.PostMouseMove({1, 0}));
+  CHECK(worker.PostMouseMove({2, 0}));
   // Control work bypasses capacity but stays FIFO; close rejects everything.
   CHECK(worker.Post(ClickCommand{BT_LMB}));
   worker.Close();
@@ -151,6 +156,66 @@ void TestConcurrentClose() {
   }
 }
 
+void TestDirectExecutionAndOwnership() {
+  const DWORD owner = GetCurrentThreadId();
+  DWORD executor_thread = 0;
+  HANDLE entered = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  HANDLE release = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  CHECK(entered && release);
+  std::vector<size_t> executed;
+  windowRR observed{};
+  const HWND target = GetDesktopWindow();
+  Worker worker([&](WorkerCommand command) {
+    CHECK(GetCurrentThreadId() != owner);
+    if (!executor_thread) executor_thread = GetCurrentThreadId();
+    CHECK(GetCurrentThreadId() == executor_thread);
+    executed.push_back(command.index());
+    if (std::holds_alternative<AltCtrlCommand>(command)) {
+      SetEvent(entered);
+      CHECK(WaitForSingleObject(release, 5000) == WAIT_OBJECT_0);
+    } else if (const auto* move = std::get_if<MoveWindowCommand>(&command)) {
+      observed = move->request;
+    } else if (const auto* click = std::get_if<ClickCommand>(&command)) {
+      CHECK(click->value == BT_MB5);
+    } else if (const auto* kill = std::get_if<KillWindowCommand>(&command)) {
+      CHECK(kill->window == target);
+    }
+  });
+  CHECK(worker.Start());
+  CHECK(worker.Post(AltCtrlCommand{}));
+  CHECK(WaitForSingleObject(entered, 5000) == WAIT_OBJECT_0);
+  windowRR request{};
+  request.hwnd = target;
+  request.x = -17;
+  request.y = 23;
+  request.width = 640;
+  request.height = 480;
+  request.odpi = 144;
+  request.resize = {RZ_LEFT, RZ_BOTTOM};
+  request.start = request.end = 1;
+  request.moveonly = request.maximize = request.snap = 1;
+  CHECK(worker.Post(MouseMoveCommand{{1, 2}}));
+  CHECK(worker.Post(MoveWindowCommand{request}));
+  request = {};  // The queued request owns all fields, including geometry.
+  CHECK(worker.Post(ClickCommand{BT_MB5}));
+  CHECK(worker.Post(MoveResizeComboCommand{}));
+  CHECK(worker.Post(KillWindowCommand{target}));
+  CHECK(worker.Post(FinishMovementCommand{}));
+  CHECK(worker.Post(MouseMoveCommand{{3, 4}}));
+  worker.Close();
+  SetEvent(release);
+  worker.Stop();
+  CHECK((executed == std::vector<size_t>{4, 0, 2, 3, 5, 6, 1, 0}));
+  CHECK(observed.hwnd == target && observed.x == -17 && observed.y == 23);
+  CHECK(observed.width == 640 && observed.height == 480 &&
+        observed.odpi == 144);
+  CHECK(observed.resize.x == RZ_LEFT && observed.resize.y == RZ_BOTTOM);
+  CHECK(observed.start == 1 && observed.end == 1 && observed.moveonly == 1 &&
+        observed.maximize == 1 && observed.snap == 1);
+  CloseHandle(release);
+  CloseHandle(entered);
+}
+
 constexpr UINT kSend = WM_APP + 100;
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
   if (message == kSend) return 123;
@@ -183,6 +248,7 @@ int main() {
   TestQueue();
   TestOverflow();
   TestConcurrentClose();
+  TestDirectExecutionAndOwnership();
   TestSynchronousSend();
   std::printf("%d worker test failure(s)\n", failures);
   return failures != 0;
