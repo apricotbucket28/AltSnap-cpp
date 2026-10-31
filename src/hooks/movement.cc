@@ -103,7 +103,7 @@ int StartMoveOrResize(POINT pt, action_t action, RECT& wnd, int button) {
       !(GetKeyState(VK_SHIFT) & 0x8000)) {
     // This will pop down menu and stuff
     // In case autofocus did not do it.
-    (void)PostWorkerTask([] { SendAltCtrlAlt(nullptr); });
+    (void)PostWorkerCommand(AltCtrlCommand{});
   }
 
   // Set action state.
@@ -239,7 +239,7 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
 }
 
 // Called on MouseUp and on AltUp when using GrabWithAlt
-static DWORD WINAPI FinishMovementNow(LPVOID pp) {
+DWORD FinishMovementNow() {
   LOG("FinishMovement");
   // LogState("FinishMovement\n");
   StopSpeedMes();
@@ -304,8 +304,7 @@ static DWORD WINAPI FinishMovementNow(LPVOID pp) {
 }
 void FinishMovementAsync() {
   g_InFinishMovement = 1;
-  if (!PostWorkerTask([] { FinishMovementNow(nullptr); }))
-    g_InFinishMovement = 0;
+  if (!PostWorkerCommand(FinishMovementCommand{})) g_InFinishMovement = 0;
 }
 
 // state.action is the current action

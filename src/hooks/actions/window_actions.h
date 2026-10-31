@@ -7,6 +7,7 @@
 namespace altsnap::hooks {
 
 int ActionPause(HWND hwnd, UCHAR pause);
+DWORD ActionKillNow(HWND hwnd);
 int ActionKill(HWND hwnd);
 void ReallySetForegroundWindow(HWND hwnd);
 void SetForegroundWindowL(HWND hwnd);

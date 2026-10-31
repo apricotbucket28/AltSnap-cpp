@@ -72,8 +72,7 @@ void SendInputSequence(const UCHAR* seq) {
 
 // Sends the click down/click up sequence to the system
 // Upstream: Send_ClickProc
-static DWORD WINAPI SendClickProc(LPVOID buttonD) {
-  auto button = static_cast<enum button>(reinterpret_cast<LONG_PTR>(buttonD));
+static DWORD SendClickProc(int button) {
   static const WORD bmapping[] = {MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
                                   MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_XDOWN,
                                   MOUSEEVENTF_XDOWN};
@@ -102,11 +101,11 @@ static DWORD WINAPI SendClickProc(LPVOID buttonD) {
 }
 // Upstream: Send_Click
 void SendClick(int button) {
-  SendClickProc(reinterpret_cast<LPVOID>(static_cast<LONG_PTR>(button)));
+  SendClickProc(button);
 }
 // Upstream: Send_Click_Thread
 void SendClickThread(enum button button) {
-  (void)PostWorkerTask([button] { SendClick(button); });
+  (void)PostWorkerCommand(ClickCommand{button});
 }
 
 // Sends an unicode character to the system.
@@ -141,7 +140,7 @@ int SimulateXButton(WPARAM wp, WORD xbtidx) {
   LowLevelMouseProc(HC_ACTION, wp, reinterpret_cast<LPARAM>(&msg));
   return 1;
 }
-DWORD WINAPI SendAltCtrlAlt(LPVOID p) {
+DWORD SendAltCtrlAlt() {
   SendKeyUpDown(VK_MENU, KEYEVENTF_KEYDOWN);
   SendKey(VK_CONTROL);
   SendKeyUpDown(VK_MENU, KEYEVENTF_KEYUP);

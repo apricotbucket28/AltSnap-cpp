@@ -8,6 +8,7 @@ namespace altsnap::hooks {
 
 void StopSpeedMes();
 int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX);
+DWORD FinishMovementNow();
 void FinishMovementAsync();
 void LockMovement();
 

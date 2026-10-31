@@ -9,6 +9,7 @@ namespace altsnap::hooks {
 void SClickActions(HWND hwnd, action_t action);
 int DoWheelActions(HWND hwnd, action_t action);
 int TitleBarActions(POINT pt, action_t action, enum button button);
+DWORD DoMoveResizeMaxMinComboAction();
 void DoComboActions(action_t action, enum button button);
 
 }  // namespace altsnap::hooks

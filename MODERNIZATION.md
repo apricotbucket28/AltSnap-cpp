@@ -71,6 +71,8 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
   releasing shared configuration or windows. Pending droppable tasks are limited
   to 64; control tasks bypass capacity but are rejected after admission closes.
   Adjacent mouse moves coalesce; window-move requests own their payloads.
+  The queue carries a closed `WorkerCommand` variant, executed directly on the
+  worker thread; no caller closures or pointer payloads cross that boundary.
 - `Load`/`Unload` belong to the main window's thread. Backport the DLL and app
   caller together: `Unload` now returns `BOOL` to confirm an idle session before
   `FreeLibrary`. Shutdown services synchronous sends, so the app blocks commands

@@ -206,9 +206,15 @@ void TestMessages() {
 
 constexpr UINT kLifecycleSend = WM_APP + 101;
 const wchar_t* lifecycle_path = nullptr;
+int lifecycle_sends = 0;
 LRESULT CALLBACK LifecycleWindowProc(HWND window, UINT message, WPARAM wp,
                                      LPARAM lp) {
+  if (message == WM_WINDOWPOSCHANGING && !HooksActive() &&
+      g_mainhwnd == window) {
+    CHECK(SendMessageW(window, kLifecycleSend, 0, 0) == 123);
+  }
   if (message == kLifecycleSend) {
+    ++lifecycle_sends;
     // Stop pumps synchronous sends. Neither lifecycle entry point may reenter
     // teardown or replace resources while the old worker is still draining.
     CHECK(g_mainhwnd == window);
@@ -224,13 +230,15 @@ int keyboard_stage = 0;
 int overlay_stage = 0;
 HHOOK WINAPI FailKeyboardHook(int, HOOKPROC, HINSTANCE, DWORD) {
   ++keyboard_stage;
-  CHECK(PostWorkerTask([] {}));  // The real worker has started.
+  CHECK(PostWorkerCommand(
+      ClickCommand{BT_NONE}));  // The real worker has started.
   SetLastError(ERROR_ACCESS_DENIED);
   return nullptr;
 }
 bool FailOverlay(const IniSection&) {
   ++overlay_stage;
-  CHECK(!PostWorkerTask([] {}));  // Failure precedes worker startup.
+  CHECK(!PostWorkerCommand(
+      ClickCommand{BT_NONE}));  // Failure precedes worker startup.
   return false;
 }
 void TestModalGuard() {
@@ -277,7 +285,7 @@ void TestLifecycle(const std::wstring& path) {
   CHECK(LoadSession(window, path.c_str(), injected) == nullptr);
   CHECK(keyboard_stage == 1 && overlay_stage == 0);
   CHECK(g_mainhwnd == nullptr);
-  CHECK(!PostWorkerTask([] {}));
+  CHECK(!PostWorkerCommand(ClickCommand{BT_NONE}));
   CHECK(!mousehook);
   Unload();
   // Also roll back when configuration cannot create its overlay windows.
@@ -330,18 +338,21 @@ void TestLifecycle(const std::wstring& path) {
     });
     foreign.join();
     CHECK(foreign_load_rejected && HooksActive());
-    MoveWindowAsync(window, 10 + cycle, 20 + cycle, 220, 120);
-    bool resources_alive = false;
-    LRESULT send_result = 0;
-    CHECK(PostWorkerTask([&] {
-      resources_alive = g_mainhwnd == window && conf.InactiveScroll == 1;
-      send_result = SendMessageW(window, kLifecycleSend, 0, 0);
-    }));
+    MoveWindowAsync(window, 9 + cycle, 19 + cycle, 221, 121);
+    const int sends_before = lifecycle_sends;
+    windowRR request{};
+    request.hwnd = window;
+    request.x = 10 + cycle;
+    request.y = 20 + cycle;
+    request.width = 220;
+    request.height = 120;
+    request.start = request.end = 1;
+    CHECK(PostWorkerCommand(MoveWindowCommand{request}));
     CHECK(Unload());
-    CHECK(resources_alive && send_result == 123);
+    CHECK(lifecycle_sends > sends_before);
     CHECK(g_mainhwnd == nullptr && !mousehook);
     CHECK(!KeepMouseHook());
-    CHECK(!PostWorkerTask([] {}));
+    CHECK(!PostWorkerCommand(ClickCommand{BT_NONE}));
     for (HWND overlay : g_transhwnd) CHECK(overlay == nullptr);
     CHECK(RegisteredHotkeys().empty());
     CHECK(monitors.empty() && wnds.empty() && snwnds.empty());
