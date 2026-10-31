@@ -6,7 +6,7 @@
 
 namespace altsnap::hooks {
 
-int ResizeTouchingWindows(LPVOID lwptr);
+int ResizeTouchingWindows(struct windowRR* lw);
 void ResizeAllSnappedWindows();
 void MaximizeRestoreAtPoint(HWND hwnd, UINT sw_cmd, int origin);
 void RestoreWindowTo(HWND hwnd, int x, int y, int w, int h);

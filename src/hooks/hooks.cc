@@ -9,10 +9,12 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "hooks/actions/click_actions.h"
+#include "hooks/actions/window_actions.h"
 #include "hooks/blacklist.h"
 #include "hooks/hook_config.h"
 #include "hooks/hook_startup.h"
@@ -24,6 +26,7 @@
 #include "hooks/movement.h"
 #include "hooks/overlay/pin_window.h"
 #include "hooks/overlay/window_menu.h"
+#include "hooks/send_input.h"
 #include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"
@@ -45,18 +48,35 @@ std::atomic<DWORD> g_owner_thread{0};
 // Intentionally process-lived: no Worker/queue destruction under loader lock,
 // including process termination without Unload. The app refuses to unload an
 // active DLL; normal session resources are released by Stop/CleanUpSession.
-Worker& g_worker = *new Worker([](POINT point) {
-  g_InMouseMove = 1;
-  MouseMoveNow(point);
-  g_InMouseMove = 0;
-});
+void ExecuteWorkerCommand(WorkerCommand command) {
+  std::visit(
+      [](auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, MouseMoveCommand>) {
+          g_InMouseMove = 1;
+          MouseMoveNow(value.point);
+          g_InMouseMove = 0;
+        } else if constexpr (std::is_same_v<T, FinishMovementCommand>) {
+          FinishMovementNow();
+        } else if constexpr (std::is_same_v<T, MoveWindowCommand>) {
+          MoveWindowNow(&value.request);
+        } else if constexpr (std::is_same_v<T, ClickCommand>) {
+          SendClick(value.value);
+        } else if constexpr (std::is_same_v<T, AltCtrlCommand>) {
+          SendAltCtrlAlt();
+        } else if constexpr (std::is_same_v<T, MoveResizeComboCommand>) {
+          DoMoveResizeMaxMinComboAction();
+        } else if constexpr (std::is_same_v<T, KillWindowCommand>) {
+          ActionKillNow(value.window);
+        }
+      },
+      command);
+}
+Worker& g_worker = *new Worker(ExecuteWorkerCommand);
 }  // namespace
 
-bool PostWorkerTask(Worker::Task task, Worker::Importance importance) {
-  return g_worker.Post(std::move(task), importance);
-}
-bool PostWorkerMouseMove(POINT point) {
-  return g_worker.PostMouseMove(point);
+bool PostWorkerCommand(WorkerCommand command) {
+  return g_worker.Post(std::move(command));
 }
 bool HooksActive() {
   return g_phase == Phase::kActive;

@@ -13,7 +13,7 @@ void SendClick(int button);
 void SendClickThread(enum button button);
 void SendUnicodeKey(WORD w);
 int SimulateXButton(WPARAM wp, WORD xbtidx);
-DWORD WINAPI SendAltCtrlAlt(LPVOID p);
+DWORD SendAltCtrlAlt();
 
 }  // namespace altsnap::hooks
 

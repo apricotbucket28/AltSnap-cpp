@@ -268,7 +268,7 @@ int TitleBarActions(POINT pt, action_t action, enum button button) {
 
 // Just to be used in the ClickComboActions function
 // and started in the worker thread.
-static DWORD WINAPI DoMoveResizeMaxMinComboAction(LPVOID pp) {
+DWORD DoMoveResizeMaxMinComboAction() {
   if (IsZoomed(state.hwnd)) {
     if (IsSamePTT(&state.clickpt, &state.prevpt)) {
       state.moving = CURSOR_ONLY;
@@ -291,8 +291,7 @@ static int ClickComboActions(action_t action) {
   if (!(conf.MMMaximize & 1)) return 0;
   // Maximize/Restore the window if pressing Move, Resize mouse buttons.
   if (state.action.ac == AC_MOVE && action.ac == AC_RESIZE) {
-    if (!PostWorkerTask([] { DoMoveResizeMaxMinComboAction(nullptr); }))
-      return 0;
+    if (!PostWorkerCommand(MoveResizeComboCommand{})) return 0;
     state.blockmouseup = 1;
     return 1;
   }

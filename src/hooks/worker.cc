@@ -47,30 +47,29 @@ bool Worker::Start(const Startup& startup) {
   return true;
 }
 
-bool Worker::Post(Task task, Importance importance) {
-  if (!task) return false;
+bool Worker::Post(WorkerCommand command) {
+  if (!execute_) return false;
   Lock lock(lock_);
   if (!accepting_) return false;
-  if (importance == Importance::kDroppable &&
-      pending_tasks_ >= kMaxPendingTasks)
-    return false;
-  queue_.emplace_back(std::move(task));
+  if (IsMouseMove(command)) {
+    // Only adjacent moves coalesce; finish/action commands remain barriers.
+    if (!queue_.empty() && CanCoalesce(queue_.back(), command)) {
+      queue_.back() = std::move(command);
+    } else {
+      queue_.emplace_back(std::move(command));
+    }
+    SetEvent(wake_);
+    return true;
+  }
+  if (IsDroppable(command) && pending_tasks_ >= kMaxPendingTasks) return false;
+  queue_.emplace_back(std::move(command));
   ++pending_tasks_;
   SetEvent(wake_);
   return true;
 }
 
 bool Worker::PostMouseMove(POINT point) {
-  Lock lock(lock_);
-  if (!accepting_ || !mouse_move_) return false;
-  // Coalesce only adjacent moves; never cross a finish/action boundary.
-  if (!queue_.empty() && std::holds_alternative<POINT>(queue_.back())) {
-    queue_.back() = point;
-  } else {
-    queue_.emplace_back(point);
-  }
-  SetEvent(wake_);
-  return true;
+  return Post(MouseMoveCommand{point});
 }
 
 void Worker::Close() {
@@ -120,7 +119,7 @@ DWORD WINAPI Worker::ThreadMain(void* context) {
 
 void Worker::Run() {
   for (;;) {
-    std::optional<Item> item;
+    std::optional<WorkerCommand> item;
     {
       Lock lock(lock_);
       if (queue_.empty()) {
@@ -129,7 +128,7 @@ void Worker::Run() {
       } else {
         item = std::move(queue_.front());
         queue_.pop_front();
-        if (std::holds_alternative<Task>(*item)) --pending_tasks_;
+        if (!IsMouseMove(*item)) --pending_tasks_;
       }
     }
     if (!item) {
@@ -137,11 +136,8 @@ void Worker::Run() {
         LOG("Worker wait failed: %lu", GetLastError());
         std::abort();
       }
-    } else if (const POINT* point = std::get_if<POINT>(&*item)) {
-      mouse_move_(*point);
     } else {
-      Task& task = std::get<Task>(*item);
-      task();
+      execute_(std::move(*item));
     }
   }
 }

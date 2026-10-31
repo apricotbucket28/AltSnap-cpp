@@ -58,13 +58,13 @@ int ActionPause(HWND hwnd, UCHAR pause) {
 }
 
 // Kill the process from hwnd
-static DWORD WINAPI ActionKillThread(LPVOID hwnd) {
+DWORD ActionKillNow(HWND hwnd) {
   if (state.shift) {
     // TODO: Aggressive command such as:
     // taskkill.exe /F /FI "status eq NOT RESPONDING" /FI "IMAGENAME ne
     // AltSnap.exe" /FI "IMAGENAME ne dwm.exe"
   } else {
-    const auto process_info = GetWindowProcessInfo(static_cast<HWND>(hwnd));
+    const auto process_info = GetWindowProcessInfo(hwnd);
     if (!process_info) {
       return 0;
     }
@@ -99,7 +99,7 @@ int ActionKill(HWND hwnd) {
 
   if (IsBlacklisted(hwnd, BlkLst.Pause)) return 0;
 
-  return PostWorkerTask([hwnd] { ActionKillThread(hwnd); });
+  return PostWorkerCommand(KillWindowCommand{hwnd});
 }
 // Try harder to actually set the window foreground.
 void ReallySetForegroundWindow(HWND hwnd) {

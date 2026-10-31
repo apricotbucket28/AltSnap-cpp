@@ -28,11 +28,10 @@ static int ShouldResizeTouching() {
          ((conf.StickyResize & 1 && state.shift) ||
           ((conf.StickyResize & 3) == 2 && !state.shift));
 }
-int ResizeTouchingWindows(LPVOID lwptr) {
+int ResizeTouchingWindows(windowRR* lw) {
   if (!ShouldResizeTouching()) return 0;
   const RECT& bd = EnumOnce();
   if (snwnds.empty()) return 0;
-  auto* lw = static_cast<struct windowRR*>(lwptr);
   // posx, posy,  correspond to the VISIBLE rect
   // of the current window...
   int posx = lw->x + bd.left;
@@ -218,8 +217,7 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
   request.start = 1;
   request.resize = resize;
   request.moveonly = moveonly;
-  (void)PostWorkerTask([request]() mutable { MoveWindowNow(&request); },
-                       Worker::Importance::kDroppable);
+  (void)PostWorkerCommand(MoveWindowCommand{request});
 }
 
 /* Send WM_SIZING before SetWindowPos so that apps like terminal
