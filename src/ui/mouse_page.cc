@@ -11,6 +11,7 @@
 #include "app/languages.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
+#include "common/text_format.h"
 #include "hooks/hooks.h"
 #include "resource.h"
 #include "ui/dialog_util.h"
@@ -27,7 +28,7 @@ void FillActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
   if (inioption) {
     sel = -1;  // Selection to be made
     GetPrivateProfileString(L"Input", inioption, L"Nothing", txt,
-                            std::size(txt), inipath);
+                            std::size(txt), inipath.c_str());
   }
   for (j = 0; actions[j].action; j++) {
     wchar_t action_name[256];
@@ -76,7 +77,7 @@ void WriteActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
   wchar_t txt[128];
   txt[0] = L'\0';
   GetActionStringFromDropList(hwnd, idc, actions, txt, std::size(txt));
-  WritePrivateProfileString(L"Input", inioption, txt, inipath);
+  WritePrivateProfileString(L"Input", inioption, txt, inipath.c_str());
 }
 /////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
@@ -281,7 +282,7 @@ INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     if (pnmh->code == PSN_SETACTIVE) {
       wchar_t txt[8];
       GetPrivateProfileString(L"Input", L"ModKey", L"", txt, std::size(txt),
-                              inipath);
+                              inipath.c_str());
       EnableDlgItem(hwnd, IDC_MBA2, txt[0]);
       // Disable inside ttb
       EnableDlgItem(hwnd, IDC_INTTB,
@@ -347,9 +348,8 @@ LRESULT WINAPI PickShortcutWinProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       break;
     case WM_KEYUP: {
       if (!IsHotkeyy(static_cast<UCHAR>(wp), vkbl)) {
-        wchar_t txt[kPtrHexDigits + 1];
         HWND phwnd = GetParent(hwnd);
-        SetDlgItemText(phwnd, IDC_SHORTCUTS_VK, LPTR2Hex(txt, wp));
+        SetDlgItemText(phwnd, IDC_SHORTCUTS_VK, ToHex(wp).c_str());
 
         CheckDlgButton(
             phwnd, IDC_SHIFT,

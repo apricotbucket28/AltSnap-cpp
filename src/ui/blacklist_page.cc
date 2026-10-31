@@ -3,6 +3,7 @@
 #include "ui/blacklist_page.h"
 
 #include <algorithm>
+#include <format>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +12,8 @@
 #include "app/languages.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
+#include "common/text_format.h"
+#include "common/winutil.h"
 #include "hooks/hooks.h"
 #include "resource.h"
 #include "ui/dialog_util.h"
@@ -94,12 +97,14 @@ INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         CreateInfoTip(hwnd, i.idc, l10n->BlacklistFormat);
 
       // Enable or disable buttons if needed
-      EnableDlgItem(hwnd, IDC_MDIS,
-                    GetPrivateProfileInt(L"General", L"MDI", 1, inipath));
+      EnableDlgItem(
+          hwnd, IDC_MDIS,
+          GetPrivateProfileInt(L"General", L"MDI", 1, inipath.c_str()));
       EnableDlgItem(
           hwnd, IDC_PAUSEBL,
-          GetPrivateProfileInt(L"KBShortcuts", L"Kill", 0, inipath) ||
-              GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1, inipath) &
+          GetPrivateProfileInt(L"KBShortcuts", L"Kill", 0, inipath.c_str()) ||
+              GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1,
+                                   inipath.c_str()) &
                   8192);
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Save to the config
@@ -130,33 +135,27 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       HWND nwindow = WindowFromPoint(pt);
       HWND window = GetAncestor(nwindow, GA_ROOT);
 
-      wchar_t title[256], classname[256];
-      GetWindowText(window, title, std::size(title));
-      GetClassName(window, classname, std::size(classname));
-
-      wchar_t txt[512];
-      txt[0] = '\0';
-      AppendString(txt, std::size(txt), title);
-      AppendString(txt, std::size(txt), L"|");
-      AppendString(txt, std::size(txt), classname);
-      SetDlgItemText(page, IDC_NEWRULE, txt);
+      const std::wstring rule =
+          GetWindowTextString(window) + L"|" + GetWindowClassName(window);
+      SetDlgItemText(page, IDC_NEWRULE, rule.c_str());
 
       if (auto process_info = GetWindowProcessInfo(window)) {
         SetDlgItemText(page, IDC_NEWPROGNAME,
                        process_info->executable_name.c_str());
       }
-      SetDlgItemText(page, IDC_GWLSTYLE,
-                     LPTR2Hex(txt, GetWindowLongPtr(window, GWL_STYLE)));
-      SetDlgItemText(page, IDC_GWLEXSTYLE,
-                     LPTR2Hex(txt, GetWindowLongPtr(window, GWL_EXSTYLE)));
+      SetDlgItemText(
+          page, IDC_GWLSTYLE,
+          ToHex(static_cast<UINT_PTR>(GetWindowLongPtr(window, GWL_STYLE)))
+              .c_str());
+      SetDlgItemText(
+          page, IDC_GWLEXSTYLE,
+          ToHex(static_cast<UINT_PTR>(GetWindowLongPtr(window, GWL_EXSTYLE)))
+              .c_str());
       // WM_NCHITTEST messages info at current pt
-      wchar_t tt[32];
-      CopyString(txt, std::size(txt),
-                 Int2lStr(tt, HitTestTimeout(nwindow, pt.x, pt.y)));
-      AppendString(txt, std::size(txt), L"/");
-      AppendString(txt, std::size(txt),
-                   Int2lStr(tt, HitTestTimeout(window, pt.x, pt.y)));
-      SetDlgItemText(page, IDC_NCHITTEST, txt);
+      const std::wstring hit_tests =
+          std::format(L"{}/{}", HitTestTimeout(nwindow, pt.x, pt.y),
+                      HitTestTimeout(window, pt.x, pt.y));
+      SetDlgItemText(page, IDC_NCHITTEST, hit_tests.c_str());
       // IDC_DWMCAPBUTTON
       RECT rc;
       SetDlgItemText(page, IDC_DWMCAPBUTTON,
@@ -166,20 +165,15 @@ static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
       // Window rectangle info
       if (GetWindowRectL(window, &rc)) {
-        SetDlgItemText(page, IDC_RECT, RectToStr(&rc, txt));
+        SetDlgItemText(page, IDC_RECT, FormatRect(rc).c_str());
       }
       // IDC_WINHANDLES
-      CopyString(txt, std::size(txt), L"Hwnd: ");
-      AppendString(txt, std::size(txt),
-                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(nwindow)));
-      AppendString(txt, std::size(txt), L", Root: ");
-      AppendString(txt, std::size(txt),
-                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(window)));
-      AppendString(txt, std::size(txt), L", Owner: ");
-      AppendString(txt, std::size(txt),
-                   LPTR2Hex(tt, reinterpret_cast<ULONG_PTR>(
-                                    GetWindow(window, GW_OWNER))));
-      SetDlgItemText(page, IDC_WINHANDLES, txt);
+      const std::wstring handles = std::format(
+          L"Hwnd: {}, Root: {}, Owner: {}",
+          ToHex(reinterpret_cast<UINT_PTR>(nwindow)),
+          ToHex(reinterpret_cast<UINT_PTR>(window)),
+          ToHex(reinterpret_cast<UINT_PTR>(GetWindow(window, GW_OWNER))));
+      SetDlgItemText(page, IDC_WINHANDLES, handles.c_str());
     }
     // Show icon again
     ShowWindowAsync(findHwnd, SW_SHOW);

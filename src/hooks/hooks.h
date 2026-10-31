@@ -227,26 +227,19 @@ enum {
 
   return 0;
 }
-// Convert zone number to ini name entry
-inline wchar_t* ZidxToZonestr(int laynum, int idx, wchar_t zname[32]) {
-  if (laynum > 9) return nullptr;
-  wchar_t txt[kUintDigits + 1];
-  zname[0] = !laynum ? L'\0' : L'A' + laynum - 1;
-  zname[1] = '\0';
-  AppendString(zname, 32, L"Zone");
-  AppendString(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
 
-  return zname;
+// Ini key of zone number `index` of a layout: "Zone5" for the first layout,
+// "AZone5" for the second, "BZone5" for the third, ... (empty if the layout
+// number is out of range). Upstream: ZidxToZonestr / ZidxToZonestrA.
+[[nodiscard]] inline std::string ZoneKey(int layout, int index) {
+  if (layout < 0 || layout > 9) return {};
+  std::string key;
+  if (layout > 0) key += static_cast<char>('A' + layout - 1);
+  return key + "Zone" + std::to_string(index);
 }
-inline char* ZidxToZonestrA(int laynum, int idx, char zname[32]) {
-  if (laynum > 9) return nullptr;
-  char txt[16];
-  zname[0] = !laynum ? '\0' : 'A' + laynum - 1;
-  zname[1] = '\0';
-  AppendString(zname, 32, "Zone");
-  AppendString(zname, 32, Uint2lStr(txt, idx));  // Zone Name from zone number
-
-  return zname;
+[[nodiscard]] inline std::wstring ZoneKeyWide(int layout, int index) {
+  const std::string key = ZoneKey(layout, index);
+  return std::wstring(key.begin(), key.end());  // The key is ASCII.
 }
 
 // Upstream: is_base_action

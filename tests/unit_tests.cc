@@ -6,12 +6,23 @@
 #include <string>
 
 #include "common/ini_section.h"
+#include "common/text_format.h"
 #include "hooks/blacklist.h"
+#include "hooks/hooks.h"
 
+using altsnap::AddKeyToList;
 using altsnap::Blacklist;
 using altsnap::Blacklists;
+using altsnap::FormatKeyEvent;
+using altsnap::FormatMouseEvent;
+using altsnap::FormatRect;
 using altsnap::IniSection;
+using altsnap::IsKeyInList;
+using altsnap::ParseRect;
 using altsnap::ReadIniString;
+using altsnap::RemoveAccelerator;
+using altsnap::RemoveKeyFromList;
+using altsnap::ToHex;
 #include "common/strutil.h"
 
 static int g_failures = 0;
@@ -211,6 +222,67 @@ int main() {
     CHECK(lists.Windows.empty());
     DeleteFileW(bl_ini.c_str());
   }
+
+  // ---- text_format ----
+  CHECK(FormatRect({10, -20, 300, 400}) ==
+        L"10,-20,300,400,");  // Zone<N> format
+  CHECK(ToHex(0) == L"0" && ToHex(0x1F) == L"1F" &&
+        ToHex(0xDEADBEEFull) == L"DEADBEEF");
+  CHECK(RemoveAccelerator(L"Test &window") == L"Test window");
+  CHECK(RemoveAccelerator(L"Test window(&W)") == L"Test window");
+  CHECK(RemoveAccelerator(L"Test window(&W) now") ==
+        L"Test windownow");  // space after ')' is dropped, as before
+  CHECK(RemoveAccelerator(L"\u6d4b\u8bd5\u7a97\u53e3(&W)") ==
+        L"\u6d4b\u8bd5\u7a97\u53e3");
+  CHECK(RemoveAccelerator(L"Foo (bar") ==
+        L"Foo ");  // unclosed '(': old code read past the end
+  CHECK(RemoveAccelerator(L"") == L"" && RemoveAccelerator(L"&&") == L"");
+  CHECK(FormatKeyEvent(0x1B, 0x00010001, L"Esc") ==
+        L"vK=1B D sC=1, LP=10001, Esc");
+  CHECK(FormatKeyEvent(0x41, 0x40000001, L"") == L"vK=41 R sC=0, LP=40000001");
+  CHECK(FormatKeyEvent(0x41, static_cast<LPARAM>(0xC0000001), L"A") ==
+        L"vK=41 U sC=0, LP=C0000001, A");
+  CHECK(FormatMouseEvent(L"LClick D", false, 1, MAKELPARAM(10, 20)) ==
+        L"LClick D (10, 20), WP=1");
+  CHECK(FormatMouseEvent(L"Wheel", true, MAKEWPARAM(0, 120),
+                         MAKELPARAM(5, 6)) == L"Wheel +120 (5, 6), WP=780000");
+  CHECK(FormatMouseEvent(L"Wheel", true, MAKEWPARAM(0, static_cast<WORD>(-120)),
+                         MAKELPARAM(-3, 4)) ==
+        L"Wheel -120 (-3, 4), WP=FF880000");
+
+  // ---- key lists ("A4 A5") ----
+  CHECK(IsKeyInList(L"A4 A5", 0xA5) && IsKeyInList(L"A4 A5", 0xA4) &&
+        !IsKeyInList(L"A4 A5", 0x5B));
+  CHECK(!IsKeyInList(L"", 0x5B) &&
+        IsKeyInList(L"a4  a5", 0xA5));              // case/spacing tolerant
+  CHECK(AddKeyToList(L"A4 A5", 0xA4) == L"A4 A5");  // already there
+  CHECK(AddKeyToList(L"A4 A5", 0x5B) == L"A4 A5 5B");
+  CHECK(AddKeyToList(L"", 0x5B) == L"5B");
+  CHECK(RemoveKeyFromList(L"A4 A5", 0xA4) == L"A5");
+  CHECK(RemoveKeyFromList(L"A4 A5", 0xA5) == L"A4");  // trailing space stripped
+  CHECK(RemoveKeyFromList(L"A4 5B A5", 0x5B) == L"A4 A5");
+  CHECK(RemoveKeyFromList(L"A4 A5", 0x11) == L"A4 A5");  // not present
+  CHECK(RemoveKeyFromList(L"A4", 0xA4) == L"");
+
+  // ---- zone rectangles ----
+  {
+    const auto rc = ParseRect(L"10,-20,300,400,");
+    CHECK(rc && rc->left == 10 && rc->top == -20 && rc->right == 300 &&
+          rc->bottom == 400);
+    const auto round_trip = ParseRect(FormatRect({1, 2, 3, 4}));
+    CHECK(round_trip && round_trip->left == 1 && round_trip->bottom == 4);
+    CHECK(!ParseRect(L"1,2,3,4"));  // each number needs its trailing comma
+    CHECK(!ParseRect(L"1,2,3,"));   // too few numbers
+    CHECK(!ParseRect(L"1,,3,4,"));  // empty field
+    CHECK(!ParseRect(L""));
+    const auto spaced =
+        ParseRect(L" 5, -6,7,8,");  // leading spaces are accepted
+    CHECK(spaced && spaced->left == 5 && spaced->top == -6);
+  }
+  CHECK(ZoneKey(0, 5) == "Zone5" && ZoneKey(1, 12) == "AZone12" &&
+        ZoneKey(9, 0) == "IZone0");
+  CHECK(ZoneKey(10, 0).empty() && ZoneKey(-1, 0).empty());
+  CHECK(ZoneKeyWide(2, 3) == L"BZone3");
 
   std::printf(g_failures ? "%d FAILURE(S)\n" : "all tests passed\n",
               g_failures);

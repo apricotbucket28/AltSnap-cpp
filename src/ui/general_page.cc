@@ -172,7 +172,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     int ret = 0;
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
 
-    ret = GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath);
+    ret = GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath.c_str());
     ret = ret == 1   ? IDC_RZCENTER_NORM
           : ret == 2 ? IDC_RZCENTER_MOVE
           : ret == 3 ? IDC_RZCENTER_CLOSE
@@ -244,17 +244,16 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       // all bool options (checkboxes).
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
-      wchar_t txt[kUintDigits + 1];
       int val = ComboBoxCurSel(hwnd, IDC_AUTOSNAP);
-      WritePrivateProfileString(L"General", L"AutoSnap", Uint2lStr(txt, val),
-                                inipath);
+      WritePrivateProfileString(L"General", L"AutoSnap",
+                                std::to_wstring(val).c_str(), inipath.c_str());
 
       val = IsChecked(hwnd, IDC_RZCENTER_NORM)    ? 1
             : IsChecked(hwnd, IDC_RZCENTER_MOVE)  ? 2
             : IsChecked(hwnd, IDC_RZCENTER_CLOSE) ? 3
                                                   : 0;
       WritePrivateProfileString(L"General", L"ResizeCenter",
-                                Uint2lStr(txt, val), inipath);
+                                std::to_wstring(val).c_str(), inipath.c_str());
 
       // Load selected Language
       int i = ComboBoxCurSel(hwnd, IDC_LANGUAGE);
@@ -267,12 +266,14 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         GetUserLanguageCode(curlang);
         if (!lstrcmpi(l10n->Code, curlang))  // Use Auto if selected language is
                                              // the current user's one.
-          WritePrivateProfileString(L"General", L"Language", L"Auto", inipath);
+          WritePrivateProfileString(L"General", L"Language", L"Auto",
+                                    inipath.c_str());
         else
           WritePrivateProfileString(L"General", L"Language", l10n->Code,
-                                    inipath);
+                                    inipath.c_str());
 #else
-        WritePrivateProfileString(L"General", L"Language", l10n->Code, inipath);
+        WritePrivateProfileString(L"General", L"Language", l10n->Code,
+                                  inipath.c_str());
 #endif
         updatestrings = 1;
         UpdateStrings();
@@ -307,7 +308,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     ComboBox_AddString(control, l10n->GeneralAutoSnap3);
     wchar_t txt[8];
     GetPrivateProfileString(L"General", L"AutoSnap", L"0", txt, std::size(txt),
-                            inipath);
+                            inipath.c_str());
     ComboBox_SetCurSel(control, ParseInt(txt));
 
     // Language

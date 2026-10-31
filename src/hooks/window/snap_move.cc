@@ -277,7 +277,8 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
   *leftWidth = ClampWidth((mon->right - mon->left) * conf.AHoff / 100);
   *rightWidth = ClampWidth((mon->right - mon->left) * (100 - conf.AHoff) / 100);
   *topHeight = ClampHeight((mon->bottom - mon->top) * conf.AVoff / 100);
-  *bottomHeight = ClampHeight((mon->bottom - mon->top) * (100 - conf.AVoff) / 100);
+  *bottomHeight =
+      ClampHeight((mon->bottom - mon->top) * (100 - conf.AVoff) / 100);
 
   // do not go further is snapping state is toggled or shift is down.
   if (state.snap != conf.AutoSnap) return;
@@ -520,7 +521,7 @@ void AeroResizeSnap(POINT pt, int* posx, int* posy, int* wndwidth,
       pt.y < state.origin.mon.top + conf.AeroThreshold) {
     restore = SNAPPED | SNMAXH;
     *wndheight = ClampHeight(state.origin.mon.bottom - state.origin.mon.top +
-                        borders.bottom + borders.top);
+                             borders.bottom + borders.top);
     *posy = state.origin.mon.top - borders.top;
   } else if (state.resize.x == RZ_LEFT && state.resize.y == RZ_YCENTER &&
              pt.x < state.origin.mon.left + conf.AeroThreshold) {

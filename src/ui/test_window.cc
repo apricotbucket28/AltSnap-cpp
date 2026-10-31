@@ -3,6 +3,8 @@
 #include "ui/test_window.h"
 
 #include <algorithm>
+#include <array>
+#include <format>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +13,7 @@
 #include "app/languages.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
+#include "common/text_format.h"
 #include "hooks/hooks.h"
 #include "resource.h"
 #include "ui/dialog_util.h"
@@ -93,7 +96,12 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     WPARAM pWP;
     LPARAM pLP;
     int idx;
-    wchar_t lastkey[MAXLINES][MAXLL];
+    std::array<std::wstring, MAXLINES> lastkey;  // Ring buffer of log lines
+  };
+  // The log lines are limited to MAXLL - 1 characters.
+  const auto truncated = [](std::wstring text) {
+    text.resize(std::min<size_t>(text.size(), MAXLL - 1));
+    return text;
   };
   const wchar_t* const buttonstr = MouseEventName(msg, wParam);
 
@@ -133,12 +141,11 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SYSKEYUP:
     case WM_SYSKEYDOWN: {
       enum { invalidate_all, invalidate_lastline, invalidate_nothing };
-      wchar_t txt[32];
       auto* lks = reinterpret_cast<struct lastkeyss*>(
           GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (!lks) break;
       int idx = lks->idx;
-      wchar_t(*lastkey)[MAXLL] = lks->lastkey;
+      auto& lastkey = lks->lastkey;
       char zone_to_invalidate = invalidate_all;
 
       if (!buttonstr) {
@@ -146,53 +153,25 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         if (lParam & (1u << 30) && wParam == lks->pWP && lParam == lks->pLP) {
           // Same key repeated, Append dost to the previous idx.
           idx = (idx - 1 + MAXLINES) % MAXLINES;
-          if (lstrlen(lastkey[idx]) == MAXLL - 1) {
+          if (lastkey[idx].size() == MAXLL - 1) {
             zone_to_invalidate = invalidate_nothing;
           } else {
-            AppendString(lastkey[idx], MAXLL, L".");
+            lastkey[idx] += L'.';
             zone_to_invalidate = invalidate_lastline;
           }
 
         } else {
-          CopyString(lastkey[idx], MAXLL, L"vK=");
-          AppendString(lastkey[idx], MAXLL,
-                       LPTR2Hex(txt, static_cast<BYTE>(wParam)));
-          AppendString(lastkey[idx], MAXLL,
-                       lParam & (1u << 31)   ? L" U"
-                       : lParam & (1u << 30) ? L" R"
-                                             : L" D");
-          AppendString(lastkey[idx], MAXLL, L" sC=");
-          AppendString(lastkey[idx], MAXLL,
-                       LPTR2Hex(txt, HIWORD(lParam) & 0x00FF));
-          AppendString(lastkey[idx], MAXLL, L", LP=");
-          AppendString(lastkey[idx], MAXLL, LPTR2Hex(txt, lParam));
-          txt[0] = L',';
-          txt[1] = L' ';
-          txt[2] = L'\0';
-          if (GetKeyNameText(lParam, txt + 2, std::size(txt) - 2))
-            AppendString(lastkey[idx], MAXLL, txt);
+          wchar_t key_name[64];
+          if (!GetKeyNameText(lParam, key_name, std::size(key_name))) {
+            key_name[0] = L'\0';
+          }
+          lastkey[idx] = truncated(FormatKeyEvent(wParam, lParam, key_name));
         }
       } else {
         // Mouse Button
-        short x = LOWORD(lParam);
-        short y = HIWORD(lParam);
-        CopyString(lastkey[idx], MAXLL, buttonstr);
-        if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL) {
-          short delta = HIWORD(wParam);
-          if (delta >= 0) {
-            AppendString(lastkey[idx], MAXLL, L" +");
-          } else {
-            delta = -delta;
-            AppendString(lastkey[idx], MAXLL, L" -");
-          }
-          AppendString(lastkey[idx], MAXLL, Int2lStr(txt, delta));
-        }
-        AppendString(lastkey[idx], MAXLL, L" (");
-        AppendString(lastkey[idx], MAXLL, Int2lStr(txt, x));
-        AppendString(lastkey[idx], MAXLL, L", ");
-        AppendString(lastkey[idx], MAXLL, Int2lStr(txt, y));
-        AppendString(lastkey[idx], MAXLL, L"), WP=");
-        AppendString(lastkey[idx], MAXLL, LPTR2Hex(txt, wParam));
+        lastkey[idx] = truncated(FormatMouseEvent(
+            buttonstr, msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL, wParam,
+            lParam));
       }
 
       if (zone_to_invalidate != invalidate_nothing) {
@@ -217,20 +196,12 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_MOVE:
     case WM_SIZE: {
-      wchar_t num[kIntDigits * 4 + 4 + 1];
-      wchar_t title[256 + kIntDigits * 4 + 4];
       RECT rc;
       GetWindowRectL(hwnd, &rc);
-      CopyWithoutAccelerator(title, std::size(title), l10n->AdvancedTestWindow);
-      AppendString(title, std::size(title), L": ");
-      AppendString(title, std::size(title), RectToStr(&rc, num));
-
-      AppendString(title, std::size(title), L" (");
-      AppendString(title, std::size(title), Int2lStr(num, rc.right - rc.left));
-      AppendString(title, std::size(title), L"x");
-      AppendString(title, std::size(title), Int2lStr(num, rc.bottom - rc.top));
-      AppendString(title, std::size(title), L")");
-      SetWindowText(hwnd, title);
+      const std::wstring title = std::format(
+          L"{}: {} ({}x{})", RemoveAccelerator(l10n->AdvancedTestWindow),
+          FormatRect(rc), rc.right - rc.left, rc.bottom - rc.top);
+      SetWindowText(hwnd, title.c_str());
 
     } break;
     case WM_PAINT: {
@@ -366,14 +337,15 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
           GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (lks) {
         int idx = lks->idx;
-        const wchar_t(*lastkey)[MAXLL] = lks->lastkey;
+        const auto& lastkey = lks->lastkey;
         for (size_t i = 0; i < MAXLINES; i++) {
           UCHAR didx = (idx + i) % MAXLINES;
           RECT trc = {
               lineheight / 2,
               static_cast<LONG>(crc.bottom - lineheight * (MAXLINES - i)),
               crc.right, crc.bottom};
-          DrawText(hdc, lastkey[didx], lstrlen(lastkey[didx]), &trc,
+          DrawText(hdc, lastkey[didx].c_str(),
+                   static_cast<int>(lastkey[didx].size()), &trc,
                    DT_NOCLIP | DT_TABSTOP);
         }
       }
@@ -400,12 +372,12 @@ static LRESULT CALLBACK TestWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       //        return 1;
 
     case WM_UPDCFRACTION: {
-      centerfrac =
-          GetPrivateProfileInt(L"General", L"CenterFraction", 24, inipath);
+      centerfrac = GetPrivateProfileInt(L"General", L"CenterFraction", 24,
+                                        inipath.c_str());
       centermode =
-          GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath);
-      sidefrac =
-          GetPrivateProfileInt(L"General", L"SidesFraction", 255, inipath);
+          GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath.c_str());
+      sidefrac = GetPrivateProfileInt(L"General", L"SidesFraction", 255,
+                                      inipath.c_str());
       if (sidefrac == 255) sidefrac = centerfrac;
       return 0;
     } break;

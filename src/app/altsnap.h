@@ -17,7 +17,7 @@ extern UINT WM_TASKBARCREATED;
 extern unsigned char elevated;
 extern HINSTANCE g_hinst;
 extern HWND g_hwnd;
-extern wchar_t inipath[MAX_PATH];
+extern std::wstring inipath;  // Path of the ini file in use
 
 // True while the hooks are installed.
 [[nodiscard]] inline bool IsEnabled() {

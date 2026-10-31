@@ -86,22 +86,23 @@ void WriteOptionBool(HWND hwnd, WORD id, const wchar_t* section,
                      const char* name_s) {
   wchar_t name[64];
   AsciiToWide(name, name_s);
-  WritePrivateProfileString(
-      section, name, IsDlgButtonChecked(hwnd, id) ? L"1" : L"0", inipath);
+  WritePrivateProfileString(section, name,
+                            IsDlgButtonChecked(hwnd, id) ? L"1" : L"0",
+                            inipath.c_str());
 }
 
 int WriteOptionBoolBit(HWND hwnd, WORD id, const wchar_t* section,
                        const char* name_s, int bit) {
-  wchar_t txt[kUintDigits + 1];
   wchar_t name[64];
   AsciiToWide(name, name_s);
-  int val = GetPrivateProfileInt(section, name, 0, inipath);
+  int val = GetPrivateProfileInt(section, name, 0, inipath.c_str());
   if (IsDlgButtonChecked(hwnd, id))
     val = SetBit(val, bit);
   else
     val = ClearBit(val, bit);
 
-  WritePrivateProfileString(section, name, Uint2lStr(txt, val), inipath);
+  WritePrivateProfileString(section, name, std::to_wstring(val).c_str(),
+                            inipath.c_str());
   return val;
 }
 void WriteOptionStr(HWND hwnd, WORD id, const wchar_t* section,
@@ -112,19 +113,20 @@ void WriteOptionStr(HWND hwnd, WORD id, const wchar_t* section,
   const int len = GetWindowTextLength(item);
   std::wstring text(static_cast<size_t>(len) + 1, L'\0');
   GetWindowText(item, text.data(), len + 1);
-  WritePrivateProfileString(section, name, text.c_str(), inipath);
+  WritePrivateProfileString(section, name, text.c_str(), inipath.c_str());
 }
 void ReadOptionStr(HWND hwnd, WORD id, const wchar_t* section,
                    const char* name_s, const wchar_t* def) {
   wchar_t name[64];
   AsciiToWide(name, name_s);
-  SetDlgItemText(hwnd, id, ReadIniString(section, name, def, inipath).c_str());
+  SetDlgItemText(hwnd, id,
+                 ReadIniString(section, name, def, inipath.c_str()).c_str());
 }
 int ReadOptionInt(HWND hwnd, WORD id, const wchar_t* section,
                   const char* name_s, int def, int mask) {
   wchar_t name[64];
   AsciiToWide(name, name_s);
-  int ret = GetPrivateProfileInt(section, name, def, inipath);
+  int ret = GetPrivateProfileInt(section, name, def, inipath.c_str());
   CheckDlgButton(hwnd, id, (ret & mask) ? BST_CHECKED : BST_UNCHECKED);
   return ret;
 }

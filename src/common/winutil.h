@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -137,6 +138,60 @@ inline DWORD GetMsgPT(POINT* pt) {
   pt->y = GET_Y_LPARAM(point);
 
   return point;
+}
+
+// Returns the full path of the running executable (empty on failure). Unlike a
+// MAX_PATH buffer this also works for long paths.
+[[nodiscard]] inline std::wstring GetExecutablePath() {
+  std::wstring path(MAX_PATH, L'\0');
+  for (;;) {
+    const DWORD length = GetModuleFileName(nullptr, path.data(),
+                                           static_cast<DWORD>(path.size()));
+    if (length == 0) return {};
+    if (length < path.size()) {  // It fit: `length` excludes the NUL.
+      path.resize(length);
+      return path;
+    }
+    path.assign(path.size() * 2, L'\0');
+  }
+}
+
+// Returns the title text of a window, of any length (empty if it has none).
+[[nodiscard]] inline std::wstring GetWindowTextString(HWND hwnd) {
+  std::wstring text(static_cast<size_t>(GetWindowTextLength(hwnd)) + 1, L'\0');
+  const int copied =
+      GetWindowText(hwnd, text.data(), static_cast<int>(text.size()));
+  text.resize(copied > 0 ? static_cast<size_t>(copied) : 0);
+  return text;
+}
+
+// Returns the window class name (class names are limited to 256 characters).
+[[nodiscard]] inline std::wstring GetWindowClassName(HWND hwnd) {
+  std::wstring name(256, L'\0');
+  const int copied =
+      GetClassName(hwnd, name.data(), static_cast<int>(name.size()));
+  name.resize(copied > 0 ? static_cast<size_t>(copied) : 0);
+  return name;
+}
+
+// Returns the value of an environment variable, or nothing if it is not set.
+[[nodiscard]] inline std::optional<std::wstring> GetEnvironmentString(
+    const wchar_t* name) {
+  const DWORD size = GetEnvironmentVariable(name, nullptr, 0);  // includes NUL
+  if (size == 0) return std::nullopt;
+  std::wstring value(size, L'\0');
+  const DWORD length = GetEnvironmentVariable(name, value.data(), size);
+  value.resize(length);
+  return value;
+}
+
+// Returns the directory of the running executable, without trailing backslash.
+[[nodiscard]] inline std::wstring GetExecutableDirectory() {
+  std::wstring path = GetExecutablePath();
+  const size_t slash = path.find_last_of(L'\\');
+  if (slash == std::wstring::npos) return {};
+  path.resize(slash);
+  return path;
 }
 
 /* Removes the trailing file name from a path */

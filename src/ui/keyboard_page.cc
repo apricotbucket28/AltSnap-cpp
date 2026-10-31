@@ -11,6 +11,7 @@
 #include "app/languages.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
+#include "common/text_format.h"
 #include "hooks/hooks.h"
 #include "resource.h"
 #include "ui/dialog_util.h"
@@ -19,64 +20,16 @@
 namespace altsnap::app {
 
 /////////////////////////////////////////////////////////////////////////////
-[[nodiscard]] static int IsKeyInList(wchar_t* keys, unsigned vkey) {
-  unsigned temp = 0, numread = 0;
-  wchar_t* pos = keys;
-  while (*pos != '\0') {
-    numread = 0;
-    temp = HexToUnsigned(pos);
-    while (pos[numread] && pos[numread] != ' ') numread++;
-    while (pos[numread] == ' ') numread++;
-    if (temp == vkey) {
-      return 1;
-    }
-    pos += numread;
-  }
-  return 0;
-}
-static void AddvKeytoList(wchar_t keys[32], unsigned vkey) {
-  // Check if it is already in the list.
-  if (IsKeyInList(keys, vkey)) return;
-  // Add a key to the hotkeys list
-  if (*keys != '\0') {
-    AppendString(keys, 32, L" ");
-  }
-  wchar_t buf[kPtrHexDigits + 1];
-  AppendString(keys, 32, LPTR2Hex(buf, vkey));
-}
-static void RemoveKeyFromList(wchar_t keys[32], unsigned vkey) {
-  // Remove the key from the hotclick list
-  unsigned temp = 0, numread = 0;
-  wchar_t* pos = keys;
-  while (*pos != '\0') {
-    numread = 0;
-    temp = HexToUnsigned(pos);
-    while (pos[numread] && pos[numread] != ' ') numread++;
-    while (pos[numread] == ' ') numread++;
-    if (temp == vkey) {
-      keys[pos - keys] = '\0';
-      AppendString(keys, 32, pos + numread);
-      break;
-    }
-    pos += numread;
-  }
-  // Strip eventual remaining spaces
-  unsigned ll = lstrlen(keys);
-  while (ll > 0 && keys[--ll] == ' ') keys[ll] = '\0';
-}
 void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
                  const wchar_t* const name) {
-  wchar_t keys[32];
   // Get the current config in case there are some user added keys.
-  GetPrivateProfileString(L"Input", name, L"", keys, std::size(keys), inipath);
+  std::wstring keys = ReadIniString(L"Input", name, L"", inipath.c_str());
   for (size_t i = 0; hotkeys[i].control; i++) {
-    if (IsChecked(hwnd, hotkeys[i].control)) {
-      AddvKeytoList(keys, hotkeys[i].vkey);
-    } else {
-      RemoveKeyFromList(keys, hotkeys[i].vkey);
-    }
+    keys = IsChecked(hwnd, hotkeys[i].control)
+               ? AddKeyToList(std::move(keys), hotkeys[i].vkey)
+               : RemoveKeyFromList(std::move(keys), hotkeys[i].vkey);
   }
-  WritePrivateProfileString(L"Input", name, keys, inipath);
+  WritePrivateProfileString(L"Input", name, keys.c_str(), inipath.c_str());
 }
 /////////////////////////////////////////////////////////////////////////////
 void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
@@ -85,7 +38,7 @@ void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
   unsigned temp = 0;
   wchar_t txt[32];
   GetPrivateProfileString(L"Input", hotkeystr, def, txt, std::size(txt),
-                          inipath);
+                          inipath.c_str());
   wchar_t* pos = txt;
   while (*pos != '\0') {
     temp = HexToUnsigned(pos);
@@ -266,10 +219,11 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                    std::size(txt));
       edit_shortcut_idx = i;
       // MessageBox(hwnd, txt, NULL, 0);
-      WORD shortcut = GetPrivateProfileInt(L"KBShortcuts", txt, 0, inipath);
+      WORD shortcut =
+          GetPrivateProfileInt(L"KBShortcuts", txt, 0, inipath.c_str());
       BYTE vKey = LOBYTE(shortcut);
       BYTE mod = HIBYTE(shortcut);
-      SetDlgItemText(hwnd, IDC_SHORTCUTS_VK, LPTR2Hex(txt, vKey));
+      SetDlgItemText(hwnd, IDC_SHORTCUTS_VK, ToHex(vKey).c_str());
 
       CheckDlgButton(hwnd, IDC_CONTROL,
                      (mod & MOD_CONTROL) ? BST_CHECKED : BST_UNCHECKED);
@@ -283,7 +237,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     }
     // WRITE Current Keyboard Shortcut to ini file
     if (id == IDC_SHORTCUTS_SET) {
-      wchar_t txt[kUintDigits + 1], action_string_buf[64];
+      wchar_t txt[3], action_string_buf[64];
       // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
       GetDlgItemText(hwnd, IDC_SHORTCUTS_VK, txt, 3);
       BYTE vKey = HexToUnsigned(txt);
@@ -296,12 +250,13 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       int astrlen = GetDlgItemText(hwnd, IDC_SHORTCUTS_AC, action_string_buf,
                                    std::size(action_string_buf));
       if (0 < astrlen && *action_string_buf) {
-        const wchar_t* intstr = shortcut ? Uint2lStr(txt, shortcut)
-                                         : nullptr;  // NULL will remove the KEY
+        // A null value removes the key from the ini file.
+        const std::wstring shortcut_text = std::to_wstring(shortcut);
+        const wchar_t* intstr = shortcut ? shortcut_text.c_str() : nullptr;
         edit_shortcut_idx = AddComboStringIfMissing(
             GetDlgItem(hwnd, IDC_SHORTCUTS_AC), action_string_buf);
         WritePrivateProfileString(L"KBShortcuts", action_string_buf, intstr,
-                                  inipath);
+                                  inipath.c_str());
       }
       EnableDlgItem(hwnd, IDC_SHORTCUTS_SET, 0);
       SetFocus(GetDlgItem(hwnd, IDC_SHORTCUTS_AC));
@@ -377,7 +332,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       wchar_t txt[64];
 
       GetPrivateProfileString(L"Input", L"ModKey", L"", txt, std::size(txt),
-                              inipath);
+                              inipath.c_str());
       EnableDlgItem(hwnd, IDC_GRABWITHALTB_H, txt[0]);
       EnableDlgItem(hwnd, IDC_GRABWITHALTB, txt[0]);
 
@@ -390,7 +345,7 @@ INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         HWND control = GetDlgItem(hwnd, IDC_SHORTCUTS_AC);
         ComboBox_ResetContent(control);
         GetPrivateProfileSection(L"KBShortcuts", kbsec, std::size(kbsec),
-                                 inipath);
+                                 inipath.c_str());
         for (wchar_t* p = kbsec; *p != L'\0'; p += lstrlen(p) + 1) {
           // MessageBox(hwnd, p, L"KBShortcuts", 0);
           wchar_t* pp = FindChar(p, L'=');

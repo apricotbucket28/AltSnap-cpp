@@ -7,6 +7,7 @@
 #include "hooks/window/zones.h"
 
 #include "common/ini_section.h"
+#include "common/text_format.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/window/snap.h"
 
@@ -20,39 +21,20 @@ void FreeZones() {
   for (auto& layout : Zones) layout = {};  // Also releases the memory.
 }
 
-static int ReadRectFromini(RECT* zone, unsigned laynum, unsigned idx,
-                           const IniSection& section) {
-  if (idx > MAX_ZONES) return 0;
-
-  long* ZONE = reinterpret_cast<long*>(zone);
-  char zname[32];
-  zname[0] = '\0';
-  wchar_t zaschii[128];
-
-  const wchar_t* txt =
-      section.GetString(ZidxToZonestrA(laynum, idx, zname), nullptr);
-  if (!txt || !txt[0]) return 0;
-  // LOGA("Zone(%u, %u) = %ls", laynum, idx, txt);
-  //  Copy to modifyable buffer.
-  CopyString(zaschii, std::size(zaschii), txt);
-  wchar_t *oldptr = nullptr, *newptr = nullptr;
-  oldptr = &zaschii[0];
-  for (size_t i = 0; i < 4; i++) {
-    newptr = FindChar(oldptr, ',');
-    if (!newptr) return 0;
-    *newptr = '\0';
-    newptr++;
-    if (!*oldptr) return 0;
-    ZONE[i] = ParseInt(oldptr);  // 0 left, 1 top, 2 right, 3 bottom;
-    oldptr = newptr;
-  }
-  return 1;
+// Reads the rectangle of zone `index` of a layout from the ini file.
+// Upstream: ReadRectFromini
+static std::optional<RECT> ReadZoneRect(const IniSection& section,
+                                        unsigned layout, unsigned index) {
+  if (index > MAX_ZONES) return std::nullopt;
+  const wchar_t* text =
+      section.GetString(ZoneKey(layout, index).c_str(), nullptr);
+  if (!text || !text[0]) return std::nullopt;
+  return ParseRect(text);
 }
 static void ReadZonesFromLayout(const IniSection& section, unsigned laynum) {
   Zones[laynum].clear();
-  RECT tmpzone;
-  while (ReadRectFromini(&tmpzone, laynum, Zones[laynum].size(), section)) {
-    Zones[laynum].push_back(tmpzone);
+  while (auto zone = ReadZoneRect(section, laynum, Zones[laynum].size())) {
+    Zones[laynum].push_back(*zone);
   }
 }
 // Load all zones from ini file
@@ -84,23 +66,18 @@ static void GenerateGridZones(unsigned layout, unsigned short Nx,
   }
 }
 void ReadGrids(const IniSection& section) {
-  char gnamex[8];
-  char gnamey[8];
-  CopyString(gnamex, std::size(gnamex), "GridNx");
-  CopyString(gnamey, std::size(gnamex), "GridNy");
-  gnamex[7] = '\0';
-  gnamey[7] = '\0';
   for (size_t i = 0; i < std::size(Grids); i++) {
+    // The first layout uses GridNx/GridNy, the next ones GridNx1/GridNy1, ...
+    const std::string suffix = i == 0 ? "" : std::to_string(i);
     Grids[i] = 0;
-    unsigned short GridNx = section.GetInt(gnamex, 0);
-    unsigned short GridNy = section.GetInt(gnamey, 0);
+    const unsigned short GridNx =
+        section.GetInt(("GridNx" + suffix).c_str(), 0);
+    const unsigned short GridNy =
+        section.GetInt(("GridNy" + suffix).c_str(), 0);
     if (GridNx && GridNy && GridNx * GridNy <= MAX_ZONES) {
       Grids[i] = GridNx | GridNy << 16;  // Store grid dimentions
       GenerateGridZones(i, GridNx, GridNy);
     }
-    // GridNx1, GridNx2, GridNx3...
-    gnamex[6] = '1' + i;
-    gnamey[6] = '1' + i;
   }
 }
 // Recalculate the zones from the Grid info.
@@ -611,7 +588,7 @@ void InitCurrentLayout(unsigned layout) {
 void SetLayoutNumber(WPARAM number) {
   int was_visible = IsWindowVisible(g_zphwnd);
   ShowSnapLayoutPreview(0);
-  g_layout_number = std::clamp<unsigned int>(number, 0, 9);
+  g_layout_number = static_cast<unsigned>(std::min<WPARAM>(number, 9));
   ZonesPrevResetRegion();  // re-calculate
   ShowSnapLayoutPreview(was_visible);
 

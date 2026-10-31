@@ -53,6 +53,14 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
   (`SetKeepMouseHook()` in mouse_hook.cc).
 - Settings pages describe their controls with `DialogOption` (typed default value),
   not a `void*` that held either an integer or a string.
+- UI text is built with `std::wstring`/`std::format`, not fixed buffers:
+  `common/text_format.h` holds the pure helpers (`FormatRect`/`ParseRect` for zone
+  rectangles, `ToHex`, `RemoveAccelerator`, the key-list editing used by the
+  keyboard page, the test-window log lines). They are covered by the unit tests,
+  and were checked against the old implementations on ~130k random inputs.
+- Paths: `GetExecutablePath()`/`GetExecutableDirectory()` (winutil.h) replace
+  `GetModuleFileName` into a `MAX_PATH` buffer; the ini location is chosen by
+  `FindIniPath()` and stored in a `std::wstring`.
 - Naming follows the Google style: CamelCase functions, `kConstants`. Renamed
   upstream identifiers carry a `// Upstream: OldName` note; the string helpers
   from nanolibc.h are listed at the top of `common/strutil.h`.

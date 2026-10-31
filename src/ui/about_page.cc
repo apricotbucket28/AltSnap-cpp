@@ -25,13 +25,12 @@ INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   } else if (msg == WM_NOTIFY) {
     auto pnmh = reinterpret_cast<LPNMHDR>(lParam);
     if (pnmh->code == PSN_SETACTIVE) {
-      wchar_t buf[128];
       // Update text
       SetDlgItemText(hwnd, IDC_ABOUT_BOX, l10n->AboutBox);
       // Append version number to version....
-      CopyString(buf, std::size(buf), l10n->AboutVersion);
-      AppendString(buf, std::size(buf), L" " APP_VERSION);
-      SetDlgItemText(hwnd, IDC_VERSION, buf /*AboutVersion X.XX*/);
+      const std::wstring version =
+          std::wstring(l10n->AboutVersion) + L" " APP_VERSION;
+      SetDlgItemText(hwnd, IDC_VERSION, version.c_str());
 
       SetDlgItemText(hwnd, IDC_URL, L"https://github.com/RamonUnch/AltSnap");
       SetDlgItemText(hwnd, IDC_AUTHOR, l10n->AboutAuthor);
@@ -39,17 +38,13 @@ INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       SetDlgItemText(hwnd, IDC_LICENSE, l10n->AboutLicense);
       SetDlgItemText(hwnd, IDC_TRANSLATIONS_BOX, l10n->AboutTranslationCredit);
 
-      wchar_t txt[1024];
-      txt[0] = L'\0';
+      // "Language: author", one translation per line.
+      std::wstring credits;
       for (size_t i = 0; i < langinfo.size(); i++) {
-        AppendString(txt, std::size(txt), langinfo[i].lang_english.c_str());
-        AppendString(txt, std::size(txt), L": ");
-        AppendString(txt, std::size(txt), langinfo[i].author.c_str());
-        if (i + 1 != langinfo.size()) {
-          AppendString(txt, std::size(txt), L"\r\n");
-        }
+        if (i > 0) credits += L"\r\n";
+        credits += langinfo[i].lang_english + L": " + langinfo[i].author;
       }
-      SetDlgItemText(hwnd, IDC_TRANSLATIONS, txt);
+      SetDlgItemText(hwnd, IDC_TRANSLATIONS, credits.c_str());
     }
   }
 

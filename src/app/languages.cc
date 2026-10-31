@@ -11,6 +11,7 @@
 #include "app/altsnap.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
+#include "common/winutil.h"
 #include "hooks/hooks.h"
 #include "ui/config.h"
 
@@ -129,15 +130,11 @@ void ListAllTranslations() {
   langinfo.push_back({en_US.Code, en_US.LangEnglish, en_US.Lang, en_US.Author,
                       std::wstring()});
 
-  wchar_t szDir[MAX_PATH];
-  GetModuleFileName(nullptr, szDir, std::size(szDir));
-  PathRemoveFileSpecL(szDir);
-  AppendString(szDir, std::size(szDir), L"\\Lang\\*.ini");
-  const std::wstring directory(
-      szDir, lstrlen(szDir) - lstrlen(L"*.ini"));  // Keep trailing '\\'.
+  const std::wstring directory = GetExecutableDirectory() + L"\\Lang\\";
+  const std::wstring pattern = directory + L"*.ini";
 
   WIN32_FIND_DATA ffd;
-  const HANDLE hFind = FindFirstFile(szDir, &ffd);
+  const HANDLE hFind = FindFirstFile(pattern.c_str(), &ffd);
   if (hFind == INVALID_HANDLE_VALUE) return;
   do {
     const std::wstring path = directory + ffd.cFileName;
@@ -169,7 +166,7 @@ int GetUserLanguageCode(wchar_t txt[16]) {
 void UpdateLanguage() {
   wchar_t txt[16];
   GetPrivateProfileString(L"General", L"Language", L"Auto", txt, std::size(txt),
-                          inipath);
+                          inipath.c_str());
 
 // Determine which language should be used
 // based on current user's LCID

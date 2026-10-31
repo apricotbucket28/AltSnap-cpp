@@ -21,7 +21,7 @@ namespace altsnap::app {
 HINSTANCE g_hinst = nullptr;
 HWND g_hwnd = nullptr;
 UINT WM_TASKBARCREATED = 0;
-wchar_t inipath[MAX_PATH];
+std::wstring inipath;  // Path of the ini file in use
 
 WNDPROC G_HooksWinProc = nullptr;
 
@@ -32,14 +32,46 @@ unsigned char elevated = 0;
 unsigned char ScrollLockState = 0;
 char SnapGap = 0;
 
+// Chooses the ini file. Portable mode: "AltSnap.ini" next to the executable.
+// Otherwise "%APPDATA%\\AltSnap\\AltSnap.ini", created from the default
+// "AltSnap.dni" on first run.
+static std::wstring FindIniPath() {
+  // Same name as the executable, with the extension ".ini".
+  std::wstring portable = GetExecutablePath();
+  const size_t dot = portable.find_last_of(L'.');
+  if (dot != std::wstring::npos && dot > portable.find_last_of(L'\\')) {
+    portable.resize(dot);
+  }
+  const std::wstring default_ini = portable + L".dni";
+  portable += L".ini";
+  if (INVALID_FILE_ATTRIBUTES != GetFileAttributes(portable.c_str())) {
+    return portable;
+  }
+  const std::optional<std::wstring> appdata = GetEnvironmentString(L"APPDATA");
+  if (!appdata) return portable;  // No per-user folder: use the portable path.
+
+  // .ini file is not in the current directory, and APPDATA exists:
+  // use %APPDATA%\AltSnap\AltSnap.ini
+  const std::wstring user_dir = *appdata + L"\\AltSnap";
+  if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(user_dir.c_str())) {
+    CreateDirectory(user_dir.c_str(), nullptr);
+    LOG("CreateDirectory(%ls)", user_dir.c_str());
+  }
+  const std::wstring user_ini =
+      user_dir + portable.substr(portable.find_last_of(L'\\'));
+  if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(user_ini.c_str())) {
+    // Copy AltSnap.dni (Default ini file) if no ini present
+    CopyFile(default_ini.c_str(), user_ini.c_str(), FALSE);
+    LOG("CopyFile(%ls -> %ls)", default_ini.c_str(), user_ini.c_str());
+  }
+  return user_ini;
+}
+
 static HINSTANCE LoadHooksDLL() {
-  // Load library
-  wchar_t path[MAX_PATH];
-  DWORD ret = GetModuleFileName(nullptr, path, std::size(path));
-  if (!ret || ret == std::size(path)) return nullptr;
-  PathRemoveFileSpecL(path);
-  AppendString(path, std::size(path), L"\\hooks.dll");
-  return LoadLibrary(path);
+  const std::wstring directory = GetExecutableDirectory();
+  if (directory.empty()) return nullptr;
+  const std::wstring path = directory + L"\\hooks.dll";
+  return LoadLibrary(path.c_str());
 }
 static void FreeHooksDLL() {
   if (hinstDLL) {
@@ -65,16 +97,22 @@ int HookSystem() {
       reinterpret_cast<WNDPROC(WINAPI*)(HWND, const wchar_t*)>(
           GetProcAddress(hinstDLL, kLoadProcName));
   if (Load) {
-    G_HooksWinProc = Load(g_hwnd, inipath);
+    G_HooksWinProc = Load(g_hwnd, inipath.c_str());
   }
 
   LOG("HOOKS.DLL Loaded");
 
   // Reading some config options...
-  UseZones = GetPrivateProfileInt(L"Zones", L"UseZones", 0, inipath);
-  SnapGap = std::clamp<char>(
-      GetPrivateProfileInt(L"Advanced", L"SnapGap", 0, inipath), -128, 127);
-  ACMenuItems = GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1, inipath);
+  UseZones = GetPrivateProfileInt(L"Zones", L"UseZones", 0, inipath.c_str());
+  // GetPrivateProfileInt() returns an unsigned value: negative numbers in the
+  // ini file must be converted to int *before* clamping, and the clamp must
+  // happen before narrowing to `char`.
+  SnapGap = static_cast<char>(
+      std::clamp(static_cast<int>(GetPrivateProfileInt(L"Advanced", L"SnapGap",
+                                                       0, inipath.c_str())),
+                 -128, 127));
+  ACMenuItems =
+      GetPrivateProfileInt(L"Advanced", L"ACMenuItems", -1, inipath.c_str());
   UpdateTray();
   return 0;
 }
@@ -325,15 +363,14 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
     } else if (wmId == CMD_ABOUT) {
       SendMessage(hwnd, WM_OPENCONFIG, 5, 0);
     } else if (wmId == CMD_OPENINIFILE) {
-      ShellExecute(nullptr, L"open", inipath, nullptr, nullptr, SW_SHOWNORMAL);
+      ShellExecute(nullptr, L"open", inipath.c_str(), nullptr, nullptr,
+                   SW_SHOWNORMAL);
     } else if (wmId == CMD_EXIT) {
       DestroyWindow(hwnd);
     } else if (wmId == CMD_SAVEZONES) {
-      wchar_t txt[256];
-      CopyString(txt, std::size(txt), l10n->MiscZoneConfirmation);
-      AppendString(txt, std::size(txt), L"\n\n");
-      AppendFullLayoutName(txt, std::size(txt), LayoutNumber);
-      int ret = MessageBox(nullptr, txt, APP_NAME, MB_OKCANCEL);
+      const std::wstring text = std::wstring(l10n->MiscZoneConfirmation) +
+                                L"\n\n" + FullLayoutName(LayoutNumber);
+      int ret = MessageBox(nullptr, text.c_str(), APP_NAME, MB_OKCANCEL);
       if (ret == IDOK) {
         UnhookSystem();
         SaveCurrentLayout();
@@ -429,36 +466,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
 
   // Get ini path
   LOG("\n\nALTSNAP STARTED");
-  GetModuleFileName(nullptr, inipath, std::size(inipath));
-  inipath[MAX_PATH - 1] = '\0';
-  size_t inipath_len = lstrlen(inipath) - 3;
-  CopyString(&inipath[inipath_len], 4, L"ini");
-  if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(inipath) &&
-      GetEnvironmentVariable(L"APPDATA", nullptr, 0)) {
-    // .ini file is not in current directorry, and APPDATA exists
-    // we should look for %APPDATA%\AltSnap\AltSnap.ini
-    wchar_t userini[MAX_PATH];
-    GetEnvironmentVariable(L"APPDATA", userini, std::size(userini));
-    AppendString(userini, std::size(userini), L"\\AltSnap");
-    if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
-      CreateDirectory(userini, nullptr);
-      LOG("CreateDirectory(%ls)", userini);
-    }
-    // Full user ini name.
-    // AppendString(userini, std::size(userini), L"\\AltSnap.ini");
-    const wchar_t* inifilename = inipath + inipath_len - 3;
-    while (inifilename >= inipath && *inifilename != '\\') inifilename--;
-    AppendString(userini, std::size(userini), inifilename);
-    if (INVALID_FILE_ATTRIBUTES == GetFileAttributes(userini)) {
-      // Copy AltSnap.dni (Default ini file) if no ini present
-      CopyString(&inipath[lstrlen(inipath) - 3], 4, L"dni");
-      CopyFile(inipath, userini, FALSE);  // AltSnap.dni -> AltSnap.ini
-      LOG("CopyFile(%ls -> %ls)", inipath, userini);
-    }
-
-    CopyString(inipath, std::size(inipath), userini);
-  }
-  LOG("ini file: %ls", inipath);
+  inipath = FindIniPath();
+  LOG("ini file: %ls", inipath.c_str());
 
   // Read parameters on command line
   int help = !!FindSubstring(params, L"-help") ||
@@ -507,8 +516,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
       tray_hidden, quiet, elevate, multi, config);
 
   // Look for previous instance
-  if (!multi &&
-      !GetPrivateProfileInt(L"Advanced", L"MultipleInstances", 0, inipath)) {
+  if (!multi && !GetPrivateProfileInt(L"Advanced", L"MultipleInstances", 0,
+                                      inipath.c_str())) {
     if (quiet) return 0;
 
     HWND previnst = FindWindow(APP_NAME, L"");
@@ -547,7 +556,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
   // Check AlwaysElevate
   if (!elevated) {
     if (!elevate)
-      elevate = GetPrivateProfileInt(L"Advanced", L"AlwaysElevate", 0, inipath);
+      elevate = GetPrivateProfileInt(L"Advanced", L"AlwaysElevate", 0,
+                                     inipath.c_str());
 
     // Handle request to elevate to administrator privileges
     if (elevate) {

@@ -9,9 +9,13 @@
 #include "app/tray.h"
 
 #include <algorithm>
+#include <format>
 
 #include "app/altsnap.h"
 #include "app/languages.h"
+#include "common/ini_section.h"
+#include "common/text_format.h"
+#include "common/winutil.h"
 #include "hooks/hooks.h"
 
 namespace altsnap::app {
@@ -41,33 +45,22 @@ static const wchar_t* tray_tooltipstr[] = {
 HICON g_icons[ICONS_COUNT];
 
 static void LoadAllIcons() {
-  wchar_t theme[MAX_PATH];  // Get theme name
-  int ret = GetPrivateProfileString(L"General", L"Theme", L"", theme,
-                                    std::size(theme), inipath);
-  if (ret && theme[1]) {
-    wchar_t path[MAX_PATH];
-    DWORD mod = GetModuleFileName(nullptr, path, std::size(path));
-    if (mod) {
-      PathRemoveFileSpecL(path);
-      AppendString(path, std::size(path), L"\\Themes\\");  // Themes subfolder
-      AppendString(path, std::size(path), theme);          // Theme name
-      int len = lstrlen(path);
-      wchar_t* p = path + len;
-      *p++ = L'\\';
-      if (len < MAX_PATH - 13) {  // strlen("TRAY_OFF.ICO")==12
-        UCHAR i = 0;
-        for (i = 0; i < 3; i++) {
-          CopyString(p, std::size(path) - len, tray_iconstr[i]);
-          AppendString(path, std::size(path), L".ico");
-          auto tmp = static_cast<HICON>(
-              LoadImage(g_hinst, path, IMAGE_ICON, 0, 0,
-                        LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_LOADTRANSPARENT));
-          g_icons[i] =
-              tmp ? tmp : LoadIcon(g_hinst, MAKEINTRESOURCE(TRAY_OFF + i));
-        }
-        return;
-      }
+  // A theme is a subfolder of Themes\ holding TRAY_OFF.ico, ...
+  const std::wstring theme =
+      ReadIniString(L"General", L"Theme", L"", inipath.c_str());
+  const std::wstring executable_dir = GetExecutableDirectory();
+  if (theme.size() > 1 && !executable_dir.empty()) {
+    const std::wstring theme_dir =
+        executable_dir + L"\\Themes\\" + theme + L"\\";
+    for (size_t i = 0; i < ICONS_COUNT; ++i) {
+      const std::wstring path = theme_dir + tray_iconstr[i] + L".ico";
+      auto icon = static_cast<HICON>(
+          LoadImage(g_hinst, path.c_str(), IMAGE_ICON, 0, 0,
+                    LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_LOADTRANSPARENT));
+      g_icons[i] =
+          icon ? icon : LoadIcon(g_hinst, MAKEINTRESOURCE(TRAY_OFF + i));
     }
+    return;
   }
   // Fallback to internal icons.
   for (size_t i = 0; i < ICONS_COUNT; i++)
@@ -77,9 +70,11 @@ static void LoadAllIcons() {
 /////////////////////////////////////////////////////////////////////////////
 int InitTray() {
   ScrollLockState =
-      GetPrivateProfileInt(L"Input", L"ScrollLockState", 0, inipath);
-  LayoutNumber = GetPrivateProfileInt(L"Zones", L"LayoutNumber", 0, inipath);
-  MaxLayouts = GetPrivateProfileInt(L"Zones", L"MaxLayouts", 0, inipath);
+      GetPrivateProfileInt(L"Input", L"ScrollLockState", 0, inipath.c_str());
+  LayoutNumber =
+      GetPrivateProfileInt(L"Zones", L"LayoutNumber", 0, inipath.c_str());
+  MaxLayouts =
+      GetPrivateProfileInt(L"Zones", L"MaxLayouts", 0, inipath.c_str());
   MaxLayouts = std::clamp(MaxLayouts, 0, 10);
   LayoutNumber = std::clamp(LayoutNumber, 0, std::max(0, MaxLayouts - 1));
 
@@ -160,35 +155,21 @@ int RemoveTray() {
 // Zones functions
 void WriteCurrentLayoutNumber() {
   if (MaxLayouts) {
-    wchar_t txt[kUintDigits + 1];
     WritePrivateProfileString(L"Zones", L"LayoutNumber",
-                              Uint2lStr(txt, LayoutNumber), inipath);
+                              std::to_wstring(LayoutNumber).c_str(),
+                              inipath.c_str());
   }
-}
-wchar_t* RectToStr(const RECT* rc, wchar_t rectstr[kIntDigits * 4 + 4 + 1]) {
-  wchar_t txt[kIntDigits + 1];
-  const long* RC = reinterpret_cast<const long*>(rc);
-  rectstr[0] = '\0';
-  for (size_t i = 0; i < 4; i++) {
-    AppendString(rectstr, 64, Int2lStr(txt, static_cast<int>(RC[i])));
-    AppendString(rectstr, 64, L",");
-  }
-  return rectstr;
 }
 // Save a rect as a string in a Zone<num> entry in the inifile
 static void SaveZone(const RECT* rc, unsigned num) {
-  wchar_t txt[64], name[32];
-  WritePrivateProfileString(L"Zones", ZidxToZonestr(LayoutNumber, num, name),
-                            RectToStr(rc, txt), inipath);
+  WritePrivateProfileString(L"Zones", ZoneKeyWide(LayoutNumber, num).c_str(),
+                            FormatRect(*rc).c_str(), inipath.c_str());
 }
 static void ClearAllZones() {
-  int i = 0;
-  wchar_t txt[128], name[32];
-  for (i = 0; i < 2048; i++) {
-    ZidxToZonestr(LayoutNumber, i, name);
-    if (GetPrivateProfileString(L"Zones", name, L"", txt, std::size(txt),
-                                inipath)) {
-      WritePrivateProfileString(L"Zones", name, L"", inipath);
+  for (int i = 0; i < 2048; ++i) {
+    const std::wstring key = ZoneKeyWide(LayoutNumber, i);
+    if (!ReadIniString(L"Zones", key.c_str(), L"", inipath.c_str()).empty()) {
+      WritePrivateProfileString(L"Zones", key.c_str(), L"", inipath.c_str());
     }
   }
 }
@@ -230,26 +211,15 @@ void CloseAllTestWindows() {
 }
 
 // Upstream: catFullLayoutName
-void AppendFullLayoutName(wchar_t* txt, size_t len, int laynum) {
-  wchar_t n1[kUintDigits + 1];
-  AppendString(txt, len, l10n->MenuSnapLayout);
-  AppendString(txt, len, Uint2lStr(n1, laynum + 1));
-  if (G_HooksWinProc) {
-    DWORD rez = 0;
-    if ((rez = G_HooksWinProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0))) {
-      // Add (width:height) to label the layout.
-      AppendString(txt, len, L"  (");
-      AppendString(txt, len, Uint2lStr(n1, LOWORD(rez)));
-      AppendString(txt, len, L":");
-      AppendString(txt, len, Uint2lStr(n1, HIWORD(rez)));
-      AppendString(txt, len, L")");
-    } else {
-      AppendString(txt, len, L"  ");
-      AppendString(txt, len, l10n->MenuEmptyZone);  // (empty)
-    }
-  } else {
-    AppendString(txt, len, L"  (...)");
+std::wstring FullLayoutName(int laynum) {
+  std::wstring name = l10n->MenuSnapLayout;
+  name += std::to_wstring(laynum + 1);
+  if (!G_HooksWinProc) return name + L"  (...)";
+  if (const DWORD rez = G_HooksWinProc(g_hwnd, WM_GETLAYOUTREZ, laynum, 0)) {
+    // Add (width:height) to label the layout.
+    return name + std::format(L"  ({}:{})", LOWORD(rez), HIWORD(rez));
   }
+  return name + L"  " + l10n->MenuEmptyZone;  // (empty)
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -272,26 +242,20 @@ void ShowContextMenu(HWND hwnd) {
 
   if (UseZones & 1) {  // Zones section
     if (MaxLayouts) AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
-    int i = 0;
-    wchar_t txt[128];
-    for (i = 0; i < MaxLayouts; i++) {
-      txt[0] = '\0';
-      AppendFullLayoutName(txt, std::size(txt), i);
+    for (int i = 0; i < MaxLayouts; ++i) {
       // Check the current layout We use a simple checkmark,
       // because a radio button is more complex to setup.
       UINT mfflags =
           i == LayoutNumber ? MF_STRING | MF_CHECKED : MF_STRING | MF_UNCHECKED;
-      AppendMenu(menu, mfflags, CMD_SNAPLAYOUT + i, txt);
+      AppendMenu(menu, mfflags, CMD_SNAPLAYOUT + i, FullLayoutName(i).c_str());
     }
 
     if (!(UseZones & 2)) {
-      wchar_t numstr[kIntDigits + 1];
-      CopyString(txt, std::size(txt), l10n->MenuEditLayout);
-      AppendString(txt, std::size(txt), L" ");
-      AppendString(txt, std::size(txt), Int2lStr(numstr, LayoutNumber + 1));
+      const std::wstring edit_layout =
+          std::format(L"{} {}", l10n->MenuEditLayout, LayoutNumber + 1);
       AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
       AppendMenu(menu, MF_STRING, CMD_TESTWIN, l10n->AdvancedTestWindow);
-      AppendMenu(menu, MF_STRING, CMD_EDITLAYOUT, txt);
+      AppendMenu(menu, MF_STRING, CMD_EDITLAYOUT, edit_layout.c_str());
       AppendMenu(menu,
                  FindWindow(APP_NAME L"-test", nullptr) ? MF_STRING
                                                         : MF_STRING | MF_GRAYED,

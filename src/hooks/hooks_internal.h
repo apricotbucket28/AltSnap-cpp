@@ -4,6 +4,7 @@
 #define ALTSNAP_HOOKS_INTERNAL_H_
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 #include "common/ini_section.h"
