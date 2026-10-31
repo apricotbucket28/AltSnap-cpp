@@ -11,6 +11,7 @@
 #include "hooks/input_options.h"
 #include "hooks/keyboard_hook.h"
 #include "hooks/mouse_hook.h"
+#include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"
 
@@ -207,8 +208,12 @@ void TestMessages() {
 constexpr UINT kLifecycleSend = WM_APP + 101;
 const wchar_t* lifecycle_path = nullptr;
 int lifecycle_sends = 0;
+UINT last_position_flags = 0;
 LRESULT CALLBACK LifecycleWindowProc(HWND window, UINT message, WPARAM wp,
                                      LPARAM lp) {
+  if (message == WM_WINDOWPOSCHANGING) {
+    last_position_flags = reinterpret_cast<const WINDOWPOS*>(lp)->flags;
+  }
   if (message == WM_WINDOWPOSCHANGING && !HooksActive() &&
       g_mainhwnd == window) {
     CHECK(SendMessageW(window, kLifecycleSend, 0, 0) == 123);
@@ -249,6 +254,65 @@ void TestModalGuard() {
     CHECK(!altsnap::app::DeferDuringHookShutdown(false, message));
   }
   CHECK(!altsnap::app::DeferDuringHookShutdown(true, WM_PAINT));
+}
+
+void TestTargetMoveFlags(HWND window, const std::wstring& path) {
+  const LONG_PTR original_style = GetWindowLongPtrW(window, GWL_STYLE);
+  for (const wchar_t* full : {L"0", L"1"}) {
+    CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin", full,
+                                     path.c_str()));
+    for (int resize_all : {0, 1, 2, 3}) {
+      const std::wstring value = std::to_wstring(resize_all);
+      CHECK(WritePrivateProfileStringW(L"Advanced", L"ResizeAll", value.c_str(),
+                                       path.c_str()));
+      for (bool frame : {false, true}) {
+        SetWindowLongPtrW(window, GWL_STYLE,
+                          frame ? original_style | WS_THICKFRAME
+                                : original_style & ~WS_THICKFRAME);
+        CHECK(Load(window, path.c_str()));
+        const bool sync = frame || (resize_all & 2);
+        CHECK(((IsResizable(window) & 2) != 0) == sync);
+        // The active drag's cached classification belongs to another window.
+        state.resizable = sync ? 0 : 2;
+        const auto request_for_target = [&] {
+          RECT rect{};
+          CHECK(GetWindowRect(window, &rect));
+          windowRR request{};
+          request.hwnd = window;
+          request.x = rect.left + 1;
+          request.y = rect.top;
+          request.width = rect.right - rect.left;
+          request.height = rect.bottom - rect.top;
+          request.odpi = GetDpiForWindow(window);
+          request.moveonly = 1;
+          return request;
+        };
+        const auto check_flags = [&] {
+          CHECK((last_position_flags & SWP_NOSIZE) != 0);
+          CHECK(((last_position_flags & SWP_ASYNCWINDOWPOS) == 0) == sync);
+        };
+        windowRR request = request_for_target();
+        MoveWindowNow(&request);
+        CHECK(!request.hwnd);
+        check_flags();
+        request = request_for_target();
+        // Exercise the public async submission path as used by snap/zone
+        // actions.
+        MoveWindowAsync(window, request.x, request.y, request.width,
+                        request.height);
+        CHECK(Unload());
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+          TranslateMessage(&message);
+          DispatchMessageW(&message);
+        }
+        check_flags();
+      }
+    }
+  }
+  SetWindowLongPtrW(window, GWL_STYLE, original_style);
+  CHECK(WritePrivateProfileStringW(L"Advanced", L"ResizeAll", L"0",
+                                   path.c_str()));
 }
 
 void TestLifecycle(const std::wstring& path) {
@@ -374,6 +438,7 @@ void TestLifecycle(const std::wstring& path) {
           user_before + 4);
     Unload();
   }
+  TestTargetMoveFlags(window, path);
   CHECK(DestroyWindow(window));
   CHECK(UnregisterClassW(wc.lpszClassName, instance));
 }

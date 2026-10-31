@@ -330,6 +330,8 @@ inline constexpr UINT kMoveThickBordersFlags = kResizeFlags | SWP_NOSIZE;
 inline constexpr UINT kMoveAsyncFlags =
     kMoveThickBordersFlags | SWP_ASYNCWINDOWPOS;
 DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
+  // Match the target's legacy encoding, including raw ResizeAll bit 2.
+  const bool thick_frame = (IsResizable(lw->hwnd) & 2) != 0;
   // lw->resizing_now = 1;
   //    RECT rc;
   //    int notsamesize = 0;
@@ -374,9 +376,9 @@ DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
     }
   }
 
-  UINT flag = notsamesize           ? kResizeFlags
-              : state.resizable & 2 ? kMoveThickBordersFlags
-                                    : kMoveAsyncFlags;
+  UINT flag = notsamesize   ? kResizeFlags
+              : thick_frame ? kMoveThickBordersFlags
+                            : kMoveAsyncFlags;
   if (conf.IgnoreMinMaxInfo) flag |= SWP_NOSENDCHANGING;
 
   if (nothingtodo)
