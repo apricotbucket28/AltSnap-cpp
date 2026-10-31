@@ -1,8 +1,83 @@
 # Settings UI modernization
 
 Architecture recommendation, 2026-10-31; repository inspected at `f50f0ea`.
-This is a plan, not an implemented interface. See [MODERNIZATION.md](../MODERNIZATION.md)
+The first slice is now implemented as an opt-in preview; acceptance gates below
+are not all closed. See [MODERNIZATION.md](../MODERNIZATION.md)
 for existing C++ modernization and hook lifecycle design.
+
+The goal is to **replace the legacy settings UI**, not maintain two permanent
+frontends. The property sheet is a temporary compatibility fallback until the
+companion reaches feature parity and passes the default-switch gates. The
+resident Win32 host and hooks DLL remain the runtime architecture.
+
+### First-slice implementation (2026-10-31)
+
+- Build with `./Build-Settings.ps1` after configuring the MinGW core (or pass
+  `-MinGWCompiler`). Launch `build/stage/AltSnap.exe -winui`, or open
+  `build/stage/Settings/AltSnap.Settings.exe` directly. Keep the complete staged
+  output together. Legacy settings remain the default and the preview provides
+  an explicit handoff back to them.
+- The UI-only toolchain exception is MSVC v145 **14.50.35717**, C++23,
+  exceptions enabled for C++/WinRT projection errors, RTTI disabled, Windows SDK
+  **10.0.26100.0**, Windows App SDK **1.8.260921001**, and C++/WinRT
+  **3.0.260818.1**. The MinGW core's ABI, static runtime, OS floor, and
+  no-exception/no-RTTI policy are unchanged. The UI uses the dynamic CRT with
+  the **14.50.35710** x64 CRT deployed app-locally, rather than hybrid CRT.
+- The unpackaged self-contained shell has General, Appearance, and About
+  navigation, Mica, Fluent controls, system/light/dark themes, and a retained
+  per-window draft. Theme selection is session-only; localization is deferred
+  to milestone 2. Standard-control XAML is runtime-loaded through WinUI's
+  metadata provider. The build merges runtime resource indexes into
+  `resources.pri`; copying the separate runtime PRIs alone does not resolve
+  WinUI's `Themes/themeresources.xaml` during unpackaged startup.
+- A versioned read request combines handshake and status/snapshot for this
+  slice. The host owns an event-driven, cancellable pipe worker and executes
+  owning requests on its window thread. Only `General/AutoFocus` can be
+  patched; full-file revisions and a per-config writer lock protect it. Its
+  legacy writer uses the same repository and preserves untouched values.
+  Apply reloads once if enabled, preserves disabled state, and distinguishes
+  persistence from activation failure. UI close cancels transport work.
+- One frontend is leased to each host by process lifetime. Editing is
+  conservatively refused whenever **any** second AltSnap host exists, including
+  hosts with different INIs. Direct discovery requires a unique matching
+  installation; the opt-in host launcher supplies its exact PID. Explorer
+  desktop automation provides the unelevated launch path. Pipe access is
+  logon-session restricted, remote clients are rejected, and peers are checked
+  against the expected installation/process.
+- Verified locally: MinGW core build and four CTest suites; the settings
+  protocol/repository/runtime-adapter tests also compile and pass with MSVC.
+  Startup and repeated activation were checked with one visible companion and
+  one companion process. Connected status, Apply, and Reload were exercised on
+  the native desktop (Apply/Reload confirmed by the user); Alt+drag was confirmed after
+  restarting the diagnostic host. The development OS is Windows 11 26H2,
+  **26300.9711**. The UI enforces a minimum build of **26100**.
+- Still open: clean Windows 11 24H2 deployment without developer tools/shared
+  runtime, elevated-host/medium-UI acceptance, native disabled/apply and failure
+  scenarios, and accessibility/mixed-DPI/high-contrast acceptance. Automated
+  desktop inspection misidentifies this executable as Windows Settings and
+  refuses to bind its window. These are remaining first-milestone gates, not
+  grounds to make this preview the default. Installer/retirement work stays in
+  later milestones.
+
+### Next development handoff
+
+Close the remaining first-milestone acceptance gates before extending the set
+of writable options. Add transport/host integration coverage for peer rejection,
+disconnect during apply, shutdown cancellation, competing frontends, and shared
+INI writers; current automated coverage exercises the codec, repository, and
+runtime adapter, not the complete pipe service. Exercise actual disabled-state
+preservation and failed activation in addition to the adapter's injected tests.
+Check hook responsiveness during companion launch: Explorer COM automation
+currently runs synchronously on the host window thread, so launch latency must
+be assessed before treating isolation from the input path as proven.
+
+Then proceed with milestone 2's option inventory, localization, per-window
+draft/controller, and broader host writer routing before migrating the rest of
+General. The current repository and protocol deliberately expose only AutoFocus;
+do not use the engine's effective config struct as the new settings schema.
+Continue page by page toward parity, switch the default entry points only after
+the delivery/accessibility/runtime gates pass, and retire the property-sheet
+pages and their dialog resources after the documented fallback period.
 
 ## Recommendation and alternatives
 
@@ -219,8 +294,9 @@ it, reconnect to the replacement, and preserve the draft on cancellation/failure
 
 [CMakeLists.txt](../CMakeLists.txt) is the current build: Windows x64, C++23,
 MinGW ABI (explicitly rejects `_MSC_VER`), no exceptions/RTTI, static C++ runtime;
-two production targets plus optional unit/hook/worker tests. There is no current
-WinUI project, MSIX manifest, or checked-in CI workflow. `mkmsvc.bat` still names
+two core production targets plus optional tests. The companion now builds through
+[AltSnap.Settings.vcxproj](../src/settings_ui/AltSnap.Settings.vcxproj); there is
+no MSIX manifest or checked-in CI workflow. `mkmsvc.bat` still names
 removed root `.c` files; README/ARM64/Makefile release instructions are historical,
 not proof that the current C++ tree builds with MSVC or ARM64.
 
@@ -259,7 +335,7 @@ clean machine without developer tools/shared runtime. See
 [self-contained C++ deployment](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps).
 
 Reconcile release plumbing during delivery:
-`stage` omits `AltSnap.dni` although first-run startup/NSIS use it;
+`stage` now includes `AltSnap.dni` for first-run startup;
 [ziprelease.bat](../ziprelease.bat) expects `AltSnap.ini` (not tracked) and differs
 from staging; [altsnap.nsi](../altsnap.nsi) has a hardcoded version/file list and
 only shuts down the host. Stage defaults intentionally, preserve an existing INI,
@@ -325,6 +401,6 @@ installed dependency layout.
   Preserve documented engine keys; characterize the old UI behavior before fixing
   it. These findings were inspected, not runtime-reproduced in this analysis.
 
-Validation for this document: source/build/release/test inspection and Microsoft
-documentation review only. No implementation files changed; no build, CTest, or
-interactive runtime checks were performed for this documentation-only pass.
+The original recommendation used source/build/release/test inspection and
+Microsoft documentation review. First-slice implementation validation and its
+remaining acceptance gates are recorded above.

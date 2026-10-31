@@ -9,6 +9,7 @@
 
 #include "app/altsnap.h"
 #include "app/languages.h"
+#include "app/settings_service.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
 #include "hooks/hooks.h"
@@ -125,7 +126,6 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   // Options to bead or written...
   static const DialogOption optlst[] = {
       // dialog id, type, bit number, section name, option name, def val.
-      {IDC_AUTOFOCUS, T_BOL, 0, L"General", "AutoFocus", 0},
       {IDC_AERO, T_BOL, 0, L"General", "Aero", 1},
       {IDC_SMARTAERO, T_BMK, 0, L"General", "SmartAero", 1},
       {IDC_SMARTERAERO, T_BMK, 1, L"General", "SmartAero", 0},
@@ -163,10 +163,17 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   int updatestrings = 0;
   static int have_to_apply = 0;
+  static altsnap::settings::Snapshot auto_focus_snapshot;
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
     int ret = 0;
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
+    auto_focus_snapshot = settings_service
+                              ? settings_service->ReadLegacyAutoFocus()
+                              : altsnap::settings::Snapshot{};
+    CheckDlgButton(hwnd, IDC_AUTOFOCUS,
+                   auto_focus_snapshot.auto_focus ? BST_CHECKED : BST_UNCHECKED);
+    have_to_apply = 0;
 
     ret = GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath.c_str());
     ret = ret == 1   ? IDC_RZCENTER_NORM
@@ -237,6 +244,16 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       EnableDlgItem(hwnd, IDC_INACTIVESCROLL,
                     IsChecked(hwnd, IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
+      if (static_cast<bool>(IsChecked(hwnd, IDC_AUTOFOCUS)) != auto_focus_snapshot.auto_focus &&
+          (!settings_service || !settings_service->WriteLegacyAutoFocus(
+              auto_focus_snapshot, IsChecked(hwnd, IDC_AUTOFOCUS)))) {
+        MessageBoxW(hwnd,
+                    L"Could not save AutoFocus. The configuration may have changed. "
+                    L"Reopen settings, close other AltSnap instances, and check configuration access.",
+                    L"AltSnap", MB_OK | MB_ICONERROR);
+        SetWindowLongPtrW(hwnd, DWLP_MSGRESULT, PSNRET_INVALID_NOCHANGEPAGE);
+        return TRUE;
+      }
       // all bool options (checkboxes).
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
@@ -285,6 +302,9 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);
 
       have_to_apply = 0;
+      if (settings_service) {
+        auto_focus_snapshot = settings_service->ReadLegacyAutoFocus();
+      }
     }
   }
   if (updatestrings) {
