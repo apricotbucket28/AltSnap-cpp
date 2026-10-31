@@ -173,6 +173,8 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     src/app/altsnap.cc
+    src/app/settings_service.cc
+    src/settings/repository.cc
     src/ui/dialog_util.cc
     src/ui/general_page.cc
     src/ui/mouse_page.cc
@@ -226,7 +228,7 @@ target_link_options(AltSnap PRIVATE
     -Wl,--tsaware
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
+target_link_libraries(AltSnap PRIVATE uuid oleaut32 comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # hooks.dll must exist next to AltSnap.exe at runtime (it's loaded, not linked).
 add_dependencies(AltSnap hooks)
@@ -253,6 +255,7 @@ add_custom_target(stage ALL
         ${ALTSNAP_STAGE_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/AltSnap.txt
+        ${CMAKE_SOURCE_DIR}/AltSnap.dni
         ${CMAKE_SOURCE_DIR}/AltSnap.xml
         ${CMAKE_SOURCE_DIR}/License.txt
         ${CMAKE_SOURCE_DIR}/sch_On.bat
@@ -272,6 +275,11 @@ add_dependencies(stage AltSnap hooks)
 option(ALTSNAP_BUILD_TESTS "Build the unit tests" OFF)
 if(ALTSNAP_BUILD_TESTS)
   enable_testing()
+  add_executable(settings_tests tests/settings_tests.cc src/settings/repository.cc)
+  target_include_directories(settings_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(settings_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(settings_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  add_test(NAME settings_tests COMMAND settings_tests)
   add_executable(unit_tests tests/unit_tests.cc src/common/ini_section.cc src/hooks/blacklist.cc)
   target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})

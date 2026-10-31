@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{3A29425E-C7EE-41D2-8C4D-8D80D090BE8D}</ProjectGuid>
+    <ProjectName>AltSnap.Settings</ProjectName>
+    <RootNamespace>AltSnapSettings</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+    <VCToolsVersion>14.50.35717</VCToolsVersion>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+    <VCToolsRedistVersion>14.50.35710</VCToolsRedistVersion>
+    <PackagesRoot>$(MSBuildThisFileDirectory)..\..\build\ui-packages\</PackagesRoot>
+    <WindowsPackageType>None</WindowsPackageType>
+    <AppxPackage>false</AppxPackage>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <DisableWindowsAppSDKMLAutoInitialize>true</DisableWindowsAppSDKMLAutoInitialize>
+    <WindowsAppSdkUndockedRegFreeWinRTInitialize>true</WindowsAppSdkUndockedRegFreeWinRTInitialize>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.1.8.260921001\build\native\Microsoft.WindowsAppSDK.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.AI.1.8.79\build\native\Microsoft.WindowsAppSDK.AI.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Base.1.8.251216001\build\native\Microsoft.WindowsAppSDK.Base.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Foundation.1.8.260803002\build\native\Microsoft.WindowsAppSDK.Foundation.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.InteractiveExperiences.1.8.260708001\build\native\Microsoft.WindowsAppSDK.InteractiveExperiences.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.ML.1.8.2223\build\native\Microsoft.WindowsAppSDK.ML.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Runtime.1.8.260921001\build\native\Microsoft.WindowsAppSDK.Runtime.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Widgets.1.8.251231004\build\native\Microsoft.WindowsAppSDK.Widgets.props" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.WinUI.1.8.260803003\build\native\Microsoft.WindowsAppSDK.WinUI.props" />
+    <Import Project="$(PackagesRoot)Microsoft.Windows.CppWinRT.3.0.260818.1\build\native\Microsoft.Windows.CppWinRT.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\build\stage\Settings\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\..\build\settings-ui\</IntDir>
+    <TargetName>AltSnap.Settings</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTGenerateWindowsMetadata>false</CppWinRTGenerateWindowsMetadata>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <WarningLevel>Level4</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/bigobj /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>UNICODE;_UNICODE;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>shell32.lib;ole32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Manifest>
+      <AdditionalManifestFiles>$(MSBuildThisFileDirectory)..\..\AltSnap.Settings.exe.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cc" />
+    <None Include="Shell.xaml" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(PackagesRoot)Microsoft.Web.WebView2.1.0.3179.45\build\native\Microsoft.Web.WebView2.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.1.8.260921001\build\native\Microsoft.WindowsAppSDK.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.AI.1.8.79\build\native\Microsoft.WindowsAppSDK.AI.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Base.1.8.251216001\build\native\Microsoft.WindowsAppSDK.Base.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Foundation.1.8.260803002\build\native\Microsoft.WindowsAppSDK.Foundation.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.InteractiveExperiences.1.8.260708001\build\native\Microsoft.WindowsAppSDK.InteractiveExperiences.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.ML.1.8.2223\build\native\Microsoft.WindowsAppSDK.ML.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Runtime.1.8.260921001\build\native\Microsoft.WindowsAppSDK.Runtime.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.Widgets.1.8.251231004\build\native\Microsoft.WindowsAppSDK.Widgets.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.WindowsAppSDK.WinUI.1.8.260803003\build\native\Microsoft.WindowsAppSDK.WinUI.targets" />
+    <Import Project="$(PackagesRoot)Microsoft.Windows.CppWinRT.3.0.260818.1\build\native\Microsoft.Windows.CppWinRT.targets" />
+  </ImportGroup>
+  <Target Name="StageShell" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Shell.xaml" DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\media\icon.ico" DestinationFiles="$(OutDir)AltSnap.ico" />
+    <!-- Unpackaged XAML resolves theme URIs through the application's merged PRI. -->
+    <MakeDir Directories="$(IntDir)ResourceInput" />
+    <ItemGroup>
+      <RuntimePri Include="$(OutDir)Microsoft.UI.pri;$(OutDir)Microsoft.UI.Xaml.Controls.pri;$(OutDir)Microsoft.WindowsAppRuntime.pri" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RuntimePri)" DestinationFolder="$(IntDir)ResourceInput" />
+    <Exec StandardOutputImportance="Low" Command="&quot;$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\makepri.exe&quot; new /pr &quot;$(IntDir)ResourceInput&quot; /cf &quot;$(MSBuildThisFileDirectory)..\..\settings-priconfig.xml&quot; /of &quot;$(OutDir)resources.pri&quot; /o" />
+    <!-- App-local CRT deployment; do not assume a developer-machine redist. -->
+    <ItemGroup>
+      <LocalCRT Include="$(VCInstallDir)Redist\MSVC\$(VCToolsRedistVersion)\x64\Microsoft.VC145.CRT\*.dll" />
+    </ItemGroup>
+    <Error Condition="'@(LocalCRT)' == ''" Text="The x64 VC145 CRT redistributable is required for app-local deployment." />
+    <Copy SourceFiles="@(LocalCRT)" DestinationFolder="$(OutDir)" />
+  </Target>
+</Project>
