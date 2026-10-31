@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(AltSnap CXX)
 
@@ -237,36 +237,12 @@ add_custom_command(TARGET AltSnap POST_BUILD
         $<TARGET_FILE:hooks> $<TARGET_FILE_DIR:AltSnap>
 )
 
-# --- Runtime staging -----------------------------------------------------
-# Mirrors what altsnap.nsi / ziprelease.bat actually ship. AltSnap.exe and
-# hooks.dll alone are NOT a working install: Lang/*.ini and translations
-# are read from disk at runtime (GetPrivateProfileSection), and the
-# erasmion theme icons are LoadImage'd from disk too, separate from the
-# default icons embedded via altsnap.rc. Running straight out of the raw
-# build dir with nothing else copied will "work" but silently run with
-# no translations and no alternate theme - an easy false negative.
-set(ALTSNAP_STAGE_DIR ${CMAKE_BINARY_DIR}/stage)
-
-add_custom_target(stage ALL
-    COMMENT "Assembling runtime layout in ${ALTSNAP_STAGE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:AltSnap> $<TARGET_FILE:hooks>
-        ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/AltSnap.txt
-        ${CMAKE_SOURCE_DIR}/AltSnap.dni
-        ${CMAKE_SOURCE_DIR}/AltSnap.xml
-        ${CMAKE_SOURCE_DIR}/License.txt
-        ${CMAKE_SOURCE_DIR}/sch_On.bat
-        ${CMAKE_SOURCE_DIR}/sch_Off.bat
-        ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Lang ${ALTSNAP_STAGE_DIR}/Lang
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Themes ${ALTSNAP_STAGE_DIR}/Themes
-)
-add_dependencies(stage AltSnap hooks)
+# --- Runtime installation ------------------------------------------------
+# Ordinary builds never mutate a runnable installation.
+install(TARGETS AltSnap hooks RUNTIME DESTINATION . LIBRARY DESTINATION .)
+install(FILES AltSnap.txt AltSnap.dni AltSnap.xml License.txt sch_On.bat sch_Off.bat
+        DESTINATION .)
+install(DIRECTORY Lang Themes DESTINATION .)
 
 # --- Unit tests ---------------------------------------------------------------
 # cmake -DALTSNAP_BUILD_TESTS=ON ... && cmake --build build && ctest --test-dir build

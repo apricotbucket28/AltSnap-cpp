@@ -1,2 +1,5 @@
 .cache
 build/
+CMakeUserPresets.json
+.vs/
+*.vcxproj.user

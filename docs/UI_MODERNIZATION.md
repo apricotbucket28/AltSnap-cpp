@@ -12,9 +12,9 @@ resident Win32 host and hooks DLL remain the runtime architecture.
 
 ### First-slice implementation (2026-10-31)
 
-- Build with `./Build-Settings.ps1` after configuring the MinGW core (or pass
-  `-MinGWCompiler`). Launch `build/stage/AltSnap.exe -winui`, or open
-  `build/stage/Settings/AltSnap.Settings.exe` directly. Keep the complete staged
+- Build and publish using the canonical commands in [README.md](../README.md).
+  Launch `build/stage/release/AltSnap.exe -winui`, or open
+  `build/stage/release/Settings/AltSnap.Settings.exe` directly. Keep the complete staged
   output together. Legacy settings remain the default and the preview provides
   an explicit handoff back to them.
 - The UI-only toolchain exception is MSVC v145 **14.50.35717**, C++23,
@@ -294,11 +294,12 @@ it, reconnect to the replacement, and preserve the draft on cancellation/failure
 
 [CMakeLists.txt](../CMakeLists.txt) is the current build: Windows x64, C++23,
 MinGW ABI (explicitly rejects `_MSC_VER`), no exceptions/RTTI, static C++ runtime;
-two core production targets plus optional tests. The companion now builds through
-[AltSnap.Settings.vcxproj](../src/settings_ui/AltSnap.Settings.vcxproj); there is
-no MSIX manifest or checked-in CI workflow. `mkmsvc.bat` still names
-removed root `.c` files; README/ARM64/Makefile release instructions are historical,
-not proof that the current C++ tree builds with MSVC or ARM64.
+two core production targets plus optional tests. CMake presets provide independent
+Debug/Release configure/build/test workflows; install rules assemble core assets.
+The companion builds through [Settings.sln](../Settings.sln) with native MSBuild
+restore, explicit Test and Publish targets, and configuration-isolated outputs.
+There is no MSIX manifest. Obsolete Makefile/MSVC/ARM64 scripts have been removed.
+See [README.md](../README.md) for canonical commands.
 
 Use a separate x64 MSBuild `.vcxproj` with MSVC, Windows SDK, pinned stable
 Windows App SDK and C++/WinRT NuGet packages for settings. Microsoft's
@@ -334,14 +335,13 @@ and retain the unpackaged registration-free WinRT initialization. Verify on a
 clean machine without developer tools/shared runtime. See
 [self-contained C++ deployment](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps).
 
-Reconcile release plumbing during delivery:
-`stage` now includes `AltSnap.dni` for first-run startup;
-[ziprelease.bat](../ziprelease.bat) expects `AltSnap.ini` (not tracked) and differs
-from staging; [altsnap.nsi](../altsnap.nsi) has a hardcoded version/file list and
-only shuts down the host. Stage defaults intentionally, preserve an existing INI,
-include companion output/assets, close both processes for updates, and update
-uninstall handling. A missing/broken companion must leave hooks/tray working and
-offer the legacy settings fallback during rollout.
+CMake install ships AltSnap.dni, Lang, Themes, and core runtime assets; MSBuild
+Publish adds the complete self-contained companion in Settings/. Existing INIs
+are preserved. Assemble each release in a clean prefix to avoid stale runtime
+files. The historical installer/release scripts are retired; installer/update
+work remains a later delivery milestone. A future installer must close both
+processes for updates and handle uninstall. A missing/broken companion must
+leave hooks/tray working and offer the legacy settings fallback during rollout.
 
 ## Phased implementation and gates
 
