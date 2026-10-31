@@ -93,6 +93,12 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
 - `SegT`, `EnumOnce`: no more out-of-bounds pointer arithmetic / sentinel pointers
 
 ## Open
+- Snapping candidate selection needs analysis: `MoveSnap` stores a signed edge
+  distance as the next threshold. A negative distance can prevent a later,
+  closer candidate from being selected. Observed with x=308 and candidate right
+  edges visited in order 300, 310: the result is 300 instead of the closer 310.
+  Review the analogous threshold updates in `ResizeSnap` too. Production behavior
+  was left unchanged during the regression-coverage work.
 - `static` globals shared through `extern` (`state`, `conf`, ...): wrap in
   namespaces / classes
 - `LANGUAGE_MAP` X-macro (kept as the single source of the string table)
