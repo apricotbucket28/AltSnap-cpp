@@ -8,6 +8,8 @@ namespace altsnap::hooks {
 
 [[nodiscard]] bool IsBlacklisted(HWND hwnd, const Blacklist& list);
 int IsClassName(HWND hwnd, const wchar_t* str);
+// Configuration/style flags only; never accesses the shared blacklist cache.
+[[nodiscard]] int GetResizeFlags(HWND hwnd);
 int IsFullscreenF(HWND hwnd, const RECT* wnd, const RECT* fmon);
 int IsFullScreenBL(HWND hwnd);
 void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta);

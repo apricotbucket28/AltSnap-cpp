@@ -57,9 +57,14 @@ int IsClassName(HWND hwnd, const wchar_t* str) {
 }
 
 // Legacy encoding: bit 2 includes WS_THICKFRAME and any raw ResizeAll bit 2.
+int GetResizeFlags(HWND hwnd) {
+  const int thick_frame =
+      (GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_THICKFRAME) != 0;
+  return conf.ResizeAll | thick_frame | (thick_frame << 1);
+}
+
 [[nodiscard]] int IsResizable(HWND hwnd) {
-  int thickf = !!(GetWindowLongPtr(hwnd, GWL_STYLE) & WS_THICKFRAME);
-  int ret = conf.ResizeAll | thickf | (thickf << 1);
+  int ret = GetResizeFlags(hwnd);
 
   if (!ret) ret = !!GetBorderlessFlag(hwnd);
   if (!ret) ret = !!IsBlacklisted(hwnd, BlkLst.AResize);  // Always resize list
