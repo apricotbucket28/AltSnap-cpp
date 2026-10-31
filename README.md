@@ -1,4 +1,3 @@
-English | [中文](./README_zh-CN.md) | [한국어](./README_ko-KR.md)
 # AltSnap
 Fork from Stefan Sundin's AltDrag.
 
@@ -30,10 +29,6 @@ Finally it fixed a ton of undesired behavior and bugs from the original AltDrag.
 WHAT'S NEW
 
 Many new features can be seen in the option dialog box, however some of them are only available through editing the AltSnap.ini file (middle click on tyhe tray icon for this).
-
-# VirusTotal false positive
-You will see with the latest builds that there are some alerts, usually from SecureAge APEX and sometimes from other vendors. Those are false positives, and I stopped contacting the APEX team for every release because it is a waste of time I would rather spend on improving the program.
-I already reduced the number of false positives significantly, simply by changing build flags and by switching to an older version of the NSIS installer system. This is an indication of the impertinence of some modern antivirus solutions. Chocolatey considers that up to five positives on VirusTotal is not even suspicious.
 
 # Build
 AltSnap builds with gcc + MinGW-w64
