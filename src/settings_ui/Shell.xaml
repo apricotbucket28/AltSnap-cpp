@@ -14,12 +14,6 @@
       <NavigationViewItem Content="Appearance" Tag="Appearance" Icon="Setting" />
       <NavigationViewItem Content="About" Tag="About" Icon="Help" />
     </NavigationView.MenuItems>
-    <NavigationView.PaneFooter>
-      <StackPanel Margin="16" Spacing="6">
-        <TextBlock Text="SETTINGS PREVIEW" Style="{ThemeResource CaptionTextBlockStyle}" />
-        <TextBlock Text="Your familiar tools are still available in legacy settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      </StackPanel>
-    </NavigationView.PaneFooter>
     <Grid Padding="32,28,32,24" RowSpacing="20">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
