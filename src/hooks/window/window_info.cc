@@ -56,11 +56,10 @@ int IsClassName(HWND hwnd, const wchar_t* str) {
          !lstrcmp(classname, str);
 }
 
-// The second bit (&2) will always correspond to the WS_THICKFRAME flag
+// Legacy encoding: bit 2 includes WS_THICKFRAME and any raw ResizeAll bit 2.
 [[nodiscard]] int IsResizable(HWND hwnd) {
   int thickf = !!(GetWindowLongPtr(hwnd, GWL_STYLE) & WS_THICKFRAME);
-  int ret = conf.ResizeAll  // bit two is the real thickframe state.
-            | thickf | (thickf << 1);
+  int ret = conf.ResizeAll | thickf | (thickf << 1);
 
   if (!ret) ret = !!GetBorderlessFlag(hwnd);
   if (!ret) ret = !!IsBlacklisted(hwnd, BlkLst.AResize);  // Always resize list
