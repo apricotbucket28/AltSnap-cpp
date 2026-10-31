@@ -291,9 +291,16 @@ void TestTargetMoveFlags(HWND window, const std::wstring& path) {
           CHECK((last_position_flags & SWP_NOSIZE) != 0);
           CHECK(((last_position_flags & SWP_ASYNCWINDOWPOS) == 0) == sync);
         };
+        // A frameless target with ResizeAll=0 used to reach the shared cache.
+        BlkLst.AResize = altsnap::Blacklist(L"unmatched.exe");
+        state.hwnd = window;
+        state.cached_hwnd_blacklist = nullptr;
+        state.exename = L"cache sentinel";
         windowRR request = request_for_target();
         MoveWindowNow(&request);
         CHECK(!request.hwnd);
+        CHECK(state.cached_hwnd_blacklist == nullptr);
+        CHECK(state.exename == L"cache sentinel");
         check_flags();
         request = request_for_target();
         // Exercise the public async submission path as used by snap/zone
