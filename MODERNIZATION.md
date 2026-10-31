@@ -74,13 +74,37 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
 - `Load`/`Unload` belong to the main window's thread. Backport the DLL and app
   caller together: `Unload` now returns `BOOL` to confirm an idle session before
   `FreeLibrary`. Shutdown services synchronous sends, so the app blocks commands
-  that could enter modal loops or reload settings during the join.
+  that could enter modal loops or reload settings during the join. The app
+  retains lifecycle requests and retries rejected stops on its owner-thread
+  timer; replayable guarded messages are posted after shutdown, while menu
+  requests belonging to a stopped session are discarded.
 - The join deliberately has no timeout: foreign-window operations may block on a
   hung target, but releasing state under a live worker is unsafe. Preserve the
   existing synchronous positioning where subsequent border/MDI geometry reads
   depend on completion. The worker object is intentionally process-lived and its
   destructor never joins under loader lock; sessions require explicit cleanup.
-  This does not eliminate the remaining shared drag-state globals.
+- Mutable drag/input state, enumeration collections and per-drag geometry belong
+  to the Load caller's thread, enforced by Session(). WorkerCommand is a closed
+  value variant; the queue no longer accepts closures or pointer payloads. A
+  private, presentation-independent command window executes stateful commands
+  synchronously on that owner. The worker retains FIFO/coalescing and executes
+  process-kill commands from captured arguments without reading session state.
+- Finish is a barrier; accepted moves drain first, duplicate finishes collapse,
+  and busy starts pass mouse input through as matched down/up pairs without
+  changing the finishing drag. Gesture IDs discard stale deferred moves
+  and combo/finish commands. Unload rejects reentry while commands or hook/window/timer callbacks are active.
+  This confinement trades background drag execution for owner-thread execution:
+  slow synchronous foreign-window operations can delay hook/input processing.
+  Future background geometry/effects must use explicit snapshots and completion
+  values, never access the session directly.
+
+- Long-click grab attempts that encounter a finishing/running drag are cancelled
+  without synthesizing a button release. A new click is required to try again;
+  an old held click is never replayed onto a later target.
+
+- The rehook timer also refreshes the keyboard hook every five seconds, even
+  without a permanent mouse hook. Alternating callback slots keep only one
+  handler active during replacement; failed installs retain the previous hook.
 
 ## Done
 - macro-free `strutil.h` (replaces nanolibc.h); direct Win32 linking, no
@@ -91,8 +115,8 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
 - `SegT`, `EnumOnce`: no more out-of-bounds pointer arithmetic / sentinel pointers
 
 ## Open
-- `static` globals shared through `extern` (`state`, `conf`, ...): wrap in
-  namespaces / classes
+- Remaining owner-thread module stores (overlay handles, zones, configuration)
+  still expose broad internal interfaces; narrow these as their modules change.
 - `LANGUAGE_MAP` X-macro (kept as the single source of the string table)
 - ~190 C arrays (`modernize-avoid-c-arrays`), ~100 narrowing conversions,
   the module headers are still wide (about 150 cross-module functions in hooks.dll)

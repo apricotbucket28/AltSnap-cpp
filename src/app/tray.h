@@ -14,7 +14,7 @@ int InitTray();
 extern int LayoutNumber;
 extern int MaxLayouts;
 int RemoveTray();
-void SaveCurrentLayout();
+void SaveCurrentLayout(int layout);
 void ShowContextMenu(HWND hwnd);
 int UpdateTray();
 extern unsigned char UseZones;

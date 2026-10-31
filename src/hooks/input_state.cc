@@ -36,10 +36,10 @@ action_t GetActionT(const int button) {
   return conf.actions.GetMouse(button, ActionContext::kTitlebar, ModKey());
 }
 action_t GetActionMR(const int button) {
-  if (state.action.ac == AC_MOVE) {
+  if (Session().input.action.ac == AC_MOVE) {
     return conf.actions.GetMouse(button, ActionContext::kMoving, ModKey());
   }
-  if (state.action.ac == AC_RESIZE) {
+  if (Session().input.action.ac == AC_RESIZE) {
     return conf.actions.GetMouse(button, ActionContext::kResizing, ModKey());
   }
   return k_action_none;
@@ -115,17 +115,18 @@ int NumKeysDown() {
 
 // Double check if Ctrl is down
 int IsCtrlDown() {
-  return state.ctrl && GetAsyncKeyState(VK_CONTROL) & 0x8000;
+  return Session().input.ctrl && GetAsyncKeyState(VK_CONTROL) & 0x8000;
 }
 // Returns true if AltDrag must be disabled based on scroll lock
 // If conf.ScrollLockState&2 then Altdrag is disabled by Scroll Lock
 // otherwise it is enabled by Scroll lock.
 int ScrollLockState() {
-  if (state.altsnaponoff) return 1;  // AltSnap was disabled by AC_ASONOFF
+  if (Session().input.altsnaponoff)
+    return 1;  // AltSnap was disabled by AC_ASONOFF
 
   if ((conf.ScrollLockState & 1) &&
       !(!(GetKeyState(VK_SCROLL) & 1) ^ !(conf.ScrollLockState & 2))) {
-    if (state.action.ac) FinishMovementAsync();
+    if (Session().input.action.ac) FinishMovementAsync();
     return 1;
   }
   return 0;

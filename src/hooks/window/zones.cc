@@ -51,13 +51,13 @@ void ReadZones(const IniSection& section) {
 static void GenerateGridZones(unsigned layout, unsigned short Nx,
                               unsigned short Ny) {
   // Enumerate monitors
-  monitors.clear();
+  Session().monitors.clear();
   EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsProc, 0);
   Zones[layout].clear();
-  Zones[layout].reserve(monitors.size() * Nx * Ny);
+  Zones[layout].reserve(Session().monitors.size() * Nx * Ny);
 
   // Loop on all monitors
-  for (auto& monitor : monitors) {
+  for (auto& monitor : Session().monitors) {
     const RECT* mon = &monitor;
     for (size_t i = 0; i < Nx; i++) {    // Horizontal
       for (size_t j = 0; j < Ny; j++) {  // Vertical
@@ -142,8 +142,9 @@ static unsigned GetZoneNearestFromPoint(POINT pt, RECT* urc, int extend) {
   mindist += iz;  // Add iz tolerance.
   for (i = 0; i < numzones; i++) {
     BOOL inrect = mindist > ClacPtRectDist(pt, &lZones[i]);
-    if ((state.ctrl || extend) && !inrect)
-      inrect = mindist > ClacPtRectDist(extend ? state.shiftpt : state.ctrlpt,
+    if ((Session().input.ctrl || extend) && !inrect)
+      inrect = mindist > ClacPtRectDist(extend ? Session().input.shiftpt
+                                               : Session().input.ctrlpt,
                                         &lZones[i]);
 
     if (inrect) {
@@ -166,8 +167,9 @@ static unsigned GetZoneContainingPoint(POINT pt, RECT* urc, int extend) {
 
     int inrect = 0;
     inrect = PtInRect(&lZones[i], pt);
-    if ((state.ctrl || extend) && !inrect)
-      inrect = PtInRect(&lZones[i], extend ? state.shiftpt : state.ctrlpt);
+    if ((Session().input.ctrl || extend) && !inrect)
+      inrect = PtInRect(&lZones[i], extend ? Session().input.shiftpt
+                                           : Session().input.ctrlpt);
 
     if (iz) InflateRect(&lZones[i], -iz, -iz);
     if (inrect) {
@@ -189,28 +191,29 @@ static unsigned GetZoneFromPoint(POINT pt, RECT* urc, int extend) {
 }
 
 void ActionToggleSnapToZoneMode() {
-  if (conf.UseZones & 1 && state.action.ac == AC_MOVE) {
-    state.usezones = !state.usezones;
-    MouseMove(state.prevpt);
+  if (conf.UseZones & 1 && Session().input.action.ac == AC_MOVE) {
+    Session().input.usezones = !Session().input.usezones;
+    MouseMove(Session().input.prevpt);
   }
 }
 void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width, int* height) {
-  if (!(conf.UseZones & 1) || state.mdiclient ||
-      !state.resizable)  // Zones disabled
+  if (!(conf.UseZones & 1) || Session().input.mdiclient ||
+      !Session().input.resizable)  // Zones disabled
     return;
 
-  static POINT oldpt;
-  if (state.Speed > conf.AeroMaxSpeed)
+  POINT& oldpt = Session().zone_point;
+  if (Session().input.Speed > conf.AeroMaxSpeed)
     pt = oldpt;  // do not move the window if speed is too high.
   else
     oldpt = pt;
 
   if (conf.UseZones & 8 &&
-      state.snap != conf.AutoSnap)  // Zones toggled by other click
+      Session().input.snap != conf.AutoSnap)  // Zones toggled by other click
     return;
 
-  if (!state.usezones) {
-    if (!state.forcelayoutdisplay) ShowSnapLayoutPreview(ZONES_PREV_HIDE);
+  if (!Session().input.usezones) {
+    if (!Session().input.forcelayoutdisplay)
+      ShowSnapLayoutPreview(ZONES_PREV_HIDE);
     return;
   }
 
@@ -219,12 +222,12 @@ void MoveSnapToZone(POINT pt, int* posx, int* posy, int* width, int* height) {
   unsigned ret = GetZoneFromPoint(pt, &rc, conf.UseZones & 4);
   if (!ret) return;  // Outside of a rect
 
-  LastWin.end = 0;
-  FixDWMRect(state.hwnd, &bd);
+  Session().last_window.end = 0;
+  FixDWMRect(Session().input.hwnd, &bd);
   InflateRectBorder(&rc, &bd);
 
-  SetRestoreData(state.hwnd, state.origin.width, state.origin.height,
-                 SNAPPED | SNZONE);
+  SetRestoreData(Session().input.hwnd, Session().input.origin.width,
+                 Session().input.origin.height, SNAPPED | SNZONE);
   *posx = rc.left;
   *posy = rc.top;
   *width = rc.right - rc.left;
@@ -291,8 +294,8 @@ static unsigned GetNearestZoneFromPointInDirection(const RECT* rc, RECT* out,
 //}
 
 void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
-  if (!(conf.UseZones & 1) || state.mdiclient ||
-      !state.resizable)  // Zones disabled
+  if (!(conf.UseZones & 1) || Session().input.mdiclient ||
+      !Session().input.resizable)  // Zones disabled
     return;
   SetOriginFromRestoreData(hwnd, k_action_move);
   // 1st get current window position.
@@ -342,13 +345,13 @@ void MoveWindowToTouchingZone(HWND hwnd, UCHAR direction, UCHAR extend) {
   } else {
     CopyRect(&fr, &zrc);
   }
-  LastWin.end = 0;
+  Session().last_window.end = 0;
   RECT bd;
   FixDWMRect(hwnd, &bd);
   InflateRectBorder(&fr, &bd);
 
-  SetRestoreData(hwnd, state.origin.width, state.origin.height,
-                 SNAPPED | SNZONE);
+  SetRestoreData(hwnd, Session().input.origin.width,
+                 Session().input.origin.height, SNAPPED | SNZONE);
   MoveWindowAsync(hwnd, fr.left, fr.top, ClampWidth(fr.right - fr.left),
                   ClampHeight(fr.bottom - fr.top));
 }
@@ -381,9 +384,10 @@ static void UnionMultiRect(RECT* urc, const RECT* rcs, unsigned N) {
 static DWORD GetFullMonitorsRez() {
   // Enumerate monitors
   EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsProc, 0);
-  if (monitors.empty()) return 0;  // ERROR! do nothing
+  if (Session().monitors.empty()) return 0;  // ERROR! do nothing
   RECT urc;
-  UnionMultiRect(&urc, monitors.data(), static_cast<unsigned>(monitors.size()));
+  UnionMultiRect(&urc, Session().monitors.data(),
+                 static_cast<unsigned>(Session().monitors.size()));
 
   // Return dimentions width:height
   return (urc.right - urc.left) | (urc.bottom - urc.top) << 16;
@@ -409,7 +413,7 @@ int GetBestLayoutFromMonitors() {
 
   // Check if the current Layout is good for the current monitor
   DWORD monRZ = 0;
-  if (monitors.size() <= 1) {
+  if (Session().monitors.size() <= 1) {
     RECT mrc;
     SystemParametersInfo(SPI_GETWORKAREA, 0, &mrc, 0);
     monRZ = (mrc.right - mrc.left) | (mrc.bottom - mrc.top) << 16;
@@ -503,7 +507,8 @@ void ShowSnapLayoutPreview(unsigned char yep) {
       ShowWindow(g_zphwnd, SW_HIDE);
     } else if (!IsWindowVisible(g_zphwnd)) {
       ShowWindow(g_zphwnd, SW_SHOW);
-      SetWindowLevel(g_zphwnd, state.hwnd);  // Behind currently moving hwn
+      SetWindowLevel(g_zphwnd,
+                     Session().input.hwnd);  // Behind currently moving hwn
     }
   }
 }
@@ -574,7 +579,7 @@ bool SnapLayoutPreviewCreateDestroy(const IniSection* section) {
         wnd.lpszClassName, nullptr, WS_POPUP, left, top, width, height,
         g_mainhwnd, nullptr, hinstDLL, nullptr);
     if (!g_zphwnd) return false;
-    SetWindowLevel(g_zphwnd, state.hwnd);  // Behind
+    SetWindowLevel(g_zphwnd, Session().input.hwnd);  // Behind
     if (usetrans &&
         !SetLayeredWindowAttributes(g_zphwnd, 0, opacity, LWA_ALPHA))
       return false;
@@ -607,12 +612,12 @@ void SetLayoutNumber(WPARAM number) {
   ShowSnapLayoutPreview(was_visible);
 
   if (!was_visible && conf.ShowZonesOnChange) {
-    state.forcelayoutdisplay = 1;
+    Session().input.forcelayoutdisplay = 1;
     ShowSnapLayoutPreview(1);
     UINT id =
         SetTimer(g_mainhwnd, HIDELAYOUT_TIMER, conf.ShowZonesOnChange * 100,
                  static_cast<TIMERPROC>(TimerWindowProc));
-    state.forcelayoutdisplay = !!id;
+    Session().input.forcelayoutdisplay = !!id;
   }
 }
 

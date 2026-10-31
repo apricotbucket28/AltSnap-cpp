@@ -6,7 +6,9 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
-#include <variant>
+#include <utility>
+
+#include "hooks/worker_command.h"
 
 namespace altsnap::hooks {
 
@@ -16,8 +18,7 @@ namespace altsnap::hooks {
 // Stop must be called explicitly before destruction.
 class Worker final {
  public:
-  using Task = std::function<void()>;
-  enum class Importance { kDroppable, kControl };
+  using Executor = std::function<void(WorkerCommand)>;
   static constexpr size_t kMaxPendingTasks = 64;
   // Narrow startup seam for testing allocation failures with the real worker.
   struct Startup {
@@ -25,8 +26,7 @@ class Worker final {
     decltype(&CreateThread) create_thread = CreateThread;
   };
 
-  explicit Worker(void (*mouse_move)(POINT) = nullptr)
-      : mouse_move_(mouse_move) {}
+  explicit Worker(Executor execute) : execute_(std::move(execute)) {}
   ~Worker();
   Worker(const Worker&) = delete;
   Worker& operator=(const Worker&) = delete;
@@ -34,32 +34,27 @@ class Worker final {
   [[nodiscard]] bool Start(const Startup& startup);
   [[nodiscard]] bool Start() { return Start(Startup{}); }
   // Control tasks bypass capacity, but are still rejected after Close().
-  [[nodiscard]] bool Post(Task task,
-                          Importance importance = Importance::kDroppable);
+  [[nodiscard]] bool Post(WorkerCommand command);
   [[nodiscard]] bool PostMouseMove(POINT point);
   void Close();  // Reject new work, including submissions from running tasks.
   void Stop();   // Close, drain, join, then release synchronization resources.
 
  private:
-  using Item = std::variant<Task, POINT>;
   static DWORD WINAPI ThreadMain(void* context);
   void Run();
 
   SRWLOCK lock_ = SRWLOCK_INIT;
-  std::deque<Item> queue_;
+  std::deque<WorkerCommand> queue_;
   size_t pending_tasks_ = 0;
   HANDLE wake_ = nullptr;
   HANDLE thread_ = nullptr;
   bool accepting_ = false;
   bool stopping_ = false;
-  void (*mouse_move_)(POINT);
+  Executor execute_;
 };
 
-// The session in hooks.cc owns the worker; modules submit owning closures.
-[[nodiscard]] bool PostWorkerTask(
-    Worker::Task task,
-    Worker::Importance importance = Worker::Importance::kControl);
-[[nodiscard]] bool PostWorkerMouseMove(POINT point);
+// Owner-thread admission. Command values are the only worker-facing interface.
+[[nodiscard]] bool PostWorkerCommand(WorkerCommand command);
 
 }  // namespace altsnap::hooks
 

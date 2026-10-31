@@ -101,6 +101,9 @@ set(ALTSNAP_LINK_FLAGS
 # --- hooks.dll -----------------------------------------------------------
 add_library(hooks SHARED
     src/hooks/hooks.cc
+    src/hooks/command_dispatcher.cc
+    src/hooks/command_dispatcher.h
+    src/hooks/worker_command.h
     src/hooks/worker.cc
     src/hooks/worker.h
     src/hooks/window/window_info.cc
@@ -173,6 +176,8 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     src/app/altsnap.cc
+    src/app/hook_lifecycle.cc
+    src/app/hook_lifecycle.h
     src/ui/dialog_util.cc
     src/ui/general_page.cc
     src/ui/mouse_page.cc
@@ -283,15 +288,27 @@ if(ALTSNAP_BUILD_TESTS)
   # hooks) can be exercised without expanding the DLL's public exports.
   get_target_property(ALTSNAP_HOOK_TEST_SOURCES hooks SOURCES)
   list(FILTER ALTSNAP_HOOK_TEST_SOURCES INCLUDE REGEX "\\.cc$")
-  add_executable(hook_tests tests/hook_tests.cc ${ALTSNAP_HOOK_TEST_SOURCES})
+  add_executable(hook_tests tests/hook_tests.cc ${ALTSNAP_HOOK_TEST_SOURCES}
+    src/app/hook_lifecycle.cc)
   target_include_directories(hook_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(hook_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
   target_link_options(hook_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   target_link_libraries(hook_tests PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
   add_test(NAME hook_tests COMMAND hook_tests)
   set_tests_properties(hook_tests PROPERTIES TIMEOUT 30)
+  add_test(NAME hook_survival_tests COMMAND hook_tests --hook-survival)
+  set_tests_properties(hook_survival_tests PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 
-  add_executable(worker_tests tests/worker_tests.cc src/hooks/worker.cc)
+  add_executable(hook_lifecycle_tests tests/hook_lifecycle_tests.cc src/app/hook_lifecycle.cc)
+  target_include_directories(hook_lifecycle_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(hook_lifecycle_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
+  target_link_options(hook_lifecycle_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  target_link_libraries(hook_lifecycle_tests PRIVATE kernel32 user32)
+  add_test(NAME hook_lifecycle_tests COMMAND hook_lifecycle_tests)
+  set_tests_properties(hook_lifecycle_tests PROPERTIES TIMEOUT 15)
+
+  add_executable(worker_tests tests/worker_tests.cc src/hooks/worker.cc
+    src/hooks/command_dispatcher.cc)
   target_include_directories(worker_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_compile_options(worker_tests PRIVATE ${ALTSNAP_CXX_FLAGS} ${ALTSNAP_WARNINGS})
   target_link_options(worker_tests PRIVATE ${ALTSNAP_LINK_FLAGS})

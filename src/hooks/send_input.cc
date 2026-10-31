@@ -27,9 +27,9 @@ void SendKey(unsigned char vkey) {
   input[0].type = input[1].type = INPUT_KEYBOARD;
   input[0].ki = ctrl[0];
   input[1].ki = ctrl[1];
-  InterlockedIncrement(&state.ignorekey);
+  InterlockedIncrement(&Session().input.ignorekey);
   SendInput(2, input, sizeof(*input));
-  InterlockedDecrement(&state.ignorekey);
+  InterlockedDecrement(&Session().input.ignorekey);
 }
 enum { KEYEVENTF_KEYDOWN = 0 };
 // Call with or KEYEVENTF_KEYDOWN/KEYEVENTF_KEYUP
@@ -44,9 +44,9 @@ static void SendKeyUpDown(unsigned char vkey, WORD flags) {
   input.type = INPUT_KEYBOARD;
   input.ki = ctrl;
 
-  InterlockedIncrement(&state.ignorekey);
+  InterlockedIncrement(&Session().input.ignorekey);
   SendInput(1, &input, sizeof(input));
-  InterlockedDecrement(&state.ignorekey);
+  InterlockedDecrement(&Session().input.ignorekey);
 }
 // Sends the key configured with EndSendKey, if any.
 void SendEndKey() {
@@ -72,12 +72,11 @@ void SendInputSequence(const UCHAR* seq) {
 
 // Sends the click down/click up sequence to the system
 // Upstream: Send_ClickProc
-static DWORD WINAPI SendClickProc(LPVOID buttonD) {
-  auto button = static_cast<enum button>(reinterpret_cast<LONG_PTR>(buttonD));
+static void SendClickNow(int button) {
   static const WORD bmapping[] = {MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
                                   MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_XDOWN,
                                   MOUSEEVENTF_XDOWN};
-  if (!button || button > BT_MB5) return 0;
+  if (button < BT_LMB || button > BT_MB5) return;
 
   DWORD MouseEvent = bmapping[button - 2];
   DWORD mdata = 0;
@@ -95,18 +94,17 @@ static DWORD WINAPI SendClickProc(LPVOID buttonD) {
   input[0].mi = click[0];
   input[1].mi = click[1];
 
-  InterlockedIncrement(&state.ignoreclick);
+  InterlockedIncrement(&Session().input.ignoreclick);
   SendInput(2, input, sizeof(*input));
-  InterlockedDecrement(&state.ignoreclick);
-  return 0;
+  InterlockedDecrement(&Session().input.ignoreclick);
 }
 // Upstream: Send_Click
 void SendClick(int button) {
-  SendClickProc(reinterpret_cast<LPVOID>(static_cast<LONG_PTR>(button)));
+  SendClickNow(button);
 }
 // Upstream: Send_Click_Thread
 void SendClickThread(enum button button) {
-  (void)PostWorkerTask([button] { SendClick(button); });
+  (void)PostWorkerCommand(ClickCommand{button});
 }
 
 // Sends an unicode character to the system.
@@ -126,9 +124,9 @@ void SendUnicodeKey(WORD w) {
   input[0].ki = ctrl[0];
   input[1].ki = ctrl[1];
 
-  InterlockedIncrement(&state.ignorekey);
+  InterlockedIncrement(&Session().input.ignorekey);
   SendInput(2, input, sizeof(*input));
-  InterlockedDecrement(&state.ignorekey);
+  InterlockedDecrement(&Session().input.ignorekey);
 }
 int SimulateXButton(WPARAM wp, WORD xbtidx) {
   //    WORD xbtidx = XXButtonIndex(vkey);
@@ -141,12 +139,10 @@ int SimulateXButton(WPARAM wp, WORD xbtidx) {
   LowLevelMouseProc(HC_ACTION, wp, reinterpret_cast<LPARAM>(&msg));
   return 1;
 }
-DWORD WINAPI SendAltCtrlAlt(LPVOID p) {
+void SendAltCtrlAlt() {
   SendKeyUpDown(VK_MENU, KEYEVENTF_KEYDOWN);
   SendKey(VK_CONTROL);
   SendKeyUpDown(VK_MENU, KEYEVENTF_KEYUP);
-
-  return 1;
 }
 
 }  // namespace altsnap::hooks

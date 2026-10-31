@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "common/ini_section.h"
@@ -13,6 +14,7 @@
 #include "hooks/hooks.h"
 #include "hooks/input_options.h"
 #include "hooks/worker.h"
+#include "hooks/worker_command.h"
 
 namespace altsnap::hooks {
 
@@ -43,63 +45,6 @@ enum {
 };
 
 // Enumerators
-enum button {
-  BT_NONE = 0,
-  BT_LMB = 0x02,
-  BT_RMB = 0x03,
-  BT_MMB = 0x04,
-  BT_MB4 = 0x05,
-  BT_MB5 = 0x06,
-  BT_MB6 = 0x07,
-  BT_MB7 = 0x08,
-  BT_MB8 = 0x09,
-  BT_MB9 = 0x0A,
-  BT_MB10 = 0x0B,
-  BT_MB11 = 0x0C,
-  BT_MB12 = 0x0D,
-  BT_MB13 = 0x0E,
-  BT_MB14 = 0x0F,
-  BT_MB15 = 0x10,
-  BT_MB16 = 0x11,
-  BT_MB17 = 0x12,
-  BT_MB18 = 0x13,
-  BT_MB19 = 0x14,
-  BT_MB20 = 0x15,
-  BT_WHEELD = 0x16,
-  BT_WHEELU = 0x17,
-  BT_HWHEELD = 0x18,
-  BT_HWHEELU = 0x19
-};
-enum resizeX { RZ_XNONE = 0, RZ_LEFT = 1, RZ_RIGHT = 2, RZ_XCENTER = 3 };
-enum resizeY { RZ_YNONE = 0, RZ_TOP = 1, RZ_BOTTOM = 2, RZ_YCENTER = 3 };
-enum buttonstate { STATE_NONE, STATE_DOWN, STATE_UP };
-
-enum { BT_PROBE = (1 << 16) };
-
-struct resizeXY {
-  BYTE x;
-  BYTE y;
-};
-using resizexy_t = resizeXY;
-
-struct windowRR {
-  HWND hwnd;
-  int x;
-  int y;
-  int width;
-  int height;
-  UINT odpi;
-  resizexy_t resize;
-  UCHAR end;
-  UCHAR start;
-  UCHAR moveonly;
-  UCHAR maximize;
-  UCHAR snap;
-  // UCHAR resizing_now;
-};
-using windowRR_t = windowRR;
-extern windowRR_t LastWin;
-
 struct rgMMI {
   POINT Min;
   POINT Max;
@@ -131,8 +76,9 @@ struct HookState {
   short delta;
   unsigned Speed;
   HMENU unikeymenu;
-  volatile LONG ignorekey;
-  volatile LONG ignoreclick;
+  // Owner-thread injection guards; USER calls may reenter the hooks.
+  LONG ignorekey;
+  LONG ignoreclick;
 
   UCHAR alt;
   UCHAR alt1;
@@ -174,15 +120,46 @@ struct HookState {
   wchar_t title[256];
   wchar_t classname[256];
 };
-extern HookState state;
+// Mutable engine data belongs exclusively to the Load caller's thread.
+// Session() checks affinity in all builds. The worker sees only command values;
+// no mutex is held across USER calls and no drag state is shared with it.
+struct HookSession {
+  HookState input{};
+  windowRR last_window{};
+  std::vector<RECT> monitors;
+  std::vector<snwdata> windows;
+  std::vector<HWND> enumerated_windows;
+  std::vector<snwdata> snapped_windows;
+  std::vector<HWND> minimized_windows;
+  uint64_t gesture = 0;
+  RECT movement_rect{};
+  RECT invisible_borders{};
+  POINT speed_point{};
+  POINT zone_point{};
+  DWORD mouse_event_time = 0;
+  UCHAR mouse_update_rate = 0;
+  bool moved_to_fixed_point = false;
+  std::optional<uint64_t> finish_pending;
+  std::optional<UCHAR> deferred_alt;
+  bool move_running = false;
+  std::array<bool, BT_MB20 + 1> passed_buttons{};
+};
+// Non-aborting callback boundary: null after cleanup or on a foreign thread.
+HookSession* TrySession();
+HookSession& Session();
 
-// Snap
-extern std::vector<RECT> monitors;
+// Prevent teardown until the outermost owner-thread callback has returned.
+// Idle/foreign callbacks do not acquire a session.
+class SessionExecutionScope {
+ public:
+  SessionExecutionScope();
+  ~SessionExecutionScope();
+  SessionExecutionScope(const SessionExecutionScope&) = delete;
+  SessionExecutionScope& operator=(const SessionExecutionScope&) = delete;
 
-/* for the Snap to borders option */
-extern std::vector<snwdata> wnds;
-
-extern std::vector<HWND> hwnds;
+ private:
+  bool bound_;
+};
 
 // Settings
 enum { MAXKEYS = 15 };
@@ -300,6 +277,8 @@ __declspec(dllexport) WNDPROC WINAPI Load(HWND mainhwnd,
                                           const wchar_t* inipath);
 }
 
+// Owner-thread-only Win32 handles and configuration stores. Configuration is
+// frozen before worker startup and released only after its join.
 extern HWND g_mainhwnd;
 extern HINSTANCE hinstDLL;
 
@@ -315,10 +294,12 @@ inline BOOL GetWindowRectL(HWND hwnd, RECT* rect) {
 
 // To clamp width and height of windows
 [[nodiscard]] inline int ClampWidth(int width) {
-  return std::clamp<int>(width, state.mmi.Min.x, state.mmi.Max.x);
+  return std::clamp<int>(width, Session().input.mmi.Min.x,
+                         Session().input.mmi.Max.x);
 }
 [[nodiscard]] inline int ClampHeight(int height) {
-  return std::clamp<int>(height, state.mmi.Min.y, state.mmi.Max.y);
+  return std::clamp<int>(height, Session().input.mmi.Min.y,
+                         Session().input.mmi.Max.y);
 }
 [[nodiscard]] inline int CLAMPWL(int width, const rgMMI_t* mmi) {
   return std::clamp<int>(width, mmi->Min.x, mmi->Max.x);
@@ -375,16 +356,13 @@ struct MinimizeWindowProcParams {
   HWND clickedhwnd;
 };
 
-// State shared by the hooks.dll modules (defined in hooks.cc).
+// Remaining owner-thread module stores (defined in hooks.cc).
 extern HWND g_transhwnd[4];
 extern HWND g_mchwnd;
-extern std::atomic<UCHAR> g_InFinishMovement;
-extern std::atomic<UCHAR> g_InMouseMove;
+
 extern Blacklists BlkLst;
 extern std::array<std::vector<UCHAR>, 36> g_inputSequences;
 extern std::atomic<HHOOK> mousehook;
-extern std::vector<snwdata> snwnds;
-extern std::vector<HWND> minhwnds;
 
 // Defined in hooks.cc.
 void LogState(const char* Title);

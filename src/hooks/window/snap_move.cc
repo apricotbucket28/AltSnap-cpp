@@ -20,7 +20,8 @@
 namespace altsnap::hooks {
 
 void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
-  if (!state.snap || state.Speed > conf.AeroMaxSpeed) return;
+  if (!Session().input.snap || Session().input.Speed > conf.AeroMaxSpeed)
+    return;
   const RECT& bd = EnumOnce();
 
   int posx = *_posx + bd.left;
@@ -37,20 +38,21 @@ void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
 
   // Loop monitors and windows
   size_t i = 0, j = 0;
-  for (i = 0, j = 0; i < monitors.size() || j < wnds.size();) {
+  for (i = 0, j = 0;
+       i < Session().monitors.size() || j < Session().windows.size();) {
     RECT snapwnd;
     UCHAR snapinside = 0;
     unsigned sflag = 0;
 
     // Get snapwnd
-    if (i < monitors.size()) {
-      snapwnd = monitors[i];
+    if (i < Session().monitors.size()) {
+      snapwnd = Session().monitors[i];
       snapinside = 1;
       i++;
-    } else if (j < wnds.size()) {
-      snapwnd = wnds[j].rc;
-      sflag = wnds[j].flag;
-      snapinside = (state.snap != 2);
+    } else if (j < Session().windows.size()) {
+      snapwnd = Session().windows[j].rc;
+      sflag = Session().windows[j].flag;
+      snapinside = (Session().input.snap != 2);
       j++;
     } else {
       // No monitors and no windows to snap to.
@@ -144,7 +146,8 @@ void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
 
 void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
                 UCHAR pthy) {
-  if (!state.snap || state.Speed > conf.AeroMaxSpeed) return;
+  if (!Session().input.snap || Session().input.Speed > conf.AeroMaxSpeed)
+    return;
 
   // thresholdx and thresholdy will shrink to make sure
   // the dragged window will snap to the closest windows
@@ -157,18 +160,19 @@ void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
 
   // Loop monitors and windows
   size_t i = 0, j = 0;
-  for (i = 0, j = 0; i < monitors.size() || j < wnds.size();) {
+  for (i = 0, j = 0;
+       i < Session().monitors.size() || j < Session().windows.size();) {
     RECT snapwnd;
     UCHAR snapinside = 0;
 
     // Get snapwnd
-    if (i < monitors.size()) {
-      CopyRect(&snapwnd, &monitors[i]);
+    if (i < Session().monitors.size()) {
+      CopyRect(&snapwnd, &Session().monitors[i]);
       snapinside = 1;
       i++;
-    } else if (j < wnds.size()) {
-      CopyRect(&snapwnd, &wnds[j].rc);
-      snapinside = (state.snap != 2);
+    } else if (j < Session().windows.size()) {
+      CopyRect(&snapwnd, &Session().windows[j].rc);
+      snapinside = (Session().input.snap != 2);
       j++;
     } else {
       // nothing to snap to.
@@ -181,28 +185,28 @@ void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
       UCHAR snapinside_cond = snapinside ||
                               (*posy + *wndheight - thresholdx < snapwnd.top) ||
                               (snapwnd.bottom < *posy + thresholdx);
-      if (state.resize.x == RZ_LEFT &&
+      if (Session().input.resize.x == RZ_LEFT &&
           IsEqualT(snapwnd.right, *posx, thresholdx)) {
         // The left edge of the dragged window will snap to this window's right
         // edge
         stuckleft = 1;
         stickleft = snapwnd.right;
         thresholdx = snapwnd.right - *posx;
-      } else if (snapinside_cond && state.resize.x == RZ_RIGHT &&
+      } else if (snapinside_cond && Session().input.resize.x == RZ_RIGHT &&
                  IsEqualT(snapwnd.right, *posx + *wndwidth, thresholdx)) {
         // The right edge of the dragged window will snap to this window's right
         // edge
         stuckright = 1;
         stickright = snapwnd.right;
         thresholdx = snapwnd.right - (*posx + *wndwidth);
-      } else if (snapinside_cond && state.resize.x == RZ_LEFT &&
+      } else if (snapinside_cond && Session().input.resize.x == RZ_LEFT &&
                  IsEqualT(snapwnd.left, *posx, thresholdx)) {
         // The left edge of the dragged window will snap to this window's left
         // edge
         stuckleft = 1;
         stickleft = snapwnd.left;
         thresholdx = snapwnd.left - *posx;
-      } else if (state.resize.x == RZ_RIGHT &&
+      } else if (Session().input.resize.x == RZ_RIGHT &&
                  IsEqualT(snapwnd.left, *posx + *wndwidth, thresholdx)) {
         // The right edge of the dragged window will snap to this window's left
         // edge
@@ -218,28 +222,28 @@ void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
       UCHAR snapinside_cond = snapinside ||
                               (*posx + *wndwidth - thresholdy < snapwnd.left) ||
                               (snapwnd.right < *posx + thresholdy);
-      if (state.resize.y == RZ_TOP &&
+      if (Session().input.resize.y == RZ_TOP &&
           IsEqualT(snapwnd.bottom, *posy, thresholdy)) {
         // The top edge of the dragged window will snap to this window's bottom
         // edge
         stucktop = 1;
         sticktop = snapwnd.bottom;
         thresholdy = snapwnd.bottom - *posy;
-      } else if (snapinside_cond && state.resize.y == RZ_BOTTOM &&
+      } else if (snapinside_cond && Session().input.resize.y == RZ_BOTTOM &&
                  IsEqualT(snapwnd.bottom, *posy + *wndheight, thresholdy)) {
         // The bottom edge of the dragged window will snap to this window's
         // bottom edge
         stuckbottom = 1;
         stickbottom = snapwnd.bottom;
         thresholdy = snapwnd.bottom - (*posy + *wndheight);
-      } else if (snapinside_cond && state.resize.y == RZ_TOP &&
+      } else if (snapinside_cond && Session().input.resize.y == RZ_TOP &&
                  IsEqualT(snapwnd.top, *posy, thresholdy)) {
         // The top edge of the dragged window will snap to this window's top
         // edge
         stucktop = 1;
         sticktop = snapwnd.top;
         thresholdy = snapwnd.top - *posy;
-      } else if (state.resize.y == RZ_BOTTOM &&
+      } else if (Session().input.resize.y == RZ_BOTTOM &&
                  IsEqualT(snapwnd.top, *posy + *wndheight, thresholdy)) {
         // The bottom edge of the dragged window will snap to this window's top
         // edge
@@ -278,15 +282,15 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
       ClampHeight((mon->bottom - mon->top) * (100 - conf.AVoff) / 100);
 
   // do not go further is snapping state is toggled or shift is down.
-  if (state.snap != conf.AutoSnap) return;
+  if (Session().input.snap != conf.AutoSnap) return;
   EnumSnappedOnce();
 
   // Check on all the other snapped windows from the bottom most
   // To give precedence to the topmost windows
-  size_t i = snwnds.size();
+  size_t i = Session().snapped_windows.size();
   while (i--) {
-    unsigned flag = snwnds[i].flag;
-    const RECT* wnd = &snwnds[i].rc;
+    unsigned flag = Session().snapped_windows[i].flag;
+    const RECT* wnd = &Session().snapped_windows[i].rc;
     // if the window is in current monitor
     POINT tpt;
     tpt.x = (wnd->left + wnd->right) / 2;
@@ -336,10 +340,11 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
 int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
                  int* wndheight) {
   // return if last resizing is not finished or no Aero or not resizable.
-  if ((!conf.Aero && !(conf.UseZones & 1)) || !state.resizable) return 0;
+  if ((!conf.Aero && !(conf.UseZones & 1)) || !Session().input.resizable)
+    return 0;
 
-  LastWin.maximize = 0;
-  LastWin.snap = 0;
+  Session().last_window.maximize = 0;
+  Session().last_window.snap = 0;
 
   // We HAVE to check the monitor for each pt...
   RECT mon;
@@ -356,7 +361,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
   int Top = pTop + conf.AeroThreshold;
   int Bottom = pBottom - conf.AeroThreshold;
 
-  unsigned restore = GetRestoreFlag(state.hwnd);
+  unsigned restore = GetRestoreFlag(Session().input.hwnd);
   RECT trc;
   trc.left = pLeft;
   trc.top = pTop;
@@ -368,11 +373,11 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
     if (restore & SNAPPED) {
       // Restore original window size
       // Clear restore data at the end of the movement
-      LastWin.moveonly = 0;
-      SetRestoreFlag(state.hwnd, restore | SNCLEAR);
+      Session().last_window.moveonly = 0;
+      SetRestoreFlag(Session().input.hwnd, restore | SNCLEAR);
       restore = 0;
-      *wndwidth = state.origin.width;
-      *wndheight = state.origin.height;
+      *wndwidth = Session().input.origin.width;
+      *wndheight = Session().input.origin.height;
     }
   };
   if (PtInRect(&trc, pt) || !conf.Aero) {
@@ -380,7 +385,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
   } else {
     GetAeroSnappingMetrics(&leftWidth, &rightWidth, &topHeight, &bottomHeight,
                            &mon);
-    LastWin.moveonly = 0;  // We shall snap!
+    Session().last_window.moveonly = 0;  // We shall snap!
     // Move window
     if (pt.y < Top && pt.x < Left) {
       // Top left
@@ -412,20 +417,20 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
       *posy = mon.bottom - *wndheight;
     } else if (pt.y < pTop) {
       // Pure Top
-      if (!state.shift ^ !(conf.AeroTopMaximizes & 1) &&
-          (state.Speed < conf.AeroMaxSpeed)) {
+      if (!Session().input.shift ^ !(conf.AeroTopMaximizes & 1) &&
+          (Session().input.Speed < conf.AeroMaxSpeed)) {
         if (conf.FullWin) {
-          MaximizeRestoreAtPoint(state.hwnd, SW_MAXIMIZE, 1);
-          LastWin.hwnd = nullptr;
-          state.moving = 2;
+          MaximizeRestoreAtPoint(Session().input.hwnd, SW_MAXIMIZE, 1);
+          Session().last_window.hwnd = nullptr;
+          Session().input.moving = 2;
           return 1;
         }
         *posx = mon.left;
         *posy = mon.top;
         *wndwidth = ClampWidth(mon.right - mon.left);
         *wndheight = ClampHeight(mon.bottom - mon.top);
-        LastWin.maximize = 1;
-        SetRestoreFlag(state.hwnd,
+        Session().last_window.maximize = 1;
+        SetRestoreFlag(Session().input.hwnd,
                        SNAPPED | SNCLEAR);  // To clear eventual snapping info
         return 0;
 
@@ -468,35 +473,36 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
     *wndwidth = ClampWidth(*wndwidth);
     *wndheight = ClampHeight(*wndheight);
 
-    SetRestoreData(state.hwnd, state.origin.width, state.origin.height,
-                   restore);
+    SetRestoreData(Session().input.hwnd, Session().input.origin.width,
+                   Session().input.origin.height, restore);
 
     RECT borders;
-    FixDWMRect(state.hwnd, &borders);
+    FixDWMRect(Session().input.hwnd, &borders);
     *posx -= borders.left;
     *posy -= borders.top;
     *wndwidth += borders.left + borders.right;
     *wndheight += borders.top + borders.bottom;
 
     // If we go too fast then do not move the window
-    if (state.Speed > conf.AeroMaxSpeed) return 1;
-    LastWin.moveonly = 0;
+    if (Session().input.Speed > conf.AeroMaxSpeed) return 1;
+    Session().last_window.moveonly = 0;
     if (conf.FullWin) {
-      if (IsZoomed(state.hwnd)) {
+      if (IsZoomed(Session().input.hwnd)) {
         // Avoids flickering
-        RestoreWindowTo(state.hwnd, *posx, *posy, *wndwidth, *wndheight);
+        RestoreWindowTo(Session().input.hwnd, *posx, *posy, *wndwidth,
+                        *wndheight);
         RecalcInvisibleBorders();
       }
-      assert(LastWin.hwnd == NULL);
+      assert(Session().last_window.hwnd == NULL);
 
-      LastWin.hwnd = state.hwnd;
-      LastWin.x = *posx;
-      LastWin.y = *posy;
-      LastWin.width = *wndwidth;
-      LastWin.height = *wndheight;
-      LastWin.snap = 1;
+      Session().last_window.hwnd = Session().input.hwnd;
+      Session().last_window.x = *posx;
+      Session().last_window.y = *posy;
+      Session().last_window.width = *wndwidth;
+      Session().last_window.height = *wndheight;
+      Session().last_window.snap = 1;
 
-      MoveWindowNow(&LastWin);
+      MoveWindowNow(&Session().last_window);
       return 1;
     }
   }
@@ -506,30 +512,34 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
 void AeroResizeSnap(POINT pt, int* posx, int* posy, int* wndwidth,
                     int* wndheight) {
   // return if last resizing is not finished
-  if (!conf.Aero || state.Speed > conf.AeroMaxSpeed) return;
+  if (!conf.Aero || Session().input.Speed > conf.AeroMaxSpeed) return;
 
   static RECT borders;
-  if (!state.moving) {
-    FixDWMRect(state.hwnd, &borders);
+  if (!Session().input.moving) {
+    FixDWMRect(Session().input.hwnd, &borders);
   }
-  unsigned restore = GetRestoreFlag(state.hwnd);
-  if (state.resize.x == RZ_XCENTER && state.resize.y == RZ_TOP &&
-      pt.y < state.origin.mon.top + conf.AeroThreshold) {
+  unsigned restore = GetRestoreFlag(Session().input.hwnd);
+  if (Session().input.resize.x == RZ_XCENTER &&
+      Session().input.resize.y == RZ_TOP &&
+      pt.y < Session().input.origin.mon.top + conf.AeroThreshold) {
     restore = SNAPPED | SNMAXH;
-    *wndheight = ClampHeight(state.origin.mon.bottom - state.origin.mon.top +
-                             borders.bottom + borders.top);
-    *posy = state.origin.mon.top - borders.top;
-  } else if (state.resize.x == RZ_LEFT && state.resize.y == RZ_YCENTER &&
-             pt.x < state.origin.mon.left + conf.AeroThreshold) {
+    *wndheight = ClampHeight(Session().input.origin.mon.bottom -
+                             Session().input.origin.mon.top + borders.bottom +
+                             borders.top);
+    *posy = Session().input.origin.mon.top - borders.top;
+  } else if (Session().input.resize.x == RZ_LEFT &&
+             Session().input.resize.y == RZ_YCENTER &&
+             pt.x < Session().input.origin.mon.left + conf.AeroThreshold) {
     restore = SNAPPED | SNMAXW;
-    *wndwidth = ClampWidth(state.origin.mon.right - state.origin.mon.left +
-                           borders.left + borders.right);
-    *posx = state.origin.mon.left - borders.left;
+    *wndwidth = ClampWidth(Session().input.origin.mon.right -
+                           Session().input.origin.mon.left + borders.left +
+                           borders.right);
+    *posx = Session().input.origin.mon.left - borders.left;
   }
   // Aero-move the window?
   if (restore & SNAPPED && restore & (SNMAXH | SNMAXW)) {
-    SetRestoreData(state.hwnd, state.origin.width, state.origin.height,
-                   restore);
+    SetRestoreData(Session().input.hwnd, Session().input.origin.width,
+                   Session().input.origin.height, restore);
   }
 }
 static void SetEdgeAndOffsetCF(const RECT* wnd, const UCHAR centerfrac,
@@ -545,29 +555,29 @@ static void SetEdgeAndOffsetCF(const RECT* wnd, const UCHAR centerfrac,
   int CenteR = 100 - SideS;
 
   if (pt.x - wnd->left < (wndwidth * SideS) / 100) {
-    state.resize.x = RZ_LEFT;
-    state.offset.x = pt.x - wnd->left;
+    Session().input.resize.x = RZ_LEFT;
+    Session().input.offset.x = pt.x - wnd->left;
   } else if (pt.x - wnd->left < (wndwidth * CenteR) / 100) {
-    state.resize.x = RZ_XCENTER;
-    state.offset.x =
-        pt.x - state.mdipt.x;  // Used only if both x and y are CENTER
+    Session().input.resize.x = RZ_XCENTER;
+    Session().input.offset.x =
+        pt.x - Session().input.mdipt.x;  // Used only if both x and y are CENTER
   } else {
-    state.resize.x = RZ_RIGHT;
-    state.offset.x = wnd->right - pt.x;
+    Session().input.resize.x = RZ_RIGHT;
+    Session().input.offset.x = wnd->right - pt.x;
   }
   if (pt.y - wnd->top < (wndheight * SideS) / 100) {
-    state.resize.y = RZ_TOP;
-    state.offset.y = pt.y - wnd->top;
+    Session().input.resize.y = RZ_TOP;
+    Session().input.offset.y = pt.y - wnd->top;
   } else if (pt.y - wnd->top < (wndheight * CenteR) / 100) {
-    state.resize.y = RZ_YCENTER;
-    state.offset.y = pt.y - state.mdipt.y;
+    Session().input.resize.y = RZ_YCENTER;
+    Session().input.offset.y = pt.y - Session().input.mdipt.y;
   } else {
-    state.resize.y = RZ_BOTTOM;
-    state.offset.y = wnd->bottom - pt.y;
+    Session().input.resize.y = RZ_BOTTOM;
+    Session().input.offset.y = wnd->bottom - pt.y;
   }
   // Set window right/bottom origin
-  state.origin.right = wnd->right - state.mdipt.x;
-  state.origin.bottom = wnd->bottom - state.mdipt.y;
+  Session().input.origin.right = wnd->right - Session().input.mdipt.x;
+  Session().input.origin.bottom = wnd->bottom - Session().input.mdipt.y;
 }
 
 // Use disgonals to determine the closest side.
@@ -580,19 +590,19 @@ void SetEdgeToClosestSide(const RECT* wnd, const POINT pt) {
   char TL = (H - y) * W >= H * x;  // B/C or C/C mode
   if (TR) {                        // Top or right
     if (TL) {
-      state.resize.y = RZ_TOP;
-      state.offset.y = pt.y - wnd->top;
+      Session().input.resize.y = RZ_TOP;
+      Session().input.offset.y = pt.y - wnd->top;
     } else {
-      state.resize.x = RZ_RIGHT;
-      state.offset.x = wnd->right - pt.x;
+      Session().input.resize.x = RZ_RIGHT;
+      Session().input.offset.x = wnd->right - pt.x;
     }
   } else {     // Bottom or Left
     if (TL) {  // Bottom right
-      state.resize.x = RZ_LEFT;
-      state.offset.x = pt.x - wnd->left;
+      Session().input.resize.x = RZ_LEFT;
+      Session().input.offset.x = pt.x - wnd->left;
     } else {
-      state.resize.y = RZ_BOTTOM;
-      state.offset.y = wnd->bottom - pt.y;
+      Session().input.resize.y = RZ_BOTTOM;
+      Session().input.offset.y = wnd->bottom - pt.y;
     }
   }
 }
@@ -603,7 +613,8 @@ void SetEdgeAndOffset(const RECT* wnd, const POINT pt) {
     return;
   }
   // Special mode.
-  if (state.resize.x != RZ_XCENTER || state.resize.y != RZ_YCENTER) {
+  if (Session().input.resize.x != RZ_XCENTER ||
+      Session().input.resize.y != RZ_YCENTER) {
     SetEdgeAndOffsetCF(wnd, conf.SidesFraction, pt);
     if (conf.SidesFraction < conf.CenterFraction) {
     } else {  // (SidesFraction > CenterFraction)
@@ -614,7 +625,7 @@ void SetEdgeAndOffset(const RECT* wnd, const POINT pt) {
 
 static void NextBorders(RECT* pos, const RECT* cur, const RECT* def) {
   CopyRect(pos, def);
-  for (auto& snwnd : snwnds) {
+  for (auto& snwnd : Session().snapped_windows) {
     const RECT* rc = &snwnd.rc;
     const unsigned flg = snwnd.flag;
     POINT tpt;
@@ -644,11 +655,12 @@ void SnapToCorner(HWND hwnd, resizexy_t resize, UCHAR flags) {
   // Get and set new position
   int posx = 0, posy = 0;  // wndwidth and wndheight are defined above
   unsigned restore = 1;
-  const RECT* mon = &state.origin.mon;
+  const RECT* mon = &Session().input.origin.mon;
   RECT bd, wnd;
   GetWindowRect(hwnd, &wnd);
-  SetEdgeAndOffset(&wnd, state.prevpt);  // state.resize.x/y & state.offset.x/y
-  if (!resize.x && !resize.y) resize = state.resize;
+  SetEdgeAndOffset(
+      &wnd, Session().input.prevpt);  // state.resize.x/y & state.offset.x/y
+  if (!resize.x && !resize.y) resize = Session().input.resize;
   FixDWMRect(hwnd, &bd);
   int wndwidth = wnd.right - wnd.left;
   int wndheight = wnd.bottom - wnd.top;
@@ -665,32 +677,34 @@ void SnapToCorner(HWND hwnd, resizexy_t resize, UCHAR flags) {
   }
   if (flags & SNTO_EXTEND) {
     /* Extend window's borders to monitor/Next border */
-    posx = wnd.left - state.mdipt.x;
-    posy = wnd.top - state.mdipt.y;
+    posx = wnd.left - Session().input.mdipt.x;
+    posy = wnd.top - Session().input.mdipt.y;
 
     if (resize.y == RZ_TOP) {
       posy = mon->top - bd.top;
-      wndheight = CLAMPHL(wnd.bottom - state.mdipt.y - mon->top + bd.top, &mmi);
+      wndheight = CLAMPHL(
+          wnd.bottom - Session().input.mdipt.y - mon->top + bd.top, &mmi);
     } else if (resize.y == RZ_BOTTOM) {
-      wndheight =
-          CLAMPHL(mon->bottom - wnd.top + state.mdipt.y + bd.bottom, &mmi);
+      wndheight = CLAMPHL(
+          mon->bottom - wnd.top + Session().input.mdipt.y + bd.bottom, &mmi);
     }
     if (resize.x == RZ_RIGHT) {
-      wndwidth =
-          CLAMPWL(mon->right - wnd.left + state.mdipt.x + bd.right, &mmi);
+      wndwidth = CLAMPWL(
+          mon->right - wnd.left + Session().input.mdipt.x + bd.right, &mmi);
     } else if (resize.x == RZ_LEFT) {
       posx = mon->left - bd.left;
-      wndwidth = CLAMPWL(wnd.right - state.mdipt.x - mon->left + bd.left, &mmi);
+      wndwidth = CLAMPWL(
+          wnd.right - Session().input.mdipt.x - mon->left + bd.left, &mmi);
     } else if (resize.x == RZ_XCENTER && resize.y == RZ_YCENTER) {
       wndwidth = CLAMPWL(mon->right - mon->left + bd.left + bd.right, &mmi);
       posx = mon->left - bd.left;
-      posy = wnd.top - state.mdipt.y + bd.top;
+      posy = wnd.top - Session().input.mdipt.y + bd.top;
       restore |= SNMAXW;
     }
   } else if (flags & SNTO_MOVETO) {
     /* Move the windows to a border (monitor or next border) */
-    posx = wnd.left - state.mdipt.x;
-    posy = wnd.top - state.mdipt.y;
+    posx = wnd.left - Session().input.mdipt.x;
+    posy = wnd.top - Session().input.mdipt.y;
     if (resize.x == RZ_LEFT) {
       posx = mon->left - bd.left;
     } else if (resize.x == RZ_RIGHT) {
@@ -732,13 +746,13 @@ void SnapToCorner(HWND hwnd, resizexy_t resize, UCHAR flags) {
       if (resize.y == RZ_YCENTER) {
         restore |= SNMAXH;
         if (IsCtrlDown()) {
-          LastWin.hwnd = nullptr;
+          Session().last_window.hwnd = nullptr;
           ToggleMaxRestore(hwnd);
           return;
         }
       }
       wndwidth = wnd.right - wnd.left - bd.left - bd.right;
-      posx = wnd.left - state.mdipt.x + bd.left;
+      posx = wnd.left - Session().input.mdipt.x + bd.left;
     } else if (resize.x == RZ_RIGHT) {
       wndwidth = rightWidth;
       posx = mon->right - wndwidth;
@@ -754,8 +768,8 @@ void SnapToCorner(HWND hwnd, resizexy_t resize, UCHAR flags) {
   MoveWindowAsync(hwnd, posx, posy, wndwidth, wndheight);
   // Save data to the window...
   if (!(GetRestoreFlag(hwnd) & SNAPPED))
-    SetRestoreData(hwnd, state.origin.width, state.origin.height,
-                   SNAPPED | restore);
+    SetRestoreData(hwnd, Session().input.origin.width,
+                   Session().input.origin.height, SNAPPED | restore);
 }
 
 }  // namespace altsnap::hooks

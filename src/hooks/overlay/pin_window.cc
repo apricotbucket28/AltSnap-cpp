@@ -24,6 +24,8 @@ namespace altsnap::hooks {
 // and the rightoffset/topoffset in the first LONG_PTR of cbWndExtra (+0)
 static LRESULT CALLBACK PinWindowProc(HWND hwnd, UINT msg, WPARAM wp,
                                       LPARAM lp) {
+  if (!TrySession()) return DefWindowProc(hwnd, msg, wp, lp);
+  SessionExecutionScope execution_scope;
   switch (msg) {
     case WM_CREATE: {
       SetTimer(hwnd, PIN_TIMER, conf.PinRate, nullptr);
@@ -143,7 +145,7 @@ static LRESULT CALLBACK PinWindowProc(HWND hwnd, UINT msg, WPARAM wp,
       return 0;
     } break;
     case WM_RBUTTONUP: {
-      state.mdiclient = nullptr;  // In case...
+      Session().input.mdiclient = nullptr;  // In case...
       TrackMenuOfWindows(EnumTopMostWindows, 0);
       return 0;
     } break;

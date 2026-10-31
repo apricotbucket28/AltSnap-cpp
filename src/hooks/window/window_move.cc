@@ -20,19 +20,18 @@ namespace altsnap::hooks {
 static void EndDeferWindowPosNow(HDWP hwndSS) {
   EndDeferWindowPos(hwndSS);
   if (conf.RefreshRate) ASleep(conf.RefreshRate);
-  LastWin.hwnd = nullptr;
+  Session().last_window.hwnd = nullptr;
 }
 
 static int ShouldResizeTouching() {
-  return state.action.ac == AC_RESIZE &&
-         ((conf.StickyResize & 1 && state.shift) ||
-          ((conf.StickyResize & 3) == 2 && !state.shift));
+  return Session().input.action.ac == AC_RESIZE &&
+         ((conf.StickyResize & 1 && Session().input.shift) ||
+          ((conf.StickyResize & 3) == 2 && !Session().input.shift));
 }
-int ResizeTouchingWindows(LPVOID lwptr) {
+int ResizeTouchingWindows(windowRR* lw) {
   if (!ShouldResizeTouching()) return 0;
   const RECT& bd = EnumOnce();
-  if (snwnds.empty()) return 0;
-  auto* lw = static_cast<struct windowRR*>(lwptr);
+  if (Session().snapped_windows.empty()) return 0;
   // posx, posy,  correspond to the VISIBLE rect
   // of the current window...
   int posx = lw->x + bd.left;
@@ -42,9 +41,9 @@ int ResizeTouchingWindows(LPVOID lwptr) {
 
   HDWP hwndSS = nullptr;  // For DeferwindowPos.
   if (conf.FullWin) {
-    hwndSS = BeginDeferWindowPos(snwnds.size() + 1);
+    hwndSS = BeginDeferWindowPos(Session().snapped_windows.size() + 1);
   }
-  for (auto& snwnd : snwnds) {
+  for (auto& snwnd : Session().snapped_windows) {
     RECT* nwnd = &snwnd.rc;
     unsigned flag = snwnd.flag;
     HWND hwnd = snwnd.hwnd;
@@ -52,7 +51,7 @@ int ResizeTouchingWindows(LPVOID lwptr) {
     POINT tpt;
     tpt.x = (nwnd->left + nwnd->right) / 2;
     tpt.y = (nwnd->top + nwnd->bottom) / 2;
-    if (!PtInRect(&state.origin.mon, tpt)) continue;
+    if (!PtInRect(&Session().input.origin.mon, tpt)) continue;
 
     if (PureLeft(flag)) {
       nwnd->right = posx;
@@ -85,7 +84,7 @@ int ResizeTouchingWindows(LPVOID lwptr) {
 
   if (hwndSS) {
     // Draw changes ONLY if full win is ON,
-    hwndSS = DeferWindowPos(hwndSS, state.hwnd, nullptr, lw->x, lw->y,
+    hwndSS = DeferWindowPos(hwndSS, Session().input.hwnd, nullptr, lw->x, lw->y,
                             lw->width, lw->height,
                             SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER);
     if (hwndSS) EndDeferWindowPosNow(hwndSS);
@@ -94,10 +93,10 @@ int ResizeTouchingWindows(LPVOID lwptr) {
 }
 
 void ResizeAllSnappedWindows() {
-  if (!conf.StickyResize || snwnds.empty()) return;
+  if (!conf.StickyResize || Session().snapped_windows.empty()) return;
 
-  HDWP hwndSS = BeginDeferWindowPos(snwnds.size() + 1);
-  for (auto& snwnd : snwnds) {
+  HDWP hwndSS = BeginDeferWindowPos(Session().snapped_windows.size() + 1);
+  for (auto& snwnd : Session().snapped_windows) {
     if (hwndSS && snwnd.flag & TORESIZE) {
       RECT bd;
       FixDWMRect(snwnd.hwnd, &bd);
@@ -109,11 +108,13 @@ void ResizeAllSnappedWindows() {
     }
   }
   if (hwndSS)
-    hwndSS = DeferWindowPos(hwndSS, LastWin.hwnd, nullptr, LastWin.x, LastWin.y,
-                            LastWin.width, LastWin.height,
+    hwndSS = DeferWindowPos(hwndSS, Session().last_window.hwnd, nullptr,
+                            Session().last_window.x, Session().last_window.y,
+                            Session().last_window.width,
+                            Session().last_window.height,
                             SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER);
   if (hwndSS) EndDeferWindowPosNow(hwndSS);
-  LastWin.hwnd = nullptr;
+  Session().last_window.hwnd = nullptr;
 }
 // Upstream: MaximizeRestore_atpt
 void MaximizeRestoreAtPoint(HWND hwnd, UINT sw_cmd, int origin) {
@@ -126,14 +127,15 @@ void MaximizeRestoreAtPoint(HWND hwnd, UINT sw_cmd, int origin) {
   mi.cbSize = sizeof(mi);
   if (sw_cmd == SW_MAXIMIZE || sw_cmd == SW_FULLSCREEN) {
     HMONITOR wndmonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    HMONITOR monitor = MonitorFromPoint(state.prevpt, MONITOR_DEFAULTTONEAREST);
+    HMONITOR monitor =
+        MonitorFromPoint(Session().input.prevpt, MONITOR_DEFAULTTONEAREST);
 
     if (origin & 1) {
       // set normal windpw plasement to origin.
       wndpl.rcNormalPosition.right =
-          wndpl.rcNormalPosition.left + state.origin.width;
+          wndpl.rcNormalPosition.left + Session().input.origin.width;
       wndpl.rcNormalPosition.bottom =
-          wndpl.rcNormalPosition.top + state.origin.height;
+          wndpl.rcNormalPosition.top + Session().input.origin.height;
     }
 
     GetMonitorInfo(monitor, &mi);
@@ -218,8 +220,7 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
   request.start = 1;
   request.resize = resize;
   request.moveonly = moveonly;
-  (void)PostWorkerTask([request]() mutable { MoveWindowNow(&request); },
-                       Worker::Importance::kDroppable);
+  (void)PostWorkerCommand(MoveWindowCommand{request});
 }
 
 /* Send WM_SIZING before SetWindowPos so that apps like terminal
@@ -331,7 +332,10 @@ inline constexpr UINT kResizeFlags =
 inline constexpr UINT kMoveThickBordersFlags = kResizeFlags | SWP_NOSIZE;
 inline constexpr UINT kMoveAsyncFlags =
     kMoveThickBordersFlags | SWP_ASYNCWINDOWPOS;
-DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
+DWORD MoveWindowNow(windowRR* lw) {
+  // Use the target's legacy resizability encoding for both paths. ResizeAll
+  // is a raw INI byte and may itself contribute bit 2, even without a frame.
+  const bool thick_frame = (IsResizable(lw->hwnd) & 2) != 0;
   // lw->resizing_now = 1;
   //    RECT rc;
   //    int notsamesize = 0;
@@ -376,9 +380,9 @@ DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
     }
   }
 
-  UINT flag = notsamesize           ? kResizeFlags
-              : state.resizable & 2 ? kMoveThickBordersFlags
-                                    : kMoveAsyncFlags;
+  UINT flag = notsamesize   ? kResizeFlags
+              : thick_frame ? kMoveThickBordersFlags
+                            : kMoveAsyncFlags;
   if (conf.IgnoreMinMaxInfo) flag |= SWP_NOSENDCHANGING;
 
   if (nothingtodo)
@@ -396,51 +400,55 @@ void RestoreOldWin(const POINT pt, unsigned was_snapped, RECT* ownd) {
   // Restore old width/height?
   unsigned restore = 0;
   int rwidth = 0, rheight = 0;
-  unsigned rdata_flag = GetRestoreData(state.hwnd, &rwidth, &rheight);
+  unsigned rdata_flag = GetRestoreData(Session().input.hwnd, &rwidth, &rheight);
 
-  if (((rdata_flag & SNAPPED) && !(state.origin.maximized && rdata_flag & 2))) {
+  if (((rdata_flag & SNAPPED) &&
+       !(Session().input.origin.maximized && rdata_flag & 2))) {
     // Set origin width and height to the saved values
-    if (!state.usezones) {
+    if (!Session().input.usezones) {
       restore = rdata_flag;
-      state.origin.width = rwidth;
-      state.origin.height = rheight;
-      ClearRestoreData(state.hwnd);
+      Session().input.origin.width = rwidth;
+      Session().input.origin.height = rheight;
+      ClearRestoreData(Session().input.hwnd);
     }
   }
 
   RECT wnd;
-  GetWindowRect(state.hwnd, &wnd);
+  GetWindowRect(Session().input.hwnd, &wnd);
   // In case window is Maximized + Rolled get bottom where it needs to be
   // So that the window stays fully in the monitor
   // Note: a maximized then rolled window does not have the rolled flag.
-  if (state.origin.maximized)
-    wnd.bottom = state.origin.mon.bottom + state.mdipt.y;
+  if (Session().input.origin.maximized)
+    wnd.bottom = Session().input.origin.mon.bottom + Session().input.mdipt.y;
 
   // Set offset
-  state.offset.x = state.origin.width *
-                   std::min(pt.x - wnd.left, wnd.right - wnd.left) /
-                   std::max(wnd.right - wnd.left, static_cast<LONG>(1));
-  state.offset.y = state.origin.height *
-                   std::min(pt.y - wnd.top, wnd.bottom - wnd.top) /
-                   std::max(wnd.bottom - wnd.top, static_cast<LONG>(1));
+  Session().input.offset.x =
+      Session().input.origin.width *
+      std::min(pt.x - wnd.left, wnd.right - wnd.left) /
+      std::max(wnd.right - wnd.left, static_cast<LONG>(1));
+  Session().input.offset.y =
+      Session().input.origin.height *
+      std::min(pt.y - wnd.top, wnd.bottom - wnd.top) /
+      std::max(wnd.bottom - wnd.top, static_cast<LONG>(1));
 
   if (rdata_flag & ROLLED) {
-    if (state.origin.maximized || was_snapped) {
+    if (Session().input.origin.maximized || was_snapped) {
       // if we restore a Rolled + Maximized/snapped window...
-      state.offset.y = GetSystemMetricsForWin(SM_CYMIN, state.hwnd) / 2;
+      Session().input.offset.y =
+          GetSystemMetricsForWin(SM_CYMIN, Session().input.hwnd) / 2;
     } else {
-      state.offset.x = pt.x - wnd.left;
-      state.offset.y = pt.y - wnd.top;
+      Session().input.offset.x = pt.x - wnd.left;
+      Session().input.offset.y = pt.y - wnd.top;
     }
   }
 
   if (restore) {
-    LastWin.moveonly = 0;
-    ownd->left = pt.x - state.offset.x - state.mdipt.x;
-    ownd->top = pt.y - state.offset.y - state.mdipt.y;
-    ownd->right = ownd->left + state.origin.width;
-    ownd->bottom = ownd->top + state.origin.height;
-    ClearRestoreData(state.hwnd);
+    Session().last_window.moveonly = 0;
+    ownd->left = pt.x - Session().input.offset.x - Session().input.mdipt.x;
+    ownd->top = pt.y - Session().input.offset.y - Session().input.mdipt.y;
+    ownd->right = ownd->left + Session().input.origin.width;
+    ownd->bottom = ownd->top + Session().input.origin.height;
+    ClearRestoreData(Session().input.hwnd);
   }
 }
 
@@ -454,9 +462,9 @@ void SetOriginFromRestoreData(HWND hwnd, action_t action) {
     rdata_flag = 0;
   }
   // Replace origin width/height if available in the restore Data.
-  if (rdata_flag && !state.origin.maximized) {
-    state.origin.width = rwidth;
-    state.origin.height = rheight;
+  if (rdata_flag && !Session().input.origin.maximized) {
+    Session().input.origin.width = rwidth;
+    Session().input.origin.height = rheight;
   }
 }
 
@@ -476,7 +484,7 @@ void RestoreToMonitorSize(HWND hwnd, RECT* wnd) {
   CopyRect(wnd, &mi.rcWork);
   CopyRect(&wndpl.rcNormalPosition, wnd);
 
-  if (state.mdiclient) {
+  if (Session().input.mdiclient) {
     // Make it a little smaller since MDIClients by
     // default have scrollbars that would otherwise appear
     wndpl.rcNormalPosition.right -= 8;
@@ -484,20 +492,20 @@ void RestoreToMonitorSize(HWND hwnd, RECT* wnd) {
   }
   wndpl.showCmd = SW_RESTORE;
   SetWindowPlacement(hwnd, &wndpl);
-  if (state.mdiclient) {
+  if (Session().input.mdiclient) {
     // Get new values from MDIClient,
     // since restoring the child have changed them,
     Sleep(1);  // Sometimes needed
-    GetMDInfo(&state.mdipt, wnd);
-    CopyRect(&state.origin.mon, wnd);
+    GetMDInfo(&Session().input.mdipt, wnd);
+    CopyRect(&Session().input.origin.mon, wnd);
 
-    state.origin.right = wnd->right;
-    state.origin.bottom = wnd->bottom;
+    Session().input.origin.right = wnd->right;
+    Session().input.origin.bottom = wnd->bottom;
   }
   // Fix wnd for MDI offset and invisible borders
   RECT borders;
   FixDWMRect(hwnd, &borders);
-  OffsetRect(wnd, state.mdipt.x, state.mdipt.y);
+  OffsetRect(wnd, Session().input.mdipt.x, Session().input.mdipt.y);
   InflateRectBorder(wnd, &borders);
 }
 // Call if you need to resize the window.
@@ -513,7 +521,7 @@ void ClearRestoreFlagOnResizeIfNeeded(HWND hwnd) {
   }
 }
 void MoveToCurrentMonitorIfNeeded(HWND hwnd) {
-  if (state.mdiclient) return;
+  if (Session().input.mdiclient) return;
   RECT rc;
   GetWindowRect(hwnd, &rc);
 
@@ -521,13 +529,14 @@ void MoveToCurrentMonitorIfNeeded(HWND hwnd) {
   pt.x = rc.left + (rc.right - rc.left) / 2;
   pt.y = rc.top + (rc.bottom - rc.top) / 2;
 
-  assert(state.origin.monitor != 0);
+  assert(Session().input.origin.monitor != 0);
 
   // If the window centre is outside the current monitor
   // (use the point instead of window, since MonitorFromWindow
   // returns ones that are only touching, which are still not
   // accessible for the user)
-  if (MonitorFromPoint(pt, MONITOR_DEFAULTTONULL) != state.origin.monitor) {
+  if (MonitorFromPoint(pt, MONITOR_DEFAULTTONULL) !=
+      Session().input.origin.monitor) {
     // Put the window on-screen
     CenterWindow(hwnd, CW_TRIM, 0);
   }

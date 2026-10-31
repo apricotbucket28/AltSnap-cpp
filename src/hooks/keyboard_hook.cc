@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "common/ini_section.h"
@@ -28,18 +29,18 @@ static void HotkeyUp() {
   // The way this works is that the alt key is "disguised" by sending
   // ctrl keydown/keyup events
   LOG("HotkeyUp()");
-  if (state.blockaltup || state.action.ac) {
+  if (Session().input.blockaltup || Session().input.action.ac) {
     SendEndKey();
-    state.blockaltup = 0;
+    Session().input.blockaltup = 0;
     // If there is more that one key down remaining
     // then we must block the next alt up.
-    if (NumKeysDown() > 1) state.blockaltup = 1;
+    if (NumKeysDown() > 1) Session().input.blockaltup = 1;
   }
 
   // Hotkeys have been released
-  state.alt = 0;
-  state.alt1 = 0;
-  if (state.action.ac &&
+  Session().input.alt = 0;
+  Session().input.alt1 = 0;
+  if (Session().input.action.ac &&
       (conf.actions.grab_with_alt.normal[0].ac ||
        conf.actions.grab_with_alt.normal[1].ac) &&
       (IsMovementAction(conf.actions.grab_with_alt.normal[0]) ||
@@ -48,7 +49,7 @@ static void HotkeyUp() {
   }
 
   // Unhook mouse if no actions is ongoing.
-  if (!state.action.ac) {
+  if (!Session().input.action.ac) {
     UnhookMouse();
   }
 }
@@ -61,10 +62,14 @@ namespace {
 
 // Alt (or any other hotkey) goes down: start waiting for a mouse action.
 void StartAltAction(UCHAR vkey) {
-  state.alt = vkey;
-  state.blockaltup = 0;
-  state.sclickhwnd = nullptr;
+  Session().input.alt = vkey;
+  Session().input.blockaltup = 0;
+  Session().input.sclickhwnd = nullptr;
   KillAltSnapMenu();  // Hide unikey menu in case...
+  if (MovementStartBusy()) {
+    Session().deferred_alt = vkey;
+    return;
+  }
 
   // Release ALt even if we receave no AltUP message because of.
   // Stupid software that like to steal Alt.
@@ -77,13 +82,14 @@ void StartAltAction(UCHAR vkey) {
         ActionContext::kNormal,
         IsModKey(vkey) || (!IsHotkey(conf.ModKey[0]) && ModKey()));
     if (action.ac) {
-      state.blockmouseup = 0;  // In case.
+      Session().input.blockmouseup = 0;  // In case.
       POINT pt;
       GetCursorPos(&pt);
-      if (!InitMovementAndActions(pt, nullptr, action, vkey)) {
+      if (InitMovementAndActions(pt, nullptr, action, vkey) ==
+          ActionStartResult::kNotHandled) {
         UnhookMouse();
       }
-      state.blockmouseup = 0;  // In case.
+      Session().input.blockmouseup = 0;  // In case.
     }
   }
 }
@@ -91,42 +97,43 @@ void StartAltAction(UCHAR vkey) {
 // A Shift key goes down. Blocks the key while moving, to prevent Windows from
 // changing the keyboard layout.
 bool OnShiftDown(UCHAR vkey) {
-  if (!state.shift && !IsModKey(vkey)) {
+  if (!Session().input.shift && !IsModKey(vkey)) {
     if (conf.ShiftSnaps) {
-      state.snap = conf.AutoSnap == 3 ? 0 : 3;
+      Session().input.snap = conf.AutoSnap == 3 ? 0 : 3;
     }
-    state.shift = 1;
-    state.usezones = (conf.UseZones & 9) != 9;  // Zones and
-    state.shiftpt = state.prevpt;  // Save point where shift was pressed.
-    state.enumed = 0;              // Reset enum state.
+    Session().input.shift = 1;
+    Session().input.usezones = (conf.UseZones & 9) != 9;  // Zones and
+    Session().input.shiftpt =
+        Session().input.prevpt;  // Save point where shift was pressed.
+    Session().input.enumed = 0;  // Reset enum state.
   }
-  return state.alt && state.action.ac;
+  return Session().input.alt && Session().input.action.ac;
 }
 
 // The user pressed Escape: cancel the current action. Returns true if the key
 // was consumed by the menu or by an ongoing action.
 bool OnEscapeDown() {
   // Alsays disable shift and ctrl, in case of Ctrl+Shift+ESC.
-  state.ctrl = 0;
-  state.shift = 0;
-  LastWin.hwnd = nullptr;
-  state.ignorekey = 0;    // In case ...
-  state.ignoreclick = 0;  // In case ...
-  if (state.unikeymenu || g_mchwnd) {
-    const bool menu_was_open = IsMenu(state.unikeymenu);
+  Session().input.ctrl = 0;
+  Session().input.shift = 0;
+  Session().last_window.hwnd = nullptr;
+  Session().input.ignorekey = 0;    // In case ...
+  Session().input.ignoreclick = 0;  // In case ...
+  if (Session().input.unikeymenu || g_mchwnd) {
+    const bool menu_was_open = IsMenu(Session().input.unikeymenu);
     KillAltSnapMenu();
     if (menu_was_open) return true;
   }
 
   // Stop current action
-  if (state.action.ac || state.alt) {
-    const action_t action = state.action;
+  if (Session().input.action.ac || Session().input.alt) {
+    const action_t action = Session().input.action;
     HideTransWin();
     // Send WM_EXITSIZEMOVE and EVENT_SYSTEM_MOVESIZEEND
-    NotifySizeMoveStaEnd(state.hwnd, 0);
+    NotifySizeMoveStaEnd(Session().input.hwnd, 0);
 
-    state.alt = 0;
-    state.alt1 = 0;
+    Session().input.alt = 0;
+    Session().input.alt1 = 0;
 
     UnhookMouse();
 
@@ -138,33 +145,35 @@ bool OnEscapeDown() {
 
 // Ctrl goes down: trap the cursor in the current monitor.
 bool IsCtrlTrappingCursor(UCHAR vkey, const KBDLLHOOKSTRUCT& kb) {
-  return !state.ctrl &&
-         (state.alt != vkey)  // avoid cursor trapping at first Ctrl down if
-                              // Ctrl was used as hotkey
+  return !Session().input.ctrl &&
+         (Session().input.alt != vkey)  // avoid cursor trapping at first Ctrl
+                                        // down if Ctrl was used as hotkey
          && (vkey == VK_LCONTROL || vkey == VK_RCONTROL) &&
          (!IsHotkey(vkey) ||
-          state.action.ac)  // If Ctrl is a hotkey, skip unless already moving
+          Session().input.action.ac)  // If Ctrl is a hotkey, skip unless
+                                      // already moving
          && !(kb.scanCode & SCANCODE_SIMULATED)  // Ignore AltGr scan code
          && !IsModKey(vkey);
 }
 void OnCtrlDown() {
   RestrictToCurentMonitor();
-  state.ctrl = 1;
-  state.ctrlpt = state.prevpt;  // Save point where ctrl was pressed.
-  if (state.action.ac) {
-    SetForegroundWindowL(state.hwnd);
+  Session().input.ctrl = 1;
+  Session().input.ctrlpt =
+      Session().input.prevpt;  // Save point where ctrl was pressed.
+  if (Session().input.action.ac) {
+    SetForegroundWindowL(Session().input.hwnd);
   }
 }
 
 // Alt goes down again right after AltSnap's menu opened: block it.
 bool IsAltDownBlockedByMenu(UCHAR vkey) {
-  if (!(state.sclickhwnd && g_mchwnd && state.alt &&
+  if (!(Session().input.sclickhwnd && g_mchwnd && Session().input.alt &&
         (vkey == VK_LMENU || vkey == VK_RMENU))) {
     return false;
   }
-  return state.unikeymenu == reinterpret_cast<HMENU>(1) ||
-         (IsWindow(state.sclickhwnd) && IsWindow(g_mchwnd) &&
-          IsMenu(state.unikeymenu));
+  return Session().input.unikeymenu == reinterpret_cast<HMENU>(1) ||
+         (IsWindow(Session().input.sclickhwnd) && IsWindow(g_mchwnd) &&
+          IsMenu(Session().input.unikeymenu));
 }
 
 // Extra mouse buttons (X1, X2) emulated with keys.
@@ -188,7 +197,7 @@ bool HandleUniKeyMenuKey(UCHAR vkey) {
   static const UCHAR menupopdownkeys[] = {
       VK_BACK,  VK_TAB,   VK_APPS, VK_DELETE, VK_SPACE, VK_LEFT,
       VK_RIGHT, VK_PRIOR, VK_NEXT, VK_END,    VK_HOME,  0};
-  if (state.unikeymenu && IsMenu(state.unikeymenu) &&
+  if (Session().input.unikeymenu && IsMenu(Session().input.unikeymenu) &&
       !(GetKeyState(vkey) & 0x8000)) {
     if (vkey == VK_SNAPSHOT) return false;
     if (IsHotkeyy(vkey, menupopdownkeys)) {
@@ -199,13 +208,13 @@ bool HandleUniKeyMenuKey(UCHAR vkey) {
     PostMessage(g_mchwnd, WM_KEYDOWN, vkey, 0);
     return true;  // block keydown
   }
-  if (!state.ctrl && !state.alt && (0x41 <= vkey && vkey <= 0x5A) &&
-      !IsAKeyDown(ctrlaltwinkeys)) {
+  if (!Session().input.ctrl && !Session().input.alt &&
+      (0x41 <= vkey && vkey <= 0x5A) && !IsAKeyDown(ctrlaltwinkeys)) {
     // handle long A-Z keydown.
     if (GetKeyState(vkey) & 0x8000) {  // The key is autorepeating.
-      if (!IsMenu(state.unikeymenu)) {
+      if (!IsMenu(Session().input.unikeymenu)) {
         KillAltSnapMenu();
-        state.unikeymenu = reinterpret_cast<HMENU>(1);
+        Session().input.unikeymenu = reinterpret_cast<HMENU>(1);
         g_mchwnd = KreateMsgWin(MenuWindowProc, APP_NAME L"-SClick", 2);
         const UCHAR shiftdown =
             GetKeyState(VK_SHIFT) & 0x8000 || GetKeyState(VK_CAPITAL) & 1;
@@ -224,25 +233,28 @@ bool HandleUniKeyMenuKey(UCHAR vkey) {
 bool HandleKeyDown(const KBDLLHOOKSTRUCT& kb) {
   const UCHAR vkey = kb.vkCode;
 
-  if (!state.alt && !state.action.ac &&
-      (!conf.KeyCombo || (state.alt1 && state.alt1 != vkey)) &&
+  if (!Session().input.alt &&
+      (!Session().input.action.ac || Session().finish_pending) &&
+      (!conf.KeyCombo ||
+       (Session().input.alt1 && Session().input.alt1 != vkey)) &&
       IsHotkey(vkey) &&
       (!conf.MaxKeysNum || TotNumberOfKeysDown() < conf.MaxKeysNum)) {
     StartAltAction(vkey);
     return false;
   }
-  if (conf.KeyCombo && !state.alt1 && !state.action.ac && IsHotkey(vkey)) {
-    state.alt1 = vkey;
+  if (conf.KeyCombo && !Session().input.alt1 && !Session().input.action.ac &&
+      IsHotkey(vkey)) {
+    Session().input.alt1 = vkey;
     return false;
   }
   if (IsHotkeyy(vkey, conf.Shiftkeys)) return OnShiftDown(vkey);
-  if (vkey == VK_SPACE && state.action.ac &&
-      !IsSamePTT(&state.clickpt, &state.prevpt)) {
+  if (vkey == VK_SPACE && Session().input.action.ac &&
+      !IsSamePTT(&Session().input.clickpt, &Session().input.prevpt)) {
     ToggleSnapState();
     return true;  // Block to avoid sys menu.
   }
-  if (state.alt &&
-      state.action.ac ==
+  if (Session().input.alt &&
+      Session().input.action.ac ==
           conf.actions.grab_with_alt.Get(ActionContext::kNormal, ModKey()).ac &&
       IsKillkey(vkey)) {
     // Release Hook on Alt+KillKey
@@ -255,14 +267,14 @@ bool HandleKeyDown(const KBDLLHOOKSTRUCT& kb) {
     OnCtrlDown();
     return false;
   }
-  if (state.sclickhwnd && g_mchwnd && state.alt &&
+  if (Session().input.sclickhwnd && g_mchwnd && Session().input.alt &&
       (vkey == VK_LMENU || vkey == VK_RMENU)) {
     return IsAltDownBlockedByMenu(vkey);
   }
   int xbutton_index;
   if (IsMappedXButtonKey(vkey, xbutton_index)) {
-    if (!state.xxbutton) {
-      state.xxbutton = 1;  // To Ignore autorepeat...
+    if (!Session().input.xxbutton) {
+      Session().input.xxbutton = 1;  // To Ignore autorepeat...
       SimulateXButton(WM_XBUTTONDOWN, xbutton_index);
     }
     return true;
@@ -280,23 +292,23 @@ bool HandleKeyUp(UCHAR vkey) {
   if (IsHotkey(vkey)) {
     HotkeyUp();
   } else if (IsHotkeyy(vkey, conf.Shiftkeys)) {
-    state.shift = 0;
-    state.usezones = (conf.UseZones & 9) == 9;
-    state.snap = conf.AutoSnap;
+    Session().input.shift = 0;
+    Session().input.usezones = (conf.UseZones & 9) == 9;
+    Session().input.snap = conf.AutoSnap;
     // if an action was performed and Alt is still down.
-    if (state.alt && state.blockaltup &&
+    if (Session().input.alt && Session().input.blockaltup &&
         (vkey == VK_LSHIFT || vkey == VK_RSHIFT)) {
       SendEndKey();  // send Ctrl to avoid Alt+Shift=>switch keymap
     }
-  } else if (state.blockaltup && IsModKey(vkey)) {
+  } else if (Session().input.blockaltup && IsModKey(vkey)) {
     // We release ModKey before Hotkey
     SendEndKey();
-    state.blockaltup = 0;
+    Session().input.blockaltup = 0;
     // If there is more that one key down remaining
     // then we must block the next alt up.
-    if (NumKeysDown() > 1) state.blockaltup = 1;
+    if (NumKeysDown() > 1) Session().input.blockaltup = 1;
   } else if ((xbutton_index = XXButtonIndex(vkey)) >= 0) {
-    state.xxbutton = 0;
+    Session().input.xxbutton = 0;
     SimulateXButton(WM_XBUTTONUP, xbutton_index);
     return true;
   }
@@ -304,22 +316,32 @@ bool HandleKeyUp(UCHAR vkey) {
   // Always process Ctrl Up.
   if (vkey == VK_LCONTROL || vkey == VK_RCONTROL) {
     ClipCursorOnce(nullptr);  // Release cursor trapping
-    state.ctrl = 0;
+    Session().input.ctrl = 0;
     // If there is no ongoing action then Control UP prevents AltDragging...
-    if (!state.action.ac) state.alt = 0;
+    if (!Session().input.action.ac) Session().input.alt = 0;
   }
   return false;
 }
 
 }  // namespace
 
+void ResumeDeferredAltAction() {
+  const auto key = std::exchange(Session().deferred_alt, std::nullopt);
+  if (key && HooksActive() && Session().input.alt == *key &&
+      !Session().input.action.ac)
+    StartAltAction(*key);
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   const auto* kb = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
 
-  if (nCode != HC_ACTION || !HooksActive() || state.ignorekey) {
+  HookSession* session = TrySession();
+  if (nCode != HC_ACTION || !HooksActive() || !session ||
+      session->input.ignorekey) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
   }
 
+  SessionExecutionScope execution_scope;
   const UCHAR vkey = kb->vkCode;
   if (vkey == VK_SCROLL) PostMessage(g_mainhwnd, WM_UPDATETRAY, 0, 0);
   if (ScrollLockState()) return CallNextHookEx(nullptr, nCode, wParam, lParam);

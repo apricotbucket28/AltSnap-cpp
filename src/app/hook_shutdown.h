@@ -6,6 +6,7 @@
 namespace altsnap::app {
 // Sent messages are serviced while joining the hooks worker. Do not enter
 // menus, dialogs or a recursive settings reload from that restricted pump.
+// HookLifecycle captures these protocols and posts them after shutdown.
 inline bool DeferDuringHookShutdown(bool shutting_down, UINT message) {
   if (!shutting_down) return false;
   return message == WM_TRAY || message == WM_SCLICK ||

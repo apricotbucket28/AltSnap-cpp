@@ -44,11 +44,12 @@ void RestrictCursorToMon() {
   if (IsCtrlDown()) {
     static HMONITOR origMonitor;
     static RECT fmon;
-    if (origMonitor != state.origin.monitor || !state.origin.monitor) {
-      origMonitor = state.origin.monitor;
+    if (origMonitor != Session().input.origin.monitor ||
+        !Session().input.origin.monitor) {
+      origMonitor = Session().input.origin.monitor;
       MONITORINFO mi;
       mi.cbSize = sizeof(mi);
-      GetMonitorInfo(state.origin.monitor, &mi);
+      GetMonitorInfo(Session().input.origin.monitor, &mi);
       CopyRect(&fmon, &mi.rcMonitor);
       fmon.left++;
       fmon.top++;
@@ -56,9 +57,9 @@ void RestrictCursorToMon() {
       fmon.bottom--;
     }
     RECT clip;
-    if (state.mdiclient) {
-      CopyRect(&clip, &state.origin.mon);
-      OffsetRect(&clip, state.mdipt.x, state.mdipt.y);
+    if (Session().input.mdiclient) {
+      CopyRect(&clip, &Session().input.origin.mon);
+      OffsetRect(&clip, Session().input.mdipt.x, Session().input.mdipt.y);
     } else {
       CopyRect(&clip, &fmon);
     }
@@ -104,20 +105,20 @@ void MoveTransWin(struct windowRR* lw) {
 
   RECT bd;
   FixDWMRectLL(lw->hwnd, &bd, 0);
-  int x = lw->x + state.mdipt.x + bd.left;
-  int y = lw->y + state.mdipt.y + bd.top;
+  int x = lw->x + Session().input.mdipt.x + bd.left;
+  int y = lw->y + Session().input.mdipt.y + bd.top;
   int w = lw->width - bd.left - bd.right;
   int h = lw->height - bd.top - bd.bottom;
 
-  if (state.origin.dpi) {
+  if (Session().input.origin.dpi) {
     POINT pt = {x + w / 2, y + h / 2};
     HMONITOR hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    if (hmon != state.origin.monitor && !GetRestoreFlag(lw->hwnd)) {
+    if (hmon != Session().input.origin.monitor && !GetRestoreFlag(lw->hwnd)) {
       UINT ptdpi = 0, dpiy_ignore = 0;
       if (S_OK == GetDpiForMonitor(hmon, MDT_DEFAULT, &ptdpi, &dpiy_ignore) &&
           ptdpi) {
-        w = MulDiv(w, ptdpi, state.origin.dpi);
-        h = MulDiv(h, ptdpi, state.origin.dpi);
+        w = MulDiv(w, ptdpi, Session().input.origin.dpi);
+        h = MulDiv(h, ptdpi, Session().input.origin.dpi);
       }
     }
   }
@@ -125,11 +126,12 @@ void MoveTransWin(struct windowRR* lw) {
 }
 
 void RestrictToCurentMonitor() {
-  if (state.action.ac || state.alt) {
+  if (Session().input.action.ac || Session().input.alt) {
     POINT pt;
     GetCursorPos(&pt);
-    state.origin.maximized = 0;  // To prevent auto-remax on Ctrl
-    state.origin.monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    Session().input.origin.maximized = 0;  // To prevent auto-remax on Ctrl
+    Session().input.origin.monitor =
+        MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
   }
 }
 
@@ -139,25 +141,33 @@ static HCURSOR CursorToDraw() {
   if (conf.UseCursor == 3) {
     return LoadCursor(nullptr, IDC_ARROW);
   }
-  if (state.action.ac == AC_MOVE) {
+  if (Session().input.action.ac == AC_MOVE) {
     if (conf.UseCursor == 4) return LoadCursor(nullptr, IDC_SIZEALL);
     cursor = LoadCursor(nullptr, conf.UseCursor > 1 ? IDC_ARROW : IDC_HAND);
     if (!cursor) cursor = LoadCursor(nullptr, IDC_ARROW);  // Fallback;
     return cursor;
   }
 
-  if ((state.resize.y == RZ_TOP && state.resize.x == RZ_LEFT) ||
-      (state.resize.y == RZ_BOTTOM && state.resize.x == RZ_RIGHT)) {
+  if ((Session().input.resize.y == RZ_TOP &&
+       Session().input.resize.x == RZ_LEFT) ||
+      (Session().input.resize.y == RZ_BOTTOM &&
+       Session().input.resize.x == RZ_RIGHT)) {
     return LoadCursor(nullptr, IDC_SIZENWSE);
   }
-  if ((state.resize.y == RZ_TOP && state.resize.x == RZ_RIGHT) ||
-      (state.resize.y == RZ_BOTTOM && state.resize.x == RZ_LEFT)) {
+  if ((Session().input.resize.y == RZ_TOP &&
+       Session().input.resize.x == RZ_RIGHT) ||
+      (Session().input.resize.y == RZ_BOTTOM &&
+       Session().input.resize.x == RZ_LEFT)) {
     return LoadCursor(nullptr, IDC_SIZENESW);
-  } else if ((state.resize.y == RZ_TOP && state.resize.x == RZ_XCENTER) ||
-             (state.resize.y == RZ_BOTTOM && state.resize.x == RZ_XCENTER)) {
+  } else if ((Session().input.resize.y == RZ_TOP &&
+              Session().input.resize.x == RZ_XCENTER) ||
+             (Session().input.resize.y == RZ_BOTTOM &&
+              Session().input.resize.x == RZ_XCENTER)) {
     return LoadCursor(nullptr, IDC_SIZENS);
-  } else if ((state.resize.y == RZ_YCENTER && state.resize.x == RZ_LEFT) ||
-             (state.resize.y == RZ_YCENTER && state.resize.x == RZ_RIGHT)) {
+  } else if ((Session().input.resize.y == RZ_YCENTER &&
+              Session().input.resize.x == RZ_LEFT) ||
+             (Session().input.resize.y == RZ_YCENTER &&
+              Session().input.resize.x == RZ_RIGHT)) {
     return LoadCursor(nullptr, IDC_SIZEWE);
   } else {
     return LoadCursor(nullptr, IDC_SIZEALL);

@@ -6,8 +6,13 @@
 
 namespace altsnap::hooks {
 
+void FinishMovementNow();
+
 void StopSpeedMes();
-int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX);
+enum class ActionStartResult { kNotHandled, kConsumed, kBusy };
+bool MovementStartBusy();
+ActionStartResult InitMovementAndActions(POINT pt, HWND hwnd, action_t action,
+                                         int buttonX);
 void FinishMovementAsync();
 void LockMovement();
 

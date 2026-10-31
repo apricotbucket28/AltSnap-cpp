@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "common/ini_section.h"
@@ -58,11 +59,16 @@ struct MouseEvent {
 LRESULT PassOn(const MouseEvent& e) {
   return CallNextHook(e.button, e.nCode, e.wParam, e.lParam);
 }
+LRESULT PassBusyDown(const MouseEvent& e) {
+  if (e.button >= BT_LMB && e.button <= BT_MB20)
+    Session().passed_buttons[e.button] = true;
+  return PassOn(e);
+}
 
 // Moves or resizes the window when the mouse moves, but only every few events
 // (see RezTimer, MoveRate and ResizeRate).
 void MoveWindowForMouseEvent(const MSLLHOOKSTRUCT& msg, POINT pt) {
-  static DWORD oldtime;
+  DWORD& oldtime = Session().mouse_event_time;
   if (conf.RezTimer == 1) {
     // Only move window if the EVENT TIME is different.
     if (msg.time != oldtime) {
@@ -71,9 +77,10 @@ void MoveWindowForMouseEvent(const MSLLHOOKSTRUCT& msg, POINT pt) {
     }
     return;
   }
-  static UCHAR updaterate;
-  updaterate = (updaterate + 1) %
-               (state.action.ac == AC_MOVE ? conf.MoveRate : conf.ResizeRate);
+  UCHAR& updaterate = Session().mouse_update_rate;
+  updaterate =
+      (updaterate + 1) %
+      (Session().input.action.ac == AC_MOVE ? conf.MoveRate : conf.ResizeRate);
   if (!updaterate) {
     MouseMove(pt);
   } else if (conf.RezTimer == 3 && msg.time != oldtime) {
@@ -85,27 +92,28 @@ void MoveWindowForMouseEvent(const MSLLHOOKSTRUCT& msg, POINT pt) {
 // WM_MOUSEMOVE: only if it is not exactly the same point than before.
 void HandleMouseMove(const MSLLHOOKSTRUCT& msg) {
   const POINT pt = msg.pt;
-  if (SamePt(pt, state.prevpt)) return;
+  if (SamePt(pt, Session().input.prevpt)) return;
   // Store prevpt so we can check if the hook goes stale
-  if (state.moving == DRAG_WAIT) {
-    if (IsPtDragOut(&state.prevpt, &pt)) return;
-    state.moving = 0;
-    MouseMove(state.prevpt);
+  if (Session().input.moving == DRAG_WAIT) {
+    if (IsPtDragOut(&Session().input.prevpt, &pt)) return;
+    Session().input.moving = 0;
+    MouseMove(Session().input.prevpt);
   }
-  state.prevpt = pt;
+  Session().input.prevpt = pt;
 
   // Reset double-click time
-  if (!IsSamePTT(&pt, &state.clickpt)) state.clicktime = 0;
+  if (!IsSamePTT(&pt, &Session().input.clickpt)) Session().input.clicktime = 0;
 
-  if (state.action.ac && !state.blockmouseup) {  // resize or move...
+  if (Session().input.action.ac &&
+      !Session().input.blockmouseup) {  // resize or move...
     MoveWindowForMouseEvent(msg, pt);
   }
 }
 
 // Another click while we are already busy with an action: a click combo.
 std::optional<LRESULT> HandleComboClick(const MouseEvent& e) {
-  if (e.buttonstate != STATE_DOWN || !state.action.ac ||
-      state.action.ac ==
+  if (e.buttonstate != STATE_DOWN || !Session().input.action.ac ||
+      Session().input.action.ac ==
           conf.actions.grab_with_alt.Get(ActionContext::kNormal, ModKey()).ac) {
     return std::nullopt;
   }
@@ -117,12 +125,15 @@ std::optional<LRESULT> HandleComboClick(const MouseEvent& e) {
 std::optional<LRESULT> HandleTitlebarActions(MouseEvent& e) {
   if (!e.ttbact.ac || e.buttonstate != STATE_DOWN) return std::nullopt;
 
-  int ret = TitleBarActions(e.pt, e.ttbact, e.button);
+  const auto result = TitleBarActions(e.pt, e.ttbact, e.button);
+  if (result == ActionStartResult::kBusy) return PassBusyDown(e);
+  int ret = !result ? -1 : (*result == ActionStartResult::kConsumed ? 1 : 0);
   // If we have nothing to do in the titlebar
-  if (ret < 0 && conf.InactiveScroll && !state.alt && !state.action.ac &&
+  if (ret < 0 && conf.InactiveScroll && !Session().input.alt &&
+      !Session().input.action.ac &&
       (e.wParam == WM_MOUSEWHEEL || e.wParam == WM_MOUSEHWHEEL)) {
     // Scroll inactive window with wheel action...
-    ret = ScrollPointedWindow(e.pt, state.delta, e.wParam);
+    ret = ScrollPointedWindow(e.pt, Session().input.delta, e.wParam);
   }
   if (ret == 0) return PassOn(e);
   if (ret == 1) return 1;
@@ -135,33 +146,40 @@ std::optional<LRESULT> HandleTitlebarActions(MouseEvent& e) {
 std::optional<LRESULT> HandleHotclick(const MouseEvent& e) {
   if (!IsHotclick(e.button)) return std::nullopt;
 
-  if (!state.alt && e.buttonstate == STATE_DOWN) {
-    state.alt = e.button;
+  if (!Session().input.alt && e.buttonstate == STATE_DOWN) {
+    Session().input.alt = e.button;
     // Start an action now if hotclick is also an action.
     // If action == AC_NONE, we are checking for blacklists...
     if (!e.action.ac) {
       // If no action is to be made,we must reset
       // clickpt and actiondone for the Click UP
       // to be forwarded.
-      state.sactiondone = k_action_none;
-      state.clickpt = e.pt;
+      Session().input.sactiondone = k_action_none;
+      Session().input.clickpt = e.pt;
     }
-    if (InitMovementAndActions(e.pt, nullptr, e.action, e.button)) {
+    const auto result =
+        InitMovementAndActions(e.pt, nullptr, e.action, e.button);
+    if (result == ActionStartResult::kBusy) {
+      Session().input.alt = 0;
+      return PassBusyDown(e);
+    }
+    if (result == ActionStartResult::kConsumed) {
       // Not blacklisted, action may have been performed!
-      if (e.action.ac) state.alt = 0;  // Done!
+      if (e.action.ac) Session().input.alt = 0;  // Done!
       return 1;
     }
 
     // Window is blacklisted, so we must forward the click...
-    state.alt = 0;        // release alt!
-    state.fwmouseup = 1;  // Forward up click...
-    return PassOn(e);     // forward down click
+    Session().input.alt = 0;        // release alt!
+    Session().input.fwmouseup = 1;  // Forward up click...
+    return PassOn(e);               // forward down click
   }
-  if (state.alt == e.button && e.buttonstate == STATE_UP) {
-    state.alt = 0;
+  if (Session().input.alt == e.button && e.buttonstate == STATE_UP) {
+    Session().input.alt = 0;
     // Block hotclick up if not an action
     // Because it will not be done by state.blockmouseup
-    if (!e.action.ac && (conf.AblockHotclick || state.sactiondone.ac)) return 1;
+    if (!e.action.ac && (conf.AblockHotclick || Session().input.sactiondone.ac))
+      return 1;
     // If no action is to be done, we forward the click
     SendClickThread(e.button);
     return 1;
@@ -175,13 +193,14 @@ std::optional<LRESULT> HandleBlockedMouseUp(const MouseEvent& e) {
   if (e.buttonstate != STATE_UP) return std::nullopt;
 
   // fw/block mouse up and decrement counter.
-  if (state.fwmouseup) {
-    state.fwmouseup = 0;
+  if (Session().input.fwmouseup) {
+    Session().input.fwmouseup = 0;
     return PassOn(e);
   }
-  if (state.blockmouseup) {
-    state.blockmouseup--;
-    if (!state.blockmouseup && !state.action.ac && !state.alt) {
+  if (Session().input.blockmouseup) {
+    Session().input.blockmouseup--;
+    if (!Session().input.blockmouseup && !Session().input.action.ac &&
+        !Session().input.alt) {
       UnhookMouseOnly();  // We no longer need the hook.
     }
     return 1;
@@ -191,10 +210,11 @@ std::optional<LRESULT> HandleBlockedMouseUp(const MouseEvent& e) {
 
 // Moving a window by pressing the left button for a long time.
 std::optional<LRESULT> HandleLongClickGrab(const MouseEvent& e) {
-  if (!conf.LongClickMove || state.action.ac || state.alt) return std::nullopt;
+  if (!conf.LongClickMove || Session().input.action.ac || Session().input.alt)
+    return std::nullopt;
 
   if (e.wParam == WM_LBUTTONDOWN) {
-    state.clickpt = e.pt;
+    Session().input.clickpt = e.pt;
     // Start Grab timer
     SetTimer(g_mainhwnd, GRAB_TIMER, conf.LongClickMoveDelay,
              static_cast<TIMERPROC>(TimerWindowProc));
@@ -207,15 +227,18 @@ std::optional<LRESULT> HandleLongClickGrab(const MouseEvent& e) {
 
 // A button was pressed while Alt (or a hotkey) is down: start the action.
 std::optional<LRESULT> HandleButtonDownWithAlt(const MouseEvent& e) {
-  if (e.buttonstate != STATE_DOWN || !state.alt) return std::nullopt;
+  if (e.buttonstate != STATE_DOWN || !Session().input.alt) return std::nullopt;
 
   // Double check some hotkey is pressed.
-  if (!state.action.ac && !IsHotclick(state.alt) && !IsHotkeyDown()) {
+  if (!Session().input.action.ac && !IsHotclick(Session().input.alt) &&
+      !IsHotkeyDown()) {
     UnhookMouse();
     return PassOn(e);
   }
   // Start an action (alt is down)
-  if (!InitMovementAndActions(e.pt, nullptr, e.action, e.button)) {
+  const auto result = InitMovementAndActions(e.pt, nullptr, e.action, e.button);
+  if (result == ActionStartResult::kBusy) return PassBusyDown(e);
+  if (result == ActionStartResult::kNotHandled) {
     return PassOn(e);
   }
   return 1;  // block mousedown
@@ -225,13 +248,15 @@ std::optional<LRESULT> HandleButtonDownWithAlt(const MouseEvent& e) {
 // click (nothing was dragged).
 bool IsClickWithoutDrag(const MouseEvent& e) {
   return e.action.ac &&
-         (state.action.ac == e.action.ac ||
-          (state.action.ac == AC_MOVE && e.action.ac == AC_RESIZE)) &&
-         (!state.moving || state.moving == DRAG_WAIT)  // No drag occured
-         && state.sactiondone.ac <=
+         (Session().input.action.ac == e.action.ac ||
+          (Session().input.action.ac == AC_MOVE && e.action.ac == AC_RESIZE)) &&
+         (!Session().input.moving ||
+          Session().input.moving == DRAG_WAIT)  // No drag occured
+         && Session().input.sactiondone.ac <=
                 AC_RESIZE  // Only move/resize may have happened meanwhile
          && !IsCtrlDown()  // Ctrl is not down (because of focusing)
-         && IsSamePTT(&e.pt, &state.clickpt)  // same point (within drag)
+         &&
+         IsSamePTT(&e.pt, &Session().input.clickpt)  // same point (within drag)
          && !IsDoubleClick(e.button);  // Long click unless PiercingClick=1
 }
 
@@ -246,15 +271,16 @@ std::optional<LRESULT> HandleButtonUp(const MouseEvent& e) {
     // Mouse UP actions here only in case of MOVEMENT!:
     // Perform an action on mouse up without drag on move/resize
     action_t action = e.action;
-    const ActionContext context =
-        state.hittest ? ActionContext::kTitlebar : ActionContext::kNormal;
+    const ActionContext context = Session().input.hittest
+                                      ? ActionContext::kTitlebar
+                                      : ActionContext::kNormal;
     if (action.ac == AC_MOVE)
       action = conf.actions.move_up.Get(context, ModKey());
     if (action.ac == AC_RESIZE)
       action = conf.actions.resize_up.Get(context, ModKey());
 
     if (action.ac > AC_RESIZE) {
-      SClickActions(state.hwnd, action);
+      SClickActions(Session().input.hwnd, action);
     } else {
       LOG("Forwarding the %d the click!", e.button);
       // Forward the click if no action was Mapped!
@@ -266,7 +292,7 @@ std::optional<LRESULT> HandleButtonUp(const MouseEvent& e) {
   }
   // If a button performing an action is released,
   // we finish all movement and proceed.
-  if (e.action.ac && state.action.ac) {
+  if (e.action.ac && Session().input.action.ac) {
     FinishMovementAsync();
     return 1;
   }
@@ -277,11 +303,13 @@ std::optional<LRESULT> HandleButtonUp(const MouseEvent& e) {
 
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
   const auto* msg = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-  if (nCode != HC_ACTION || !HooksActive() || state.ignoreclick ||
-      ScrollLockState()) {
+  HookSession* session = TrySession();
+  if (nCode != HC_ACTION || !HooksActive() || !session ||
+      session->input.ignoreclick || ScrollLockState()) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
   }
 
+  SessionExecutionScope execution_scope;
   if (wParam == WM_MOUSEMOVE) {
     HandleMouseMove(*msg);
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -295,9 +323,21 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
   e.pt = msg->pt;
   e.buttonstate = GetButtonState(wParam);
   e.button = static_cast<enum button>(GetButton(wParam, lParam));
-  state.delta = GET_WHEEL_DELTA_WPARAM(msg->mouseData);
+  // Admission precedes titlebar hit testing, hotclick activation and combos.
+  // Remember pass-through downs so a later finish cannot swallow their ups.
+  if (e.button >= BT_LMB && e.button <= BT_MB20) {
+    bool& passed = Session().passed_buttons[e.button];
+    if (e.buttonstate == STATE_UP && std::exchange(passed, false))
+      return PassOn(e);
+    if (e.buttonstate == STATE_DOWN) passed = false;
+  }
+  if (e.buttonstate == STATE_DOWN && MovementStartBusy())
+    return PassBusyDown(e);
+  Session().input.delta = GET_WHEEL_DELTA_WPARAM(msg->mouseData);
   e.action = GetAction(e.button);   // Normal action
   e.ttbact = GetActionT(e.button);  // Titlebar action
+  if (e.buttonstate == STATE_DOWN && MovementStartBusy())
+    return PassBusyDown(e);
 
   if (auto handled = HandleComboClick(e)) return *handled;
   if (auto handled = HandleTitlebarActions(e)) return *handled;
@@ -326,7 +366,8 @@ bool KeepMouseHook() {
 }
 
 void HookMouse() {
-  state.moving = 0;  // Used to know the first time we call MouseMove.
+  if (!Session().finish_pending && !Session().move_running)
+    Session().input.moving = 0;  // First MouseMove initializes the drag.
   if (g_keep_mousehook) {
     PostMessage(g_mainhwnd, WM_TIMER, REHOOK_TIMER, 0);
   }
@@ -340,17 +381,17 @@ void HookMouse() {
 
 static void UnhookMouseOnly() {
   // Do not unhook if not hooked or if the hook is still used for something
-  if (!mousehook || g_keep_mousehook || state.blockmouseup) return;
+  if (!mousehook || g_keep_mousehook || Session().input.blockmouseup) return;
 
   // Remove mouse hook
   if (HHOOK hook = mousehook.exchange(nullptr)) UnhookWindowsHookEx(hook);
 }
 void UnhookMouse() {
   // Stop action
-  state.action = k_action_none;
-  state.ctrl = 0;
-  state.shift = 0;
-  state.moving = 0;
+  Session().input.action = k_action_none;
+  Session().input.ctrl = 0;
+  Session().input.shift = 0;
+  Session().input.moving = 0;
 
   SetWindowTrans(nullptr);
   StopSpeedMes();

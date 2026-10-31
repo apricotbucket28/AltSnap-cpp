@@ -85,7 +85,8 @@ static HRESULT GetCurrentVolumeMute(UINT* current_volume, UINT* max_volume,
 }
 
 void ActionVolume(int delta) {
-  const int scaled_delta = ScaleWheelDelta(delta, state.shift ? 5 : 1);
+  const int scaled_delta =
+      ScaleWheelDelta(delta, Session().input.shift ? 5 : 1);
   if (scaled_delta == std::numeric_limits<int>::min()) {
     return;
   }

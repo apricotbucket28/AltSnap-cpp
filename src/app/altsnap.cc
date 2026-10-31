@@ -10,6 +10,7 @@
 
 #include <algorithm>
 
+#include "app/hook_lifecycle.h"
 #include "app/hook_shutdown.h"
 #include "app/languages.h"
 #include "app/tray.h"
@@ -28,6 +29,20 @@ WNDPROC G_HooksWinProc = nullptr;
 static bool g_hooks_shutting_down = false;
 static bool g_hooks_idle_confirmed = false;
 static DWORD g_hooks_owner_thread = 0;
+
+class AppHookBackend final : public HookLifecycleBackend {
+ public:
+  bool Enabled() const override { return IsEnabled(); }
+  bool Stopping() const override { return g_hooks_shutting_down; }
+  bool TryStop() override { return UnhookSystem() == 0; }
+  void Start() override { HookSystem(); }
+  void SaveZones(int layout) override {
+    SaveCurrentLayout(layout);
+    WriteCurrentLayoutNumber();
+  }
+};
+static AppHookBackend g_hook_backend;
+static HookLifecycle g_hook_lifecycle(g_hook_backend);
 
 // Cool stuff
 HINSTANCE hinstDLL = nullptr;
@@ -155,25 +170,16 @@ int UnhookSystem() {
   }
   g_hooks_idle_confirmed = true;
   G_HooksWinProc = nullptr;
+  g_hook_lifecycle.SessionStopped();
   UpdateTray();
   return 0;
 }
 
 static void ToggleState() {
-  if (IsEnabled()) {
-    UnhookSystem();
-  } else {
-    // SendMessage(g_hwnd, WM_UPDATESETTINGS, 0, 0);
-    HookSystem();
-  }
+  g_hook_lifecycle.Request(HookLifecycle::Change::kToggle);
 }
-
 void UpdateSettings() {
-  // PostMessage(g_hwnd, WM_UPDATESETTINGS, 0, 0);
-  if (IsEnabled()) {
-    UnhookSystem();
-    HookSystem();
-  }
+  g_hook_lifecycle.Request(HookLifecycle::Change::kReload);
 }
 
 static void ShowSClickMenu(HWND hwnd, LPARAM param) {
@@ -333,7 +339,8 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
 
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam) {
-  if (DeferDuringHookShutdown(g_hooks_shutting_down, msg)) return 0;
+  if (g_hook_lifecycle.DeferMessage(msg, wParam, lParam)) return 0;
+  if (g_hook_lifecycle.HandleMessage(msg, wParam)) return 0;
   if (!msg) {
     // In case some messages are not registered.
   } else if (wParam && msg == WM_ERASEBKGND) {
@@ -397,10 +404,8 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                 L"\n\n" + FullLayoutName(LayoutNumber);
       int ret = MessageBox(nullptr, text.c_str(), APP_NAME, MB_OKCANCEL);
       if (ret == IDOK) {
-        UnhookSystem();
-        SaveCurrentLayout();
-        WriteCurrentLayoutNumber();
-        HookSystem();
+        g_hook_lifecycle.Request(HookLifecycle::Change::kSaveZones,
+                                 LayoutNumber);
       }
     } else if (wmId == CMD_CLOSEZONES) {
       CloseAllTestWindows();
@@ -611,6 +616,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
   g_hwnd = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
                           wnd.lpszClassName, nullptr, WS_POPUP, 0, 0, 0, 0,
                           nullptr, nullptr, hInst, nullptr);
+  g_hook_lifecycle.Attach(g_hwnd);
   LOG("Create main APP Window: %s", g_hwnd ? "Sucess" : "Failed");
   if (elevated) {
     // AltSnap was started elevated!
@@ -649,6 +655,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
     DispatchMessage(&msg);
   }
 
+  g_hook_lifecycle.Detach();
   UnhookSystem();
   FreeHooksDLL();
   DestroyWindow(g_hwnd);

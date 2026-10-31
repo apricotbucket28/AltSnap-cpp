@@ -58,15 +58,16 @@ int ActionPause(HWND hwnd, UCHAR pause) {
 }
 
 // Kill the process from hwnd
-static DWORD WINAPI ActionKillThread(LPVOID hwnd) {
-  if (state.shift) {
+void ActionKillNow(HWND hwnd, bool shift) {
+  if (!IsWindow(hwnd)) return;
+  if (shift) {
     // TODO: Aggressive command such as:
     // taskkill.exe /F /FI "status eq NOT RESPONDING" /FI "IMAGENAME ne
     // AltSnap.exe" /FI "IMAGENAME ne dwm.exe"
   } else {
     const auto process_info = GetWindowProcessInfo(static_cast<HWND>(hwnd));
     if (!process_info) {
-      return 0;
+      return;
     }
     // LOG("pid=%lu", pid);
 
@@ -77,9 +78,9 @@ static DWORD WINAPI ActionKillThread(LPVOID hwnd) {
       TerminateProcess(proc, 1);
       CloseHandle(proc);
     }
-    return 1;
+    return;
   }
-  return 0;
+  return;
 }
 int ActionKill(HWND hwnd) {
   // LOG("hwnd=%lx",(DWORD) hwnd);
@@ -99,7 +100,7 @@ int ActionKill(HWND hwnd) {
 
   if (IsBlacklisted(hwnd, BlkLst.Pause)) return 0;
 
-  return PostWorkerTask([hwnd] { ActionKillThread(hwnd); });
+  return PostWorkerCommand(KillWindowCommand{hwnd, Session().input.shift != 0});
 }
 // Try harder to actually set the window foreground.
 void ReallySetForegroundWindow(HWND hwnd) {
@@ -107,7 +108,7 @@ void ReallySetForegroundWindow(HWND hwnd) {
   // Check existing foreground Window.
   HWND fore = GetForegroundWindow();
   if (fore != hwnd) {
-    if (state.alt != VK_MENU && state.alt != VK_CONTROL &&
+    if (Session().input.alt != VK_MENU && Session().input.alt != VK_CONTROL &&
         !(GetKeyState(VK_CONTROL) & 0x8000) &&
         !(GetKeyState(VK_MENU) & 0x8000)) {
       // If the physical Alt or Ctrl keys are not down
@@ -121,16 +122,16 @@ void ReallySetForegroundWindow(HWND hwnd) {
   }
 }
 void SetForegroundWindowL(HWND hwnd) {
-  if (!state.mdiclient) {
+  if (!Session().input.mdiclient) {
     ReallySetForegroundWindow(hwnd);
   } else {
-    ReallySetForegroundWindow(state.mdiclient);
-    PostMessage(state.mdiclient, WM_MDIACTIVATE, reinterpret_cast<WPARAM>(hwnd),
-                0);
+    ReallySetForegroundWindow(Session().input.mdiclient);
+    PostMessage(Session().input.mdiclient, WM_MDIACTIVATE,
+                reinterpret_cast<WPARAM>(hwnd), 0);
   }
 }
 void ToggleSnapState() {
-  state.snap = state.snap ? 0 : 3;
+  Session().input.snap = Session().input.snap ? 0 : 3;
 }
 
 int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
@@ -187,7 +188,7 @@ int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
 }
 
 int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
-  hwnds.clear();
+  Session().enumerated_windows.clear();
 
   if (conf.MDI) {
     // Get Class name
@@ -205,34 +206,49 @@ int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
     if (mdiclient) {
       EnumChildWindows(mdiclient, lpEnumFunc, laser);
 
-      if (hwnds.size() > 1) {
+      if (Session().enumerated_windows.size() > 1) {
         if (delta > 0) {
-          PostMessage(mdiclient, WM_MDIACTIVATE,
-                      reinterpret_cast<WPARAM>(hwnds[hwnds.size() - 1]), 0);
+          PostMessage(
+              mdiclient, WM_MDIACTIVATE,
+              reinterpret_cast<WPARAM>(
+                  Session()
+                      .enumerated_windows[Session().enumerated_windows.size() -
+                                          1]),
+              0);
         } else {
-          SetWindowLevel(hwnds[0], hwnds[hwnds.size() - 1]);
+          SetWindowLevel(
+              Session().enumerated_windows[0],
+              Session()
+                  .enumerated_windows[Session().enumerated_windows.size() - 1]);
           PostMessage(mdiclient, WM_MDIACTIVATE,
-                      reinterpret_cast<WPARAM>(hwnds[1]), 0);
+                      reinterpret_cast<WPARAM>(Session().enumerated_windows[1]),
+                      0);
         }
       }
     }
   }  // End if MDI
 
   // Enumerate windows
-  if (hwnds.size() <= 1) {
-    state.origin.monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    hwnds.clear();
+  if (Session().enumerated_windows.size() <= 1) {
+    Session().input.origin.monitor =
+        MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    Session().enumerated_windows.clear();
     EnumDesktopWindows(nullptr, lpEnumFunc, laser);
-    if (hwnds.size() <= 1) {
+    if (Session().enumerated_windows.size() <= 1) {
       return 0;
     }
 
     // Reorder windows
     if (delta > 0) {
-      ReallySetForegroundWindow(hwnds[hwnds.size() - 1]);
+      ReallySetForegroundWindow(
+          Session()
+              .enumerated_windows[Session().enumerated_windows.size() - 1]);
     } else {
-      SetWindowLevel(hwnds[0], hwnds[hwnds.size() - 1]);
-      ReallySetForegroundWindow(hwnds[1]);
+      SetWindowLevel(
+          Session().enumerated_windows[0],
+          Session()
+              .enumerated_windows[Session().enumerated_windows.size() - 1]);
+      ReallySetForegroundWindow(Session().enumerated_windows[1]);
     }
   }
   return 1;
@@ -240,11 +256,11 @@ int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
 
 int ActionTransparency(HWND hwnd, short delta) {
   if (IsBlacklisted(hwnd, BlkLst.Windows)) return 0;
-  if (state.action.ac && IsMovementAction(state.action))
+  if (Session().input.action.ac && IsMovementAction(Session().input.action))
     SetWindowTrans(reinterpret_cast<HWND>(-1));
 
   const int alpha_delta = ScaleWheelDelta(
-      delta, state.shift ? conf.AlphaDeltaShift : conf.AlphaDelta);
+      delta, Session().input.shift ? conf.AlphaDeltaShift : conf.AlphaDelta);
   if (!alpha_delta) return 1;
 
   static int alpha = 255;
@@ -307,7 +323,8 @@ void ActionLower(HWND hwnd, short delta, UCHAR shift, UCHAR fg) {
       SetWindowLevel(hwnd, HWND_TOPMOST);
       SetWindowLevel(hwnd, HWND_NOTOPMOST);
     }
-  } else if (delta == 0 && (IsCtrlDown() || IsAeraCapbutton(state.hittest))) {
+  } else if (delta == 0 &&
+             (IsCtrlDown() || IsAeraCapbutton(Session().input.hittest))) {
     // turn lower in *Always on top* if Ctrl or [_][O][X]
     TogglesAlwaysOnTop(hwnd);
   } else {
@@ -327,7 +344,7 @@ void ActionLower(HWND hwnd, short delta, UCHAR shift, UCHAR fg) {
 
 void ActionMaxRestMin(HWND hwnd, int delta) {
   int maximized = IsZoomed(hwnd);
-  if (state.shift) {
+  if (Session().input.shift) {
     ActionLower(hwnd, delta, 0, IsCtrlDown());
     return;
   }
@@ -440,48 +457,49 @@ int ActionZoom(HWND hwnd, short delta, short center) {
   GetWindowRect(hwnd, &rc);
   if (IsZoomed(hwnd)) RestoreToMonitorSize(hwnd, &rc);
   ClearRestoreFlagOnResizeIfNeeded(hwnd);
-  SetEdgeAndOffset(&rc, state.prevpt);
+  SetEdgeAndOffset(&rc, Session().input.prevpt);
   OffsetRectMDI(&rc);
   CopyRect(&orc, &rc);
 
   int left = 0, right = 0, top = 0, bottom = 0;
-  int div = state.shift ? conf.ZoomFracShift : conf.ZoomFrac;
+  int div = Session().input.shift ? conf.ZoomFracShift : conf.ZoomFrac;
   // We increase/decrease at least 1 pixel or SnapThreshold/2.
-  UCHAR T = state.shift ? 1 : conf.SnapThreshold / 2 + 1;
-  UCHAR CT = !center ^ !IsCtrlDown() ||
-             (state.resize.x == RZ_XCENTER && state.resize.y == RZ_YCENTER);
+  UCHAR T = Session().input.shift ? 1 : conf.SnapThreshold / 2 + 1;
+  UCHAR CT =
+      !center ^ !IsCtrlDown() || (Session().input.resize.x == RZ_XCENTER &&
+                                  Session().input.resize.y == RZ_YCENTER);
 
   if (!conf.AutoSnap ||
-      (CT &&
-       (state.resize.x == RZ_XCENTER ||
-        state.resize.y == RZ_YCENTER))) {  // Try to conserve a bit better the
-                                           // aspect ratio when in center mode.
-    T = 1;                                 // Or when no snapping has to occur.
+      (CT && (Session().input.resize.x == RZ_XCENTER ||
+              Session().input.resize.y ==
+                  RZ_YCENTER))) {  // Try to conserve a bit better the
+                                   // aspect ratio when in center mode.
+    T = 1;                         // Or when no snapping has to occur.
   }
 
   rgMMI_t mmi;
   GetMinMaxInfo(hwnd, &mmi.Min, &mmi.Max);  // for CLAMPH/W functions
 
-  if (state.resize.x == RZ_LEFT) {
+  if (Session().input.resize.x == RZ_LEFT) {
     right = std::max<int>(T, (rc.right - rc.left) / div);
-    state.resize.x = RZ_RIGHT;
-  } else if (state.resize.x == RZ_RIGHT) {
+    Session().input.resize.x = RZ_RIGHT;
+  } else if (Session().input.resize.x == RZ_RIGHT) {
     left = std::max<int>(T, (rc.right - rc.left) / div);
-    state.resize.x = RZ_LEFT;
-  } else if (state.resize.x == RZ_XCENTER && CT) {
-    left = std::max<int>(T, (state.prevpt.x - rc.left) / div);
-    right = std::max<int>(T, (rc.right - state.prevpt.x) / div);
+    Session().input.resize.x = RZ_LEFT;
+  } else if (Session().input.resize.x == RZ_XCENTER && CT) {
+    left = std::max<int>(T, (Session().input.prevpt.x - rc.left) / div);
+    right = std::max<int>(T, (rc.right - Session().input.prevpt.x) / div);
   }
 
-  if (state.resize.y == RZ_TOP) {
+  if (Session().input.resize.y == RZ_TOP) {
     bottom = std::max<int>(T, (rc.bottom - rc.top) / div);
-    state.resize.y = RZ_BOTTOM;
-  } else if (state.resize.y == RZ_BOTTOM) {
+    Session().input.resize.y = RZ_BOTTOM;
+  } else if (Session().input.resize.y == RZ_BOTTOM) {
     top = std::max<int>(T, (rc.bottom - rc.top) / div);
-    state.resize.y = RZ_TOP;
-  } else if (state.resize.y == RZ_YCENTER && CT) {
-    top = std::max<int>(T, (state.prevpt.y - rc.top) / div);
-    bottom = std::max<int>(T, (rc.bottom - state.prevpt.y) / div);
+    Session().input.resize.y = RZ_TOP;
+  } else if (Session().input.resize.y == RZ_YCENTER && CT) {
+    top = std::max<int>(T, (Session().input.prevpt.y - rc.top) / div);
+    bottom = std::max<int>(T, (rc.bottom - Session().input.prevpt.y) / div);
   }
   if (delta < 0) {
     // Zoom out
@@ -500,8 +518,8 @@ int ActionZoom(HWND hwnd, short delta, short center) {
   int x = rc.left, y = rc.top, width = rc.right - rc.left,
       height = rc.bottom - rc.top;
 
-  state.hwnd = hwnd;
-  state.snap = conf.AutoSnap;  // Only use autosnap setting.
+  Session().input.hwnd = hwnd;
+  Session().input.snap = conf.AutoSnap;  // Only use autosnap setting.
 
   ResizeSnap(&x, &y, &width, &height,
              std::min<UCHAR>(std::max(left, right) - 1,
@@ -511,11 +529,14 @@ int ActionZoom(HWND hwnd, short delta, short center) {
                              conf.SnapThreshold));  // initial y threshold
   // Make sure that the windows does not move
   // in case it is resized from bottom/right
-  if (state.resize.x == RZ_LEFT) x = x + width - CLAMPWL(width, &mmi);
-  if (state.resize.y == RZ_TOP) y = y + height - CLAMPHL(height, &mmi);
+  if (Session().input.resize.x == RZ_LEFT) x = x + width - CLAMPWL(width, &mmi);
+  if (Session().input.resize.y == RZ_TOP)
+    y = y + height - CLAMPHL(height, &mmi);
   // Avoid runaway effect when zooming in/out too much.
-  if (state.resize.x == RZ_XCENTER && !ISCLAMPEDWL(width, &mmi)) x = orc.left;
-  if (state.resize.y == RZ_YCENTER && !ISCLAMPEDHL(height, &mmi)) y = orc.top;
+  if (Session().input.resize.x == RZ_XCENTER && !ISCLAMPEDWL(width, &mmi))
+    x = orc.left;
+  if (Session().input.resize.y == RZ_YCENTER && !ISCLAMPEDHL(height, &mmi))
+    y = orc.top;
   width = CLAMPWL(width, &mmi);  // Double check
   height = CLAMPHL(height, &mmi);
 
@@ -526,27 +547,27 @@ int ActionZoom(HWND hwnd, short delta, short center) {
 int ActionMove(POINT pt, int button) {
   // If this is a double-click
   if (IsDoubleClick(button)) {
-    SetOriginFromRestoreData(state.hwnd, k_action_move);
-    LastWin.hwnd = nullptr;
+    SetOriginFromRestoreData(Session().input.hwnd, k_action_move);
+    Session().last_window.hwnd = nullptr;
 
     action_t acdbclick = GetActionMR(button);
     if (acdbclick.ac > AC_RESIZE) {
       // Use the Mouve button + While Moving action as doubleclick action.
-      SClickActions(state.hwnd, acdbclick);
+      SClickActions(Session().input.hwnd, acdbclick);
     } else {
       // Defult action for double move click
-      if (state.shift) {
-        RollWindow(state.hwnd, 0);  // Roll/Unroll Window...
+      if (Session().input.shift) {
+        RollWindow(Session().input.hwnd, 0);  // Roll/Unroll Window...
       } else if (IsCtrlDown()) {
-        MinimizeWindow(state.hwnd);
-      } else if (state.resizable) {
+        MinimizeWindow(Session().input.hwnd);
+      } else if (Session().input.resizable) {
         // Toggle Maximize window
-        ToggleMaxRestore(state.hwnd);
+        ToggleMaxRestore(Session().input.hwnd);
       }
     }
-    state.action = k_action_none;  // Stop move action
-    state.clicktime = 0;           // Reset double-click time
-    state.blockmouseup =
+    Session().input.action = k_action_none;  // Stop move action
+    Session().input.clicktime = 0;           // Reset double-click time
+    Session().input.blockmouseup =
         1;  // Block the mouseup, otherwise it can trigger a context menu
     // Prevent mousedown from propagating
     return 1;
@@ -554,18 +575,18 @@ int ActionMove(POINT pt, int button) {
   if (conf.MMMaximize & 2) {
     MouseMove(pt);  // Restore with simple Click
   } else if (conf.DragThreshold >= 2 ||
-             (conf.DragThreshold == 1 && IsAnySnapped(state.hwnd))) {
+             (conf.DragThreshold == 1 && IsAnySnapped(Session().input.hwnd))) {
     // Wait some move threshold before drag...
     // If the Window was maximized or if the user enabled the option.
-    state.moving = DRAG_WAIT;
+    Session().input.moving = DRAG_WAIT;
   }
 
   return -1;
 }
 
 int ActionResize(POINT pt, const RECT* wnd, int button) {
-  if (!state.resizable) {
-    state.action = k_action_none;
+  if (!Session().input.resizable) {
+    Session().input.action = k_action_none;
     return 0;  // Next Hook
   }
   // Aero-move this window if this is a double-click
@@ -573,36 +594,38 @@ int ActionResize(POINT pt, const RECT* wnd, int button) {
     action_t acdbclick = GetActionMR(button);
     if (acdbclick.ac > AC_RESIZE) {
       // Use the Mouve button + While Moving action as doubleclick action.
-      SClickActions(state.hwnd, acdbclick);
+      SClickActions(Session().input.hwnd, acdbclick);
     } else {
       // Use SnapToCorner by default (legacy)
-      SnapToCorner(state.hwnd, AUTORESIZE,
-                   !state.shift ^ !(conf.AeroTopMaximizes & 2));
+      SnapToCorner(Session().input.hwnd, AUTORESIZE,
+                   !Session().input.shift ^ !(conf.AeroTopMaximizes & 2));
     }
-    state.action = k_action_none;  // Stop resize action
-    state.blockmouseup = 1;        // Block mouse up (context menu would pop)
-    state.clicktime = 0;           // Reset double-click time
+    Session().input.action = k_action_none;  // Stop resize action
+    Session().input.blockmouseup =
+        1;                          // Block mouse up (context menu would pop)
+    Session().input.clicktime = 0;  // Reset double-click time
     // Prevent mousedown from propagating
     return 1;
   }
   SetEdgeAndOffset(wnd, pt);
-  if (state.resize.y == RZ_YCENTER && state.resize.x == RZ_XCENTER) {
+  if (Session().input.resize.y == RZ_YCENTER &&
+      Session().input.resize.x == RZ_XCENTER) {
     if (conf.ResizeCenter == 0) {
       // Use Bottom Right Mode
-      state.resize.x = RZ_RIGHT;
-      state.resize.y = RZ_BOTTOM;
-      state.offset.y = wnd->bottom - pt.y;
-      state.offset.x = wnd->right - pt.x;
+      Session().input.resize.x = RZ_RIGHT;
+      Session().input.resize.y = RZ_BOTTOM;
+      Session().input.offset.y = wnd->bottom - pt.y;
+      Session().input.offset.x = wnd->right - pt.x;
     } else if (conf.ResizeCenter == 2) {
       // Switch to Move action
-      state.action.ac = AC_MOVE;
+      Session().input.action.ac = AC_MOVE;
     } else if (conf.ResizeCenter == 3) {
       // Use diagonals to select pure L/C R/C T/C B/C
       SetEdgeToClosestSide(wnd, pt);
     }
   }
   if (conf.DragThreshold >= 3) {
-    state.moving = DRAG_WAIT;
+    Session().input.moving = DRAG_WAIT;
   }
   return -1;
 }
@@ -619,7 +642,8 @@ void ActionBorderless(HWND hwnd) {
     if (!style) return;
     SetBorderlessFlag(hwnd, style);  // Save style
     if ((style & WS_CAPTION) == WS_CAPTION || style & WS_THICKFRAME) {
-      style &= state.shift ? ~WS_CAPTION : ~(WS_CAPTION | WS_THICKFRAME);
+      style &=
+          Session().input.shift ? ~WS_CAPTION : ~(WS_CAPTION | WS_THICKFRAME);
     } else {
       style |= WS_OVERLAPPEDWINDOW;
     }
@@ -644,8 +668,8 @@ void CenterWindow(HWND hwnd, unsigned flags, int full_monitor) {
   int width = 0, height = 0;
   if (flags & CW_RESTORE) {
     SetOriginFromRestoreData(hwnd, k_action_move);
-    width = state.origin.width;
-    height = state.origin.height;
+    width = Session().input.origin.width;
+    height = Session().input.origin.height;
   } else {
     RECT rc;
     GetWindowRect(hwnd, &rc);
@@ -681,8 +705,8 @@ void CenterWindow(HWND hwnd, unsigned flags, int full_monitor) {
 }
 
 void ActionMaximize(HWND hwnd) {
-  LastWin.hwnd = nullptr;
-  if (state.shift) {
+  Session().last_window.hwnd = nullptr;
+  if (Session().input.shift) {
     MinimizeWindow(hwnd);
   } else if (IsResizable(hwnd)) {
     ToggleMaxRestore(hwnd);
@@ -699,7 +723,8 @@ void MaximizeHV(HWND hwnd, int horizontal) {
   GetMonitorRect(&pt, 0, &mon);
   SetOriginFromRestoreData(hwnd, k_action_move);
 
-  SetRestoreData(hwnd, state.origin.width, state.origin.height, SNAPPED);
+  SetRestoreData(hwnd, Session().input.origin.width,
+                 Session().input.origin.height, SNAPPED);
   FixDWMRect(hwnd, &bd);
   if (horizontal) {
     SetRestoreFlag(hwnd, SNAPPED | SNMAXW);
@@ -721,9 +746,9 @@ void MinimizeAllOtherWindows(HWND hwnd, int CurrentMonOnly) {
   if (CurrentMonOnly) hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
 
   if (restore == hwnd) {
-    // We have to restore all saved windows (minhwnds) when
+    // Restore all saved minimized windows when
     // we click again on the same hwnd and have everything saved...
-    for (auto hrest : minhwnds) {
+    for (auto hrest : Session().minimized_windows) {
       if (IsWindow(hrest) && IsIconic(hrest) &&
           (!hMon ||
            hMon == MonitorFromWindow(hrest, MONITOR_DEFAULTTONEAREST))) {
@@ -733,14 +758,14 @@ void MinimizeAllOtherWindows(HWND hwnd, int CurrentMonOnly) {
       }
     }
     SetForegroundWindowL(hwnd);
-    minhwnds.clear();
+    Session().minimized_windows.clear();
     restore = nullptr;
   } else {
     struct MinimizeWindowProcParams p = {nullptr, hwnd};
     restore = hwnd;
-    minhwnds.clear();
-    if (state.mdiclient) {
-      EnumChildWindows(state.mdiclient, MinimizeWindowProc,
+    Session().minimized_windows.clear();
+    if (Session().input.mdiclient) {
+      EnumChildWindows(Session().input.mdiclient, MinimizeWindowProc,
                        reinterpret_cast<LPARAM>(&p));
     } else {
       p.hMon = hMon;
@@ -790,10 +815,11 @@ void StepWindow(HWND hwnd, action_t action) {
   }
 }
 void ActionASOnOff() {
-  if (state.action.ac) FinishMovementAsync();
-  state.altsnaponoff = !GetProp(g_mainhwnd, kPropAutoSnapOnOff);
+  if (Session().input.action.ac) FinishMovementAsync();
+  Session().input.altsnaponoff = !GetProp(g_mainhwnd, kPropAutoSnapOnOff);
   SetProp(g_mainhwnd, kPropAutoSnapOnOff,
-          reinterpret_cast<HANDLE>(static_cast<DorQWORD>(state.altsnaponoff)));
+          reinterpret_cast<HANDLE>(
+              static_cast<DorQWORD>(Session().input.altsnaponoff)));
   PostMessage(g_mainhwnd, WM_UPDATETRAY, 0, 0);
 }
 void ActionMoveOnOff(HWND hwnd) {

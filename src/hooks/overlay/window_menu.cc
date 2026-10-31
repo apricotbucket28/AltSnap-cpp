@@ -33,7 +33,7 @@ void KillAltSnapMenu() {
     SendMessage(g_mchwnd, WM_CLOSE, 0, 0);
     g_mchwnd = nullptr;
   }
-  state.unikeymenu = nullptr;
+  Session().input.unikeymenu = nullptr;
 }
 // Make a menu filled with the windows that are enumed through EnumProc
 // And Track it!!!!
@@ -52,36 +52,38 @@ struct menuitemdata {
   HICON icon;
 };
 void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags) {
-  state.sclickhwnd = nullptr;
+  Session().input.sclickhwnd = nullptr;
   KillAltSnapMenu();
   g_mchwnd = KreateMsgWin(MenuWindowProc, APP_NAME L"-SClick", 3);
   if (!g_mchwnd) return;  // Failed to create g_mchwnd...
   // Fill up hwnds[] with the stacked windows.
-  hwnds.clear();
-  HWND mdiclient = state.mdiclient;
+  Session().enumerated_windows.clear();
+  HWND mdiclient = Session().input.mdiclient;
   if (mdiclient) {
     EnumChildWindows(mdiclient, EnumProc, flags & TRK_LASERMODE);
   } else {
     EnumDesktopWindows(nullptr, EnumProc, flags & TRK_LASERMODE);
   }
-  LOG("Number of stacked windows = %u", static_cast<unsigned>(hwnds.size()));
-  if (hwnds.empty()) return;
+  LOG("Number of stacked windows = %u",
+      static_cast<unsigned>(Session().enumerated_windows.size()));
+  if (Session().enumerated_windows.empty()) return;
 
-  state.sclickhwnd = state.hwnd;
-  if (hwnds.size() > 36) hwnds.resize(36);  // Max 36 stacked windows
+  Session().input.sclickhwnd = Session().input.hwnd;
+  if (Session().enumerated_windows.size() > 36)
+    Session().enumerated_windows.resize(36);  // Max 36 stacked windows
 
   HMENU menu = CreatePopupMenu();
-  state.unikeymenu = menu;
+  Session().input.unikeymenu = menu;
   size_t i = 0;
 
   struct menuitemdata data[36];  // Always fits into the stack
-  for (i = 0; i < hwnds.size(); i++) {
-    int textlen = GetWindowTextLength(hwnds[i]);
+  for (i = 0; i < Session().enumerated_windows.size(); i++) {
+    int textlen = GetWindowTextLength(Session().enumerated_windows[i]);
     // Limit the size to the asked width
     if (conf.MaxMenuWidth) textlen = std::min<int>(textlen, conf.MaxMenuWidth);
 
     std::wstring title(static_cast<size_t>(textlen) + 1, L'\0');
-    GetWindowText(hwnds[i], title.data(), textlen + 1);
+    GetWindowText(Session().enumerated_windows[i], title.data(), textlen + 1);
     title.resize(lstrlen(title.c_str()));
     data[i].text = std::wstring{L'&', Int2Accel(i), L' ', L'-', L' '} + title;
     // Fill up MSAA structure for screen readers.
@@ -90,7 +92,7 @@ void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags) {
     data[i].msaa.pszWText = data[i].text.data();
 
     // GetWindowIcon return a shared resource not to be freed
-    data[i].icon = GetWindowIcon(hwnds[i]);
+    data[i].icon = GetWindowIcon(Session().enumerated_windows[i]);
     MENUITEMINFO lpmi = {sizeof(lpmi)};
     lpmi.fMask = MIIM_DATA | MIIM_TYPE | MIIM_ID;
     lpmi.fType = MFT_OWNERDRAW; /*MFT_STRING*/
@@ -108,11 +110,11 @@ void TrackMenuOfWindows(WNDENUMPROC EnumProc, LPARAM flags) {
       menu,
       TPM_RETURNCMD /*|TPM_NONOTIFY*/ | GetSystemMetrics(SM_MENUDROPALIGNMENT),
       pt.x, pt.y, 0, g_mchwnd, nullptr));
-  state.mdiclient = mdiclient;
+  Session().input.mdiclient = mdiclient;
   LOG("menu=%u", static_cast<unsigned>(i));
   // if the return value is in the range..
-  if (0 < i && i <= hwnds.size()) {
-    HWND hwnd = hwnds[i - 1];
+  if (0 < i && i <= Session().enumerated_windows.size()) {
+    HWND hwnd = Session().enumerated_windows[i - 1];
     //        wchar_t buf[128];
     //        PrintHwndDetails(hwnd, buf);
     //        MessageBox(NULL, buf, L"Info", 0);
@@ -133,22 +135,23 @@ void ActionStackList(int lasermode) {
               reinterpret_cast<LPARAM>(EnumStackedWindowsProc));
 }
 void ActionMenu(HWND hwnd) {
-  state.sclickhwnd = nullptr;
+  Session().input.sclickhwnd = nullptr;
   KillAltSnapMenu();
   g_mchwnd = KreateMsgWin(MenuWindowProc, APP_NAME L"-SClick", 1);
-  state.sclickhwnd = hwnd;
+  Session().input.sclickhwnd = hwnd;
   // Send message to Open Action Menu
   BringWindowToTop(g_mainhwnd);
   SetForegroundWindow(g_mainhwnd);
   PostMessage(g_mainhwnd, WM_SCLICK, reinterpret_cast<WPARAM>(g_mchwnd),
-              (!state.ignorept)  // LP_CURSORPOS
+              (!Session().input.ignorept)  // LP_CURSORPOS
                   | !!(GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
-                        << 1                                    // LP_TOPMOST
-                  | !!GetBorderlessFlag(hwnd) << 2              // LP_BORDERLESS
-                  | IsZoomed(hwnd) << 3                         // LP_MAXIMIZED
-                  | !!(GetRestoreFlag(hwnd) & 2) << 4           // LP_ROLLED
-                  | !!GetProp(state.hwnd, kPropMoveOnOff) << 5  // LP_MOVEONOFF
-                  | (state.alt <= BT_MB5) << 6  // LP_NOALTACTION
+                        << 1                           // LP_TOPMOST
+                  | !!GetBorderlessFlag(hwnd) << 2     // LP_BORDERLESS
+                  | IsZoomed(hwnd) << 3                // LP_MAXIMIZED
+                  | !!(GetRestoreFlag(hwnd) & 2) << 4  // LP_ROLLED
+                  | !!GetProp(Session().input.hwnd, kPropMoveOnOff)
+                        << 5                              // LP_MOVEONOFF
+                  | (Session().input.alt <= BT_MB5) << 6  // LP_NOALTACTION
   );
 }
 
@@ -255,7 +258,7 @@ static LRESULT DrawMenuItem(HWND hwnd, WPARAM wParam, LPARAM lParam, UINT dpi,
       di->hDC, di->rcItem.left + xmargin, di->rcItem.top + yicooffset,
       (di->itemState & ODS_GRAYED) ? LoadIcon(nullptr, IDI_HAND) : data->icon,
       xicosz, yicosz, 0, nullptr, DI_NORMAL);
-  if (IsIconic(hwnds[di->itemID - 1])) {
+  if (IsIconic(Session().enumerated_windows[di->itemID - 1])) {
     HPEN npen = CreatePen(PS_SOLID, yicosz / 5, GetSysColor(txcol));
     HPEN prevpen = static_cast<HPEN>(SelectObject(di->hDC, npen));
     MoveToEx(di->hDC, di->rcItem.left + xmargin,
@@ -291,14 +294,17 @@ static LRESULT DrawMenuItem(HWND hwnd, WPARAM wParam, LPARAM lParam, UINT dpi,
 }
 static void SendSYSCOMMANDToMenuItem(HWND hwnd, int id, HMENU hmenu,
                                      WPARAM sc_command) {
-  if (conf.RCCloseMItem && 0 <= id && static_cast<UINT>(id) < hwnds.size() &&
-      GetWindowLongPtr(hwnd, GWLP_USERDATA) == 3 && IsWindow(hwnds[id])) {
+  if (conf.RCCloseMItem && 0 <= id &&
+      static_cast<UINT>(id) < Session().enumerated_windows.size() &&
+      GetWindowLongPtr(hwnd, GWLP_USERDATA) == 3 &&
+      IsWindow(Session().enumerated_windows[id])) {
     if (sc_command == SC_CLOSE  // remove topmost flag for close command
-        && GetWindowLongPtr(hwnds[id], GWL_EXSTYLE) & WS_EX_TOPMOST) {
-      HWND pinhwnd = GetPinWindow(hwnds[id]);
+        && GetWindowLongPtr(Session().enumerated_windows[id], GWL_EXSTYLE) &
+               WS_EX_TOPMOST) {
+      HWND pinhwnd = GetPinWindow(Session().enumerated_windows[id]);
       if (pinhwnd) DestroyWindow(pinhwnd);
     }
-    PostMessage(hwnds[id], WM_SYSCOMMAND, sc_command, 0);
+    PostMessage(Session().enumerated_windows[id], WM_SYSCOMMAND, sc_command, 0);
 
     if (sc_command == SC_CLOSE)
       EnableMenuItem(hmenu, id, MF_BYPOSITION | MF_GRAYED);
@@ -308,6 +314,8 @@ static void SendSYSCOMMANDToMenuItem(HWND hwnd, int id, HMENU hmenu,
 // Window for single click commands for menu
 LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                 LPARAM lParam) {
+  if (!TrySession()) return DefWindowProc(hwnd, msg, wParam, lParam);
+  SessionExecutionScope execution_scope;
   static UINT dpi = 0;
   static HFONT mfont = nullptr;
   static HWND fhwndori = nullptr;
@@ -338,10 +346,10 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       }
     } break;
     case WM_INITMENU:
-      state.unikeymenu = reinterpret_cast<HMENU>(wParam);
+      Session().input.unikeymenu = reinterpret_cast<HMENU>(wParam);
       break;
     case WM_GETCLICKHWND:
-      return reinterpret_cast<LRESULT>(state.sclickhwnd);
+      return reinterpret_cast<LRESULT>(Session().input.sclickhwnd);
     case WM_COMMAND: {
       if (LOWORD(wParam)) {
         // UNIKEY MENU (LOWORD of wParam munst be non NULL.
@@ -353,8 +361,8 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         SendUnicodeKey(LOWORD(wParam));  // USC-2 or Lower surrogate
         if (HIWORD(wParam)) SendUnicodeKey(HIWORD(wParam));  // Upper surrogate
 
-        state.sclickhwnd = nullptr;
-      } else if (HIWORD(wParam) && IsWindow(state.sclickhwnd)) {
+        Session().input.sclickhwnd = nullptr;
+      } else if (HIWORD(wParam) && IsWindow(Session().input.sclickhwnd)) {
         // ACTION MENU LOWORD(wParam) has to be zero to differenctiae with
         // unikey menu
         LOG("Action Menu WM_COMMAND, wp=%X, lp=%X", static_cast<UINT>(wParam),
@@ -362,13 +370,13 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         action_t action = {static_cast<BYTE>(HIWORD(wParam)), 0,
                            0};  // TOTO: FIXME!!!!!!!
         if (action.ac) {
-          state.prevpt = state.clickpt;
+          Session().input.prevpt = Session().input.clickpt;
           if (action.ac == AC_ORICLICK) {
             ShowWindow(hwnd, SW_HIDE);
-            SetCursorPos(state.clickpt.x, state.clickpt.y);
-            SendClick(state.clickbutton);
+            SetCursorPos(Session().input.clickpt.x, Session().input.clickpt.y);
+            SendClick(Session().input.clickbutton);
           } else {
-            SClickActions(state.sclickhwnd, action);
+            SClickActions(Session().input.sclickhwnd, action);
           }
 
           // We should not refocus windows if those
@@ -378,7 +386,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
             fhwndori = nullptr;
         }
         // Menu closes now.
-        state.unikeymenu = nullptr;
+        Session().input.unikeymenu = nullptr;
         PostMessage(hwnd, WM_CLOSE, 0, 0);  // Done!
         return 0;
       }
@@ -396,7 +404,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         DWORD msgpos = GetMessagePos();
         pt.x = GET_X_LPARAM(msgpos);
         pt.y = GET_Y_LPARAM(msgpos);
-        hmenu = state.unikeymenu;
+        hmenu = Session().input.unikeymenu;
         id = MenuItemFromPoint(hwnd, hmenu, pt);
         sc_command = SC_CLOSE;
       }
@@ -449,7 +457,7 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
         ;
         WORD item = Accel2Int(vK);
         // Execute item if the key is valid.
-        if (item != 0xFFFF && item <= hwnds.size()) {
+        if (item != 0xFFFF && item <= Session().enumerated_windows.size()) {
           if (closewindow)
             // PostMessage(hwnd, WM_MENURBUTTONUP, item, lParam);
             SendSYSCOMMANDToMenuItem(hwnd, item,
@@ -464,19 +472,19 @@ LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
       //        break;
     case WM_KILLFOCUS:
       // Menu gets hiden, be sure to zero-out the clickhwnd
-      state.sclickhwnd = nullptr;
+      Session().input.sclickhwnd = nullptr;
       break;
     case WM_DESTROY: {
       LOG("Destroying Menu window!");
       if (mfont) DeleteObject(mfont);  // Delete menufont if needed.
-      if (fhwndori && state.sclickhwnd == fhwndori &&
+      if (fhwndori && Session().input.sclickhwnd == fhwndori &&
           GetWindowLongPtr(hwnd, GWLP_USERDATA) == 1 && IsWindow(fhwndori)) {
         // Restore the old foreground window
         SetForegroundWindow(fhwndori);
       }
       fhwndori = nullptr;
-      state.sclickhwnd = nullptr;
-      state.unikeymenu = nullptr;
+      Session().input.sclickhwnd = nullptr;
+      Session().input.unikeymenu = nullptr;
     } break;
   }
   // LOGA("msg=%X, wParam=%X, lParam=%lX", msg, wParam, lParam);

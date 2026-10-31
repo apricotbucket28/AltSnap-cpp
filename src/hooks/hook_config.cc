@@ -236,7 +236,7 @@ void ReadGeneralOptions(const wchar_t* inipath) {
   g_config.AVoff = std::min<UCHAR>(g_config.AVoff, 100);
   g_config.AeroSpeedTau = std::max<UCHAR>(1, g_config.AeroSpeedTau);
   g_config.MinAlpha = std::max<UCHAR>(1, g_config.MinAlpha);
-  state.snap = g_config.AutoSnap;
+  Session().input.snap = g_config.AutoSnap;
 }
 
 void ReadAdvancedOptions(const wchar_t* inipath) {

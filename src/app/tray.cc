@@ -159,40 +159,40 @@ void WriteCurrentLayoutNumber() {
   }
 }
 // Save a rect as a string in a Zone<num> entry in the inifile
-static void SaveZone(const RECT* rc, unsigned num) {
-  WritePrivateProfileString(L"Zones", ZoneKeyWide(LayoutNumber, num).c_str(),
+static void SaveZone(const RECT* rc, unsigned num, int layout) {
+  WritePrivateProfileString(L"Zones", ZoneKeyWide(layout, num).c_str(),
                             FormatRect(*rc).c_str(), inipath.c_str());
 }
-static void ClearAllZones() {
+static void ClearAllZones(int layout) {
   for (int i = 0; i < 2048; ++i) {
-    const std::wstring key = ZoneKeyWide(LayoutNumber, i);
+    const std::wstring key = ZoneKeyWide(layout, i);
     if (!ReadIniString(L"Zones", key.c_str(), L"", inipath.c_str()).empty()) {
       WritePrivateProfileString(L"Zones", key.c_str(), L"", inipath.c_str());
     }
   }
 }
-// Call with lParam = 1 to reset NZones
+struct SaveZonesContext {
+  int layout;
+  unsigned count = 0;
+};
 static BOOL CALLBACK SaveTestWindow(HWND hwnd, LPARAM lParam) {
-  static unsigned NZones;
-  if (lParam) {  // Reset number of Zones
-    NZones = 0;
-    return FALSE;
-  }
+  auto& context = *reinterpret_cast<SaveZonesContext*>(lParam);
 
   wchar_t classn[256];
   RECT rc;
   if (IsWindowVisible(hwnd) && GetClassName(hwnd, classn, std::size(classn)) &&
       !lstrcmp(classn, APP_NAME L"-Test") && GetWindowRectL(hwnd, &rc)) {
-    SaveZone(&rc, NZones++);
+    SaveZone(&rc, context.count++, context.layout);
     PostMessage(hwnd, WM_CLOSE, 0, 0);
   }
   return TRUE;
 }
 
-void SaveCurrentLayout() {
-  ClearAllZones();
-  SaveTestWindow(nullptr, 1);
-  EnumThreadWindows(GetCurrentThreadId(), SaveTestWindow, 0);
+void SaveCurrentLayout(int layout) {
+  ClearAllZones(layout);
+  SaveZonesContext context{layout};
+  EnumThreadWindows(GetCurrentThreadId(), SaveTestWindow,
+                    reinterpret_cast<LPARAM>(&context));
 }
 
 static BOOL CALLBACK CloseTestWindowCB(HWND hwnd, LPARAM lParam) {

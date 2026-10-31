@@ -26,7 +26,7 @@ static BOOL CALLBACK EnumWindowsProc(HWND window, LPARAM lParam) {
     // Maximized?
     if (IsZoomed(window)) {
       // Skip maximized windows in MDI clients
-      if (state.mdiclient) return TRUE;
+      if (Session().input.mdiclient) return TRUE;
       // Get monitor size
       MONITORINFO mi;
       GetMonitorInfoFromWin(window, &mi);
@@ -43,7 +43,7 @@ static BOOL CALLBACK EnumWindowsProc(HWND window, LPARAM lParam) {
     RECT bdrcR = {sn.rc.right, sn.rc.top, sn.rc.right, sn.rc.bottom};
     RECT bdrcB = {sn.rc.left, sn.rc.bottom, sn.rc.right, sn.rc.bottom};
 
-    for (auto& wnd : wnds) {
+    for (auto& wnd : Session().windows) {
       if (RectInRect(&wnd.rc, &sn.rc)) {
         return TRUE;
       }
@@ -63,7 +63,7 @@ static BOOL CALLBACK EnumWindowsProc(HWND window, LPARAM lParam) {
     sn.hwnd = window;
 
     // Add window to wnds db
-    wnds.push_back(sn);
+    Session().windows.push_back(sn);
   }
   return TRUE;
 }
@@ -90,17 +90,17 @@ static BOOL CALLBACK EnumSnappedWindows(HWND hwnd, LPARAM lParam) {
     // Add the window to the list
     snw.hwnd = hwnd;
     OffsetRectMDI(&snw.rc);
-    snwnds.push_back(snw);
+    Session().snapped_windows.push_back(snw);
   }
   return TRUE;
 }
 // If lParam is set to 1 then only windows that are
 // touching the current window will be considered.
 void EnumSnapped() {
-  snwnds.clear();
+  Session().snapped_windows.clear();
   if (conf.SmartAero & 1) {
-    if (state.mdiclient)
-      EnumChildWindows(state.mdiclient, EnumSnappedWindows, 0);
+    if (Session().input.mdiclient)
+      EnumChildWindows(Session().input.mdiclient, EnumSnappedWindows, 0);
     else
       EnumDesktopWindows(nullptr, EnumSnappedWindows, 0);
   }
@@ -115,20 +115,20 @@ static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
     // Only considers windows that are
     // touching the currently resized window
     RECT statewnd;
-    GetWindowRectL(state.hwnd, &statewnd);
+    GetWindowRectL(Session().input.hwnd, &statewnd);
     sn.flag = AreRectsTouchingT(&statewnd, &sn.rc, conf.SnapThreshold / 2);
     if (sn.flag) {
       OffsetRectMDI(&sn.rc);
 
       // Return if this window is overlapped by another window
-      for (auto& snwnd : snwnds) {
+      for (auto& snwnd : Session().snapped_windows) {
         if (RectInRect(&snwnd.rc, &sn.rc)) {
           return TRUE;
         }
       }
       // Add the window to the list
       sn.hwnd = hwnd;
-      snwnds.push_back(sn);
+      Session().snapped_windows.push_back(sn);
     }
   }
   return TRUE;
@@ -138,24 +138,25 @@ static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
 static void EnumMdi() {
   // Add MDIClient as the monitor
   RECT rc;
-  if (GetClientRect(state.mdiclient, &rc)) monitors.push_back(rc);
+  if (GetClientRect(Session().input.mdiclient, &rc))
+    Session().monitors.push_back(rc);
 
-  if (state.snap > 1) {
-    EnumChildWindows(state.mdiclient, EnumWindowsProc, 0);
+  if (Session().input.snap > 1) {
+    EnumChildWindows(Session().input.mdiclient, EnumWindowsProc, 0);
   }
   if (conf.StickyResize) {
-    EnumChildWindows(state.mdiclient, EnumTouchingWindows, 0);
+    EnumChildWindows(Session().input.mdiclient, EnumTouchingWindows, 0);
   }
 }
 
 // Enumerate all monitors/windows/MDI depending on state.
 static void Enum() {
-  monitors.clear();
-  wnds.clear();
-  snwnds.clear();
+  Session().monitors.clear();
+  Session().windows.clear();
+  Session().snapped_windows.clear();
 
   // MDI
-  if (state.mdiclient && IsWindow(state.mdiclient)) {
+  if (Session().input.mdiclient && IsWindow(Session().input.mdiclient)) {
     EnumMdi();
     return;
   }
@@ -164,7 +165,7 @@ static void Enum() {
   EnumDisplayMonitors(nullptr, nullptr, EnumMonitorsProc, 0);
 
   // Enumerate windows
-  if (state.snap >= 2) {
+  if (Session().input.snap >= 2) {
     EnumDesktopWindows(nullptr, EnumWindowsProc, 0);
   }
 
@@ -174,28 +175,27 @@ static void Enum() {
 }
 
 // Invisible borders (DWM shadow) of the window being moved.
-static RECT g_invisible_borders;
 
 // Enumerates the monitors and windows once per movement, and returns the
 // invisible borders of the window being moved.
 const RECT& EnumOnce() {
-  if (!(state.enumed & 1)) {
+  if (!(Session().input.enumed & 1)) {
     Enum();  // Enumerate monitors and windows
-    FixDWMRect(state.hwnd, &g_invisible_borders);
-    state.enumed |= 1;
+    FixDWMRect(Session().input.hwnd, &Session().invisible_borders);
+    Session().input.enumed |= 1;
   }
-  return g_invisible_borders;
+  return Session().invisible_borders;
 }
 
 // Recompute the invisible borders (e.g. after the window was restored).
 void RecalcInvisibleBorders() {
-  FixDWMRect(state.hwnd, &g_invisible_borders);
+  FixDWMRect(Session().input.hwnd, &Session().invisible_borders);
 }
 void EnumSnappedOnce() {
-  if (!(state.enumed & 2)) {
+  if (!(Session().input.enumed & 2)) {
     // LOGA("EnumSnapped");
     EnumSnapped();
-    state.enumed |= 2;
+    Session().input.enumed |= 2;
   }
 }
 
@@ -206,11 +206,11 @@ BOOL CALLBACK EnumAltTabWindows(HWND window, LPARAM lParam) {
   // to taskbar and on the same monitor as the cursor
   if (IsAltTabAble(window) &&
       (!IsIconic(window) || (lParam && !IsToolWindow(window))) &&
-      state.origin.monitor ==
+      Session().input.origin.monitor ==
           MonitorFromWindow(window, conf.MenuShowOffscreenWin
                                         ? MONITOR_DEFAULTTONEAREST
                                         : MONITOR_DEFAULTTONULL)) {
-    hwnds.push_back(window);
+    Session().enumerated_windows.push_back(window);
     return TRUE;
   }
   return TRUE;
@@ -224,7 +224,7 @@ BOOL CALLBACK EnumAllAltTabWindows(HWND window, LPARAM lParam) {
       (!IsIconic(window) || (lParam && !IsToolWindow(window))) &&
       (conf.MenuShowOffscreenWin ||
        MonitorFromWindow(window, MONITOR_DEFAULTTONULL))) {
-    hwnds.push_back(window);
+    Session().enumerated_windows.push_back(window);
     return TRUE;
   }
   return TRUE;
@@ -234,7 +234,7 @@ BOOL CALLBACK EnumTopMostWindows(HWND window, LPARAM lParam) {
   // to taskbar and on the same monitor as the cursor
   if (IsAltTabAble(window) &&
       GetWindowLongPtr(window, GWL_EXSTYLE) & WS_EX_TOPMOST) {
-    hwnds.push_back(window);
+    Session().enumerated_windows.push_back(window);
     return TRUE;
   }
   return TRUE;
@@ -250,11 +250,12 @@ BOOL CALLBACK EnumStackedWindowsProc(HWND hwnd, LPARAM lasermode) {
   // Only store window if it's visible, not minimized to taskbar
   RECT wnd, refwnd;
   if (IsAltTabAble(hwnd) && !IsIconic(hwnd) &&
-      GetWindowRectL(state.hwnd, &refwnd) && GetWindowRectL(hwnd, &wnd) &&
+      GetWindowRectL(Session().input.hwnd, &refwnd) &&
+      GetWindowRectL(hwnd, &wnd) &&
       (lasermode || StackedRectsT(&refwnd, &wnd, conf.SnapThreshold / 2)) &&
       InflateRect(&wnd, conf.SnapThreshold, conf.SnapThreshold) &&
-      (state.ignorept || PtInRect(&wnd, state.prevpt))) {
-    hwnds.push_back(hwnd);
+      (Session().input.ignorept || PtInRect(&wnd, Session().input.prevpt))) {
+    Session().enumerated_windows.push_back(hwnd);
     return TRUE;
     LOG("EnumStackedWindowsProc found");
   } else {
@@ -274,7 +275,7 @@ BOOL CALLBACK MinimizeWindowProc(HWND hwnd, LPARAM lParam) {
     if (!p->hMon ||
         p->hMon == MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) {
       MinimizeWindow(hwnd);
-      minhwnds.push_back(hwnd);
+      Session().minimized_windows.push_back(hwnd);
       return TRUE;
     }
   }

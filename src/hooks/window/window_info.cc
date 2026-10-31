@@ -14,14 +14,16 @@ namespace altsnap::hooks {
 
 // Upstream: blacklist_cache_state
 static void CacheBlacklistState() {
-  state.cached_hwnd_blacklist = state.hwnd;
-  state.title[0] = state.classname[0] = L'\0';
-  state.exename.clear();
-  if (auto process_info = GetWindowProcessInfo(state.hwnd)) {
-    state.exename = process_info->executable_name;
+  Session().input.cached_hwnd_blacklist = Session().input.hwnd;
+  Session().input.title[0] = Session().input.classname[0] = L'\0';
+  Session().input.exename.clear();
+  if (auto process_info = GetWindowProcessInfo(Session().input.hwnd)) {
+    Session().input.exename = process_info->executable_name;
   }
-  GetWindowText(state.hwnd, state.title, std::size(state.title));
-  GetClassName(state.hwnd, state.classname, std::size(state.classname));
+  GetWindowText(Session().input.hwnd, Session().input.title,
+                std::size(Session().input.title));
+  GetClassName(Session().input.hwnd, Session().input.classname,
+               std::size(Session().input.classname));
 }
 
 // Upstream: blacklisted
@@ -29,10 +31,12 @@ static void CacheBlacklistState() {
   // Null hwnd or empty list
   if (!hwnd || list.empty()) return false;
 
-  if (hwnd == state.hwnd) {
+  if (hwnd == Session().input.hwnd) {
     // Magage a simple cache only for the state window
-    if (state.hwnd != state.cached_hwnd_blacklist) CacheBlacklistState();
-    return list.Contains(state.exename.c_str(), state.title, state.classname);
+    if (Session().input.hwnd != Session().input.cached_hwnd_blacklist)
+      CacheBlacklistState();
+    return list.Contains(Session().input.exename.c_str(), Session().input.title,
+                         Session().input.classname);
   }
 
   wchar_t title[256], classname[256];
@@ -56,11 +60,10 @@ int IsClassName(HWND hwnd, const wchar_t* str) {
          !lstrcmp(classname, str);
 }
 
-// The second bit (&2) will always correspond to the WS_THICKFRAME flag
+// Legacy encoding: bit 2 includes WS_THICKFRAME and any raw ResizeAll bit 2.
 [[nodiscard]] int IsResizable(HWND hwnd) {
   int thickf = !!(GetWindowLongPtr(hwnd, GWL_STYLE) & WS_THICKFRAME);
-  int ret = conf.ResizeAll  // bit two is the real thickframe state.
-            | thickf | (thickf << 1);
+  int ret = conf.ResizeAll | thickf | (thickf << 1);
 
   if (!ret) ret = !!GetBorderlessFlag(hwnd);
   if (!ret) ret = !!IsBlacklisted(hwnd, BlkLst.AResize);  // Always resize list
@@ -117,7 +120,7 @@ int HitTestTimeoutbl(HWND hwnd, POINT pt) {
   DorQWORD area = 0;
 
   // Try first with the ancestor window for some buggy AppX?
-  HWND ancestor = state.hwnd = GetAncestor(hwnd, GA_ROOT);
+  const HWND ancestor = GetAncestor(hwnd, GA_ROOT);
   if (IsBlacklisted(ancestor, BlkLst.MMBLower)) return 0;
   if (hwnd != ancestor && IsBlacklisted(ancestor, BlkLst.NCHittest)) {
     SendMessageTimeout(ancestor, WM_NCHITTEST, 0, MAKELPARAM(pt.x, pt.y),
@@ -185,16 +188,16 @@ BOOL CALLBACK EnumMonitorsProc(HMONITOR hMonitor, HDC hdcMonitor,
   MONITORINFO mi;
   mi.cbSize = sizeof(mi);
   GetMonitorInfo(hMonitor, &mi);
-  monitors.push_back(mi.rcWork);
+  Session().monitors.push_back(mi.rcWork);
   return TRUE;  //*lprcMonitor;
 }
 
 void OffsetRectMDI(RECT* wnd) {
-  OffsetRect(wnd, -state.mdipt.x, -state.mdipt.y);
+  OffsetRect(wnd, -Session().input.mdipt.x, -Session().input.mdipt.y);
 }
 int ShouldSnapTo(HWND hwnd) {
   LONG_PTR style = 0;
-  return hwnd != state.hwnd && IsVisible(hwnd) && !IsIconic(hwnd) &&
+  return hwnd != Session().input.hwnd && IsVisible(hwnd) && !IsIconic(hwnd) &&
          !(GetWindowLongPtr(hwnd, GWL_EXSTYLE) &
            WS_EX_NOACTIVATE)  // != WS_EX_NOACTIVATE
          && (((style = GetWindowLongPtr(hwnd, GWL_STYLE)) & WS_CAPTION) ==
@@ -205,7 +208,8 @@ int ShouldSnapTo(HWND hwnd) {
 }
 
 void GetMonitorRect(const POINT* pt, int full, RECT* _mon) {
-  if (state.mdiclient && GetClientRect(state.mdiclient, _mon)) {
+  if (Session().input.mdiclient &&
+      GetClientRect(Session().input.mdiclient, _mon)) {
     return;  // MDI!
   }
 
@@ -219,8 +223,8 @@ void GetMonitorRect(const POINT* pt, int full, RECT* _mon) {
 // Get state.mdipt and mdi monitor
 BOOL GetMDInfo(POINT* mdicpt, RECT* wnd) {
   mdicpt->x = mdicpt->y = 0;
-  if (!GetClientRect(state.mdiclient, wnd) ||
-      !ClientToScreen(state.mdiclient, mdicpt)) {
+  if (!GetClientRect(Session().input.mdiclient, wnd) ||
+      !ClientToScreen(Session().input.mdiclient, mdicpt)) {
     return FALSE;
   }
   return TRUE;
@@ -289,12 +293,12 @@ int IsMXRolled(HWND hwnd, const RECT* rc) {
 }
 int IsDoubleClick(
     int button) {  // Never validate a double-click if the click has to pierce
-  return !conf.PiercingClick && state.clickbutton == button &&
-         GetTickCount() - state.clicktime <= GetDoubleClickTime();
+  return !conf.PiercingClick && Session().input.clickbutton == button &&
+         GetTickCount() - Session().input.clicktime <= GetDoubleClickTime();
 }
 
 [[nodiscard]] BOOL IsRectInMonitors(const RECT* rc) {
-  for (auto& monitor : monitors) {
+  for (auto& monitor : Session().monitors) {
     int inx = monitor.left < rc->right - 8 && rc->left + 8 < monitor.right;
     int iny = monitor.top < rc->bottom - 8 && rc->top + 8 < monitor.bottom;
     if (inx && iny)  // Windows is inside one of the monitors.
@@ -315,8 +319,8 @@ int IsDoubleClick(
   return (area >= HTTOP && area <= HTTOPRIGHT);  // Top resizing border
 }
 int InTitlebar(POINT pt, action_t action, enum button button) {
-  int willtest = ((conf.TTBActions & 1) && !state.alt) ||
-                 ((conf.TTBActions & 2) && state.alt);
+  int willtest = ((conf.TTBActions & 1) && !Session().input.alt) ||
+                 ((conf.TTBActions & 2) && Session().input.alt);
   if (willtest && action.ac) {
     HWND nhwnd = WindowFromPoint(pt);
     if (!nhwnd) return 0;  // Next hook!

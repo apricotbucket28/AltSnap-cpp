@@ -6,6 +6,8 @@
 
 namespace altsnap::hooks {
 
+void ResumeDeferredAltAction();
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
 }  // namespace altsnap::hooks
