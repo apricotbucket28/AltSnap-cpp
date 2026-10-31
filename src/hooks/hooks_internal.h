@@ -4,6 +4,7 @@
 #define ALTSNAP_HOOKS_INTERNAL_H_
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "hooks/blacklist.h"
 #include "hooks/hooks.h"
 #include "hooks/input_options.h"
+#include "hooks/worker.h"
 
 namespace altsnap::hooks {
 
@@ -25,8 +27,6 @@ enum {
   POOL_TIMER = (7)
 };
 
-inline constexpr UINT WM_DOWORK = WM_APP + 6;
-inline constexpr UINT WM_DOMOUSEMOVE = WM_APP + 7;
 inline constexpr UINT WM_DOACTION = WM_APP + 8;
 
 enum { BD_HIDDEN_L = 1, BD_HIDDEN_T = 2, BD_HIDDEN_R = 4, BD_HIDDEN_B = 8 };
@@ -41,8 +41,6 @@ enum {
   RESET_OFFSET = 22,
   DRAG_WAIT = 77
 };
-
-enum { STACK = 0x1000 };
 
 // Enumerators
 enum button {
@@ -293,14 +291,20 @@ struct config {
 extern const struct config& conf;  // Read-only; written by hook_config.cc
 
 // The only two exports of hooks.dll (resolved by name with GetProcAddress).
+// Both calls belong to mainhwnd's thread. Load returns nullptr on failure,
+// after rolling back; Unload must complete before releasing the DLL.
 extern "C" {
-__declspec(dllexport) void WINAPI Unload();
+// TRUE confirms the caller owns an idle session (including rollback).
+__declspec(dllexport) BOOL WINAPI Unload();
 __declspec(dllexport) WNDPROC WINAPI Load(HWND mainhwnd,
                                           const wchar_t* inipath);
 }
 
 extern HWND g_mainhwnd;
 extern HINSTANCE hinstDLL;
+
+// Low-level callbacks pass input through during startup and teardown.
+[[nodiscard]] bool HooksActive();
 
 inline void FixDWMRect(HWND hwnd, RECT* rect) {
   FixDWMRectLL(hwnd, rect, conf.SnapGap);
@@ -374,12 +378,11 @@ struct MinimizeWindowProcParams {
 // State shared by the hooks.dll modules (defined in hooks.cc).
 extern HWND g_transhwnd[4];
 extern HWND g_mchwnd;
-extern DWORD g_WorkerThreadID;
-extern UCHAR g_InFinishMovement;
-extern UCHAR g_InMouseMove;
+extern std::atomic<UCHAR> g_InFinishMovement;
+extern std::atomic<UCHAR> g_InMouseMove;
 extern Blacklists BlkLst;
 extern std::array<std::vector<UCHAR>, 36> g_inputSequences;
-extern HHOOK mousehook;
+extern std::atomic<HHOOK> mousehook;
 extern std::vector<snwdata> snwnds;
 extern std::vector<HWND> minhwnds;
 

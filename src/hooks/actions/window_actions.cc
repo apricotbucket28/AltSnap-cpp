@@ -99,11 +99,7 @@ int ActionKill(HWND hwnd) {
 
   if (IsBlacklisted(hwnd, BlkLst.Pause)) return 0;
 
-  PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                    reinterpret_cast<WPARAM>(ActionKillThread),
-                    reinterpret_cast<LPARAM>(hwnd));
-
-  return 1;
+  return PostWorkerTask([hwnd] { ActionKillThread(hwnd); });
 }
 // Try harder to actually set the window foreground.
 void ReallySetForegroundWindow(HWND hwnd) {

@@ -3,12 +3,15 @@
 #define ALTSNAP_HOOK_CONFIG_H_
 
 #include "hooks/hooks_internal.h"
+#include "hooks/overlay/trans_window.h"
 
 namespace altsnap::hooks {
 
 // Reads all the options of the ini file into `conf`, the blacklists and the
 // input sequences. Upstream: the first half of Load().
-void ReadConfig(const wchar_t* inipath);
+[[nodiscard]] bool ReadConfig(
+    const wchar_t* inipath,
+    bool (*create_trans_window)(const IniSection&) = CreateTransWin);
 
 // Registers the keyboard shortcuts of the [KBShortcuts] section.
 void RegisterAllHotkeys(const wchar_t* inipath);

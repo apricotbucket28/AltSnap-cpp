@@ -316,7 +316,7 @@ bool HandleKeyUp(UCHAR vkey) {
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   const auto* kb = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
 
-  if (nCode != HC_ACTION || state.ignorekey) {
+  if (nCode != HC_ACTION || !HooksActive() || state.ignorekey) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
   }
 

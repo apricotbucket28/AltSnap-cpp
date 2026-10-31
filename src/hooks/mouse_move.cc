@@ -17,8 +17,7 @@
 namespace altsnap::hooks {
 
 void MouseMove(POINT pt) {
-  if (!g_InFinishMovement)
-    PostThreadMessage(g_WorkerThreadID, WM_DOMOUSEMOVE, pt.x, pt.y);
+  if (!g_InFinishMovement) (void)PostWorkerMouseMove(pt);
 }
 // Where a move or resize step wants to put the window.
 struct TargetRect {

@@ -15,7 +15,7 @@ BOOL IsTransWinVisible();
 void MoveTransWin(struct windowRR* lw);
 void RestrictToCurentMonitor();
 void UpdateCursor(POINT pt);
-void CreateTransWin(const IniSection& section);
+[[nodiscard]] bool CreateTransWin(const IniSection& section);
 
 }  // namespace altsnap::hooks
 

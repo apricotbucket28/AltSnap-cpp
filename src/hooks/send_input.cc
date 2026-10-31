@@ -106,9 +106,7 @@ void SendClick(int button) {
 }
 // Upstream: Send_Click_Thread
 void SendClickThread(enum button button) {
-  PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                    reinterpret_cast<WPARAM>(SendClickProc),
-                    static_cast<LPARAM>(button));
+  (void)PostWorkerTask([button] { SendClick(button); });
 }
 
 // Sends an unicode character to the system.

@@ -277,7 +277,8 @@ std::optional<LRESULT> HandleButtonUp(const MouseEvent& e) {
 
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
   const auto* msg = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-  if (nCode != HC_ACTION || state.ignoreclick || ScrollLockState()) {
+  if (nCode != HC_ACTION || !HooksActive() || state.ignoreclick ||
+      ScrollLockState()) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
   }
 
@@ -316,7 +317,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 // Whether the mouse hook stays installed permanently (needed by some options)
 // instead of only while a button is pressed. Set from the configuration.
-static bool g_keep_mousehook = false;
+static std::atomic<bool> g_keep_mousehook{false};
 void SetKeepMouseHook(bool keep) {
   g_keep_mousehook = keep;
 }
@@ -342,8 +343,7 @@ static void UnhookMouseOnly() {
   if (!mousehook || g_keep_mousehook || state.blockmouseup) return;
 
   // Remove mouse hook
-  UnhookWindowsHookEx(mousehook);
-  mousehook = nullptr;
+  if (HHOOK hook = mousehook.exchange(nullptr)) UnhookWindowsHookEx(hook);
 }
 void UnhookMouse() {
   // Stop action

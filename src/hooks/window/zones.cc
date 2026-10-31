@@ -539,8 +539,8 @@ static void ZonesPrevResetRegion() {
   SetWindowRgn(g_zphwnd, hregion, FALSE);
 }
 
-void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
-  if (!conf.ShowZonesPrevw) return;
+bool SnapLayoutPreviewCreateDestroy(const IniSection* section) {
+  if (!conf.ShowZonesPrevw) return true;
   if (section) {
     const COLORREF bgcol = ReadColor(*section, "ZonesPrevwBGCol", L"FF FF FF",
                                      ColorChannels::kRgb);
@@ -554,7 +554,10 @@ void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
     const WNDCLASS wnd = {
         0,       wproc,   0,      0,       hinstDLL,
         nullptr, nullptr, wbrush, nullptr, APP_NAME L"-ZonesPreview"};
-    RegisterClass(&wnd);
+    if (!wbrush || !RegisterClass(&wnd)) {
+      if (wbrush) DeleteObject(wbrush);
+      return false;
+    }
 
     int left = 0, top = 0, width = 0, height = 0;
     if (GetSystemMetrics(SM_CMONITORS) >= 1) {
@@ -570,16 +573,21 @@ void SnapLayoutPreviewCreateDestroy(const IniSection* section) {
         usetrans ? WS_EX_TOOLWINDOW | WS_EX_LAYERED : WS_EX_TOOLWINDOW,
         wnd.lpszClassName, nullptr, WS_POPUP, left, top, width, height,
         g_mainhwnd, nullptr, hinstDLL, nullptr);
+    if (!g_zphwnd) return false;
     SetWindowLevel(g_zphwnd, state.hwnd);  // Behind
-    if (usetrans) SetLayeredWindowAttributes(g_zphwnd, 0, opacity, LWA_ALPHA);
+    if (usetrans &&
+        !SetLayeredWindowAttributes(g_zphwnd, 0, opacity, LWA_ALPHA))
+      return false;
 
     // Set Window Region to only show outlines if needed...
     ZonesPrevResetRegion();
 
   } else {
     if (g_zphwnd) DestroyWindow(g_zphwnd);
+    g_zphwnd = nullptr;
     UnregisterClass(APP_NAME L"-ZonesPreview", hinstDLL);
   }
+  return true;
 }
 
 // The active zone layout. The ini file only provides the initial value.

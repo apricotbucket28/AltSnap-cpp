@@ -2,10 +2,16 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <thread>
 
+#include "app/hook_shutdown.h"
 #include "hooks/hook_config.h"
+#include "hooks/hook_startup.h"
 #include "hooks/hotkey_message.h"
 #include "hooks/input_options.h"
+#include "hooks/keyboard_hook.h"
+#include "hooks/mouse_hook.h"
+#include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"
 
 namespace altsnap::hooks {
@@ -198,6 +204,169 @@ void TestMessages() {
   FreeZones();
 }
 
+constexpr UINT kLifecycleSend = WM_APP + 101;
+const wchar_t* lifecycle_path = nullptr;
+LRESULT CALLBACK LifecycleWindowProc(HWND window, UINT message, WPARAM wp,
+                                     LPARAM lp) {
+  if (message == kLifecycleSend) {
+    // Stop pumps synchronous sends. Neither lifecycle entry point may reenter
+    // teardown or replace resources while the old worker is still draining.
+    CHECK(g_mainhwnd == window);
+    CHECK(!Unload());
+    CHECK(Load(window, lifecycle_path) == nullptr);
+    CHECK(g_mainhwnd == window);
+    return 123;
+  }
+  return DefWindowProcW(window, message, wp, lp);
+}
+
+int keyboard_stage = 0;
+int overlay_stage = 0;
+HHOOK WINAPI FailKeyboardHook(int, HOOKPROC, HINSTANCE, DWORD) {
+  ++keyboard_stage;
+  CHECK(PostWorkerTask([] {}));  // The real worker has started.
+  SetLastError(ERROR_ACCESS_DENIED);
+  return nullptr;
+}
+bool FailOverlay(const IniSection&) {
+  ++overlay_stage;
+  CHECK(!PostWorkerTask([] {}));  // Failure precedes worker startup.
+  return false;
+}
+void TestModalGuard() {
+  for (UINT message :
+       {UINT{WM_TRAY}, UINT{WM_SCLICK}, UINT{WM_UNIKEYMENU},
+        UINT{WM_OPENCONFIG}, UINT{WM_UPDATESETTINGS}, UINT{WM_COMMAND}}) {
+    CHECK(altsnap::app::DeferDuringHookShutdown(true, message));
+    CHECK(!altsnap::app::DeferDuringHookShutdown(false, message));
+  }
+  CHECK(!altsnap::app::DeferDuringHookShutdown(true, WM_PAINT));
+}
+
+void TestLifecycle(const std::wstring& path) {
+  lifecycle_path = path.c_str();
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  WNDCLASSW wc{};
+  wc.hInstance = instance;
+  wc.lpfnWndProc = LifecycleWindowProc;
+  wc.lpszClassName = L"AltSnapLifecycleTest";
+  if (!RegisterClassW(&wc)) {
+    std::puts("SKIP native lifecycle: window class unavailable");
+    return;
+  }
+  HWND window =
+      CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 200,
+                      100, nullptr, nullptr, instance, nullptr);
+  if (!window) {
+    std::puts("SKIP native lifecycle: window creation unavailable");
+    UnregisterClass(wc.lpszClassName, instance);
+    return;
+  }
+  hinstDLL = instance;
+  CHECK(Load(nullptr, path.c_str()) == nullptr);
+  CHECK(Load(window, nullptr) == nullptr);
+  Unload();
+
+  // No overlays: force keyboard hook installation to fail AFTER the worker
+  // starts. A subsequent real Load must succeed without stale state/resources.
+  CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin", L"1",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Zones", L"UseZones", L"0", path.c_str()));
+  HookStartup injected;
+  injected.keyboard_hook = FailKeyboardHook;
+  CHECK(LoadSession(window, path.c_str(), injected) == nullptr);
+  CHECK(keyboard_stage == 1 && overlay_stage == 0);
+  CHECK(g_mainhwnd == nullptr);
+  CHECK(!PostWorkerTask([] {}));
+  CHECK(!mousehook);
+  Unload();
+  // Also roll back when configuration cannot create its overlay windows.
+  CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin", L"0",
+                                   path.c_str()));
+  injected.create_trans_window = FailOverlay;
+  CHECK(LoadSession(window, path.c_str(), injected) == nullptr);
+  CHECK(overlay_stage == 1 && keyboard_stage == 1);
+  CHECK(g_mainhwnd == nullptr && !HooksActive());
+  for (HWND overlay : g_transhwnd) CHECK(overlay == nullptr);
+  // Test genuine hook availability separately from injected failures.
+  HHOOK keyboard =
+      SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, instance, 0);
+  HHOOK mouse = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, instance, 0);
+  if (keyboard) UnhookWindowsHookEx(keyboard);
+  if (mouse) UnhookWindowsHookEx(mouse);
+  if (!keyboard || !mouse) {
+    std::puts("SKIP native lifecycle: low-level hooks unavailable");
+    DestroyWindow(window);
+    UnregisterClass(wc.lpszClassName, instance);
+    return;
+  }
+
+  for (int cycle = 0; cycle < 12; ++cycle) {
+    // Alternate hollow frames / layered frame / full-window movement and
+    // preview enabled / disabled to catch handles surviving config changes.
+    CHECK(WritePrivateProfileStringW(L"Performance", L"FullWin",
+                                     cycle % 3 == 2 ? L"1" : L"0",
+                                     path.c_str()));
+    CHECK(WritePrivateProfileStringW(L"Performance", L"TransWinOpacity",
+                                     cycle % 3 == 1 ? L"160" : L"0",
+                                     path.c_str()));
+    CHECK(WritePrivateProfileStringW(L"General", L"InactiveScroll", L"1",
+                                     path.c_str()));
+    CHECK(
+        WritePrivateProfileStringW(L"Zones", L"UseZones", L"3", path.c_str()));
+    CHECK(WritePrivateProfileStringW(L"Zones", L"ShowZonesPrevw",
+                                     cycle % 2 ? L"1" : L"0", path.c_str()));
+    const DWORD gdi_before =
+        GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    const DWORD user_before =
+        GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+    CHECK(Load(window, path.c_str()) != nullptr);
+    CHECK(mousehook);
+    CHECK(Load(window, path.c_str()) == nullptr);
+    bool foreign_load_rejected = false;
+    std::thread foreign([&] {
+      foreign_load_rejected = Load(window, path.c_str()) == nullptr;
+      CHECK(!Unload());  // A foreign thread cannot destroy UI-owned resources.
+    });
+    foreign.join();
+    CHECK(foreign_load_rejected && HooksActive());
+    MoveWindowAsync(window, 10 + cycle, 20 + cycle, 220, 120);
+    bool resources_alive = false;
+    LRESULT send_result = 0;
+    CHECK(PostWorkerTask([&] {
+      resources_alive = g_mainhwnd == window && conf.InactiveScroll == 1;
+      send_result = SendMessageW(window, kLifecycleSend, 0, 0);
+    }));
+    CHECK(Unload());
+    CHECK(resources_alive && send_result == 123);
+    CHECK(g_mainhwnd == nullptr && !mousehook);
+    CHECK(!KeepMouseHook());
+    CHECK(!PostWorkerTask([] {}));
+    for (HWND overlay : g_transhwnd) CHECK(overlay == nullptr);
+    CHECK(RegisteredHotkeys().empty());
+    CHECK(monitors.empty() && wnds.empty() && snwnds.empty());
+    // Move-only requests deliberately use SWP_ASYNCWINDOWPOS. Flush the OS
+    // window messages after the worker has joined, as the normal UI loop does.
+    MSG message;
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+    }
+    RECT rect{};
+    CHECK(GetWindowRect(window, &rect));
+    CHECK(rect.left == 10 + cycle && rect.top == 20 + cycle);
+    // USER/GDI initialize process caches on first use of each overlay mode.
+    if (cycle >= 3)
+      CHECK(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <=
+            gdi_before + 4);
+    CHECK(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) <=
+          user_before + 4);
+    Unload();
+  }
+  CHECK(DestroyWindow(window));
+  CHECK(UnregisterClassW(wc.lpszClassName, instance));
+}
+
 }  // namespace
 
 int main() {
@@ -217,6 +386,8 @@ int main() {
   TestBindings(path);
   TestByteReaders(path);
   TestMessages();
+  TestModalGuard();
+  TestLifecycle(path);
   CHECK(DeleteFileW(path.c_str()));
   std::printf(g_failures ? "%d FAILURE(S)\n" : "all hook tests passed\n",
               g_failures);

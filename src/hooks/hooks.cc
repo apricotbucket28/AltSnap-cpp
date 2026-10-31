@@ -9,15 +9,18 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "hooks/actions/click_actions.h"
 #include "hooks/blacklist.h"
 #include "hooks/hook_config.h"
+#include "hooks/hook_startup.h"
 #include "hooks/hooks_internal.h"
 #include "hooks/hotkey_message.h"
 #include "hooks/keyboard_hook.h"
 #include "hooks/mouse_hook.h"
+#include "hooks/mouse_move.h"
 #include "hooks/movement.h"
 #include "hooks/overlay/pin_window.h"
 #include "hooks/overlay/window_menu.h"
@@ -32,10 +35,32 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
 
 HWND g_transhwnd[4];  // 4 windows to make a hollow window
 HWND g_mchwnd;        // For the Action menu messages
-DWORD g_WorkerThreadID;
-static HANDLE g_WorkerThreadHANDLE;
-UCHAR g_InFinishMovement;
-UCHAR g_InMouseMove;
+std::atomic<UCHAR> g_InFinishMovement;
+std::atomic<UCHAR> g_InMouseMove;
+
+namespace {
+enum class Phase { kIdle, kStarting, kActive, kStopping };
+std::atomic<Phase> g_phase{Phase::kIdle};
+std::atomic<DWORD> g_owner_thread{0};
+// Intentionally process-lived: no Worker/queue destruction under loader lock,
+// including process termination without Unload. The app refuses to unload an
+// active DLL; normal session resources are released by Stop/CleanUpSession.
+Worker& g_worker = *new Worker([](POINT point) {
+  g_InMouseMove = 1;
+  MouseMoveNow(point);
+  g_InMouseMove = 0;
+});
+}  // namespace
+
+bool PostWorkerTask(Worker::Task task, Worker::Importance importance) {
+  return g_worker.Post(std::move(task), importance);
+}
+bool PostWorkerMouseMove(POINT point) {
+  return g_worker.PostMouseMove(point);
+}
+bool HooksActive() {
+  return g_phase == Phase::kActive;
+}
 
 windowRR_t LastWin;
 HookState state;
@@ -52,7 +77,7 @@ HWND g_mainhwnd = nullptr;
 
 // Hook data
 HINSTANCE hinstDLL = nullptr;
-HHOOK mousehook = nullptr;
+std::atomic<HHOOK> mousehook{nullptr};
 static HHOOK g_keyhook = nullptr;
 // snapped windows database.
 std::vector<snwdata> snwnds;
@@ -101,7 +126,8 @@ std::vector<HWND> minhwnds;
 // Window for timers only...
 VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                               DWORD dwTime) {
-  if (msg != WM_TIMER) return;  // should never happen.
+  if (g_phase != Phase::kActive || msg != WM_TIMER)
+    return;  // Ignore stale timer callbacks during startup/teardown.
 
   // LOG("TimerWindowProc(%x, %u, %u, %lu)", (UINT)(UINT_PTR)hwnd, msg, idEvent,
   // dwTime);
@@ -114,7 +140,7 @@ VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
       GetCursorPos(
           &pt);  // I donot know if we should really use the ASYN version.
       if (mousehook && !SamePt(state.prevpt, pt)) {
-        UnhookWindowsHookEx(mousehook);
+        UnhookWindowsHookEx(mousehook.exchange(nullptr));
         mousehook =
             SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, hinstDLL, 0);
       }
@@ -173,10 +199,14 @@ static void KillAllTimers() {
   KillTimer(g_mainhwnd, REHOOK_TIMER);
   KillTimer(g_mainhwnd, SPEED_TIMER);
   KillTimer(g_mainhwnd, GRAB_TIMER);
+  KillTimer(g_mainhwnd, HIDELAYOUT_TIMER);
 }
 
 LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
+  if (g_phase != Phase::kActive &&
+      (msg == WM_HOTKEY || msg == WM_STACKLIST || msg == WM_SETLAYOUTNUM))
+    return 0;
   if (msg == WM_HOTKEY) {
     const auto request = DecodeHotkeyMessage(
         wParam, lParam, RegisteredHotkeys(), conf.UsePtWindow);
@@ -245,61 +275,69 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
-void WINAPI Unload() {
-  // UnKook keyboard.
+namespace {
+// UI thread only. Also used after any partially completed Load().
+void CleanUpSession() {
+  g_phase = Phase::kStopping;
+  g_worker.Close();
   if (g_keyhook) {
-    [[maybe_unused]] const BOOL ret = UnhookWindowsHookEx(g_keyhook);
-    LOG("UnhookWindowsHookEx(%llx) -> %d",
-        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_keyhook)),
-        static_cast<int>(ret));
+    UnhookWindowsHookEx(g_keyhook);
+    g_keyhook = nullptr;
   }
-  g_keyhook = nullptr;
-
-  // Quit Worker Thread...
-  PostThreadMessage(g_WorkerThreadID, WM_DOWORK, 0, 0);
-
-  SetKeepMouseHook(false);
-  if (mousehook) {
-    UnhookWindowsHookEx(mousehook);
-    mousehook = nullptr;
-  }
+  if (HHOOK hook = mousehook.exchange(nullptr)) UnhookWindowsHookEx(hook);
   KillAllTimers();
-  KillAltSnapMenu();
-  if (conf.TransWinOpacity) {
-    DestroyWindow(g_transhwnd[0]);
-    g_transhwnd[0] = nullptr;
-  } else {
-    for (auto& i : g_transhwnd) {
-      DestroyWindow(i);
-      i = nullptr;
-    }
-  }
-
   UnregisterAllHotkeys();
 
+  // Keep configuration, overlays and all shared containers alive until every
+  // accepted job has finished. Stop services synchronous sends to this thread;
+  // phase guards reject reentrant lifecycle calls and action messages.
+  g_worker.Stop();
+  SetKeepMouseHook(false);
+  UnhookMouse();  // Restore opacity/cursor clipping even if disabled mid-drag.
+  KillAllTimers();
+  KillAltSnapMenu();
+  for (HWND& window : g_transhwnd) {
+    if (window) DestroyWindow(window);
+    window = nullptr;
+  }
   EnumThreadWindows(GetCurrentThreadId(), PostPinWindowsProcMessage, WM_CLOSE);
   UnregisterClass(APP_NAME L"-Timers", hinstDLL);
   UnregisterClass(APP_NAME L"-SClick", hinstDLL);
   UnregisterClass(APP_NAME L"-Trans", hinstDLL);
   UnregisterClass(APP_NAME L"-Pin", hinstDLL);
   UnregisterClass(APP_NAME L"-HotKeys", hinstDLL);
-
-  SnapLayoutPreviewCreateDestroy(nullptr /*DESTROY*/);
-
+  SnapLayoutPreviewCreateDestroy(nullptr);
   FreeBlacklists();
-
   FreeAllInputSequences();
-
-  monitors = {};
-  hwnds = {};
-  wnds = {};
-  snwnds = {};
-  minhwnds = {};
+  monitors.clear();
+  hwnds.clear();
+  wnds.clear();
+  snwnds.clear();
+  minhwnds.clear();
   FreeZones();
+  state = {};
+  LastWin = {};
+  g_InFinishMovement = 0;
+  g_InMouseMove = 0;
+  g_mainhwnd = nullptr;
+  g_phase = Phase::kIdle;
+}
+}  // namespace
 
-  // Wait for worker thread to have a clean closing...
-  WaitForSingleObject(g_WorkerThreadHANDLE, 5000);
-  CloseHandle(g_WorkerThreadHANDLE);
+BOOL WINAPI Unload() {
+  // Windows and low-level hooks belong to the Load caller. A foreign thread
+  // must not destroy them, and a synchronous send during Stop must not reenter.
+  if (g_owner_thread != 0 && g_owner_thread != GetCurrentThreadId()) {
+    LOG("Unload rejected: wrong thread");
+    return FALSE;
+  }
+  Phase expected = Phase::kActive;
+  if (!g_phase.compare_exchange_strong(expected, Phase::kStopping)) {
+    LOG("Unload rejected: phase %d", static_cast<int>(expected));
+    return expected == Phase::kIdle;
+  }
+  CleanUpSession();
+  return TRUE;
 }
 
 // Create a window for msessages handeling timers, menu etc.
@@ -322,40 +360,42 @@ HWND KreateMsgWin(WNDPROC proc, const wchar_t* name, LONG_PTR userdata) {
 
 // Has to be called at startup, it mainly reads the config.
 WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
-  assert(g_keyhook == nullptr);  // We cannot Load twice again...
+  return LoadSession(mainhwnd, inipath, HookStartup{});
+}
 
-  // Reset stuff...
-  state = {};
-  ZeroObject(LastWin);
-
-  ReadConfig(inipath);
-
-  // Capture main hwnd from caller. This is also the cursor wnd
+WNDPROC LoadSession(HWND mainhwnd, const wchar_t* inipath,
+                    const HookStartup& startup) {
+  if (!mainhwnd || !inipath ||
+      GetWindowThreadProcessId(mainhwnd, nullptr) != GetCurrentThreadId())
+    return nullptr;
+  Phase expected = Phase::kIdle;
+  if (!g_phase.compare_exchange_strong(expected, Phase::kStarting))
+    return nullptr;
+  g_owner_thread = GetCurrentThreadId();
   g_mainhwnd = mainhwnd;
-
-  // read and register all shortcuts related options.
+  state = {};
+  LastWin = {};
+  if (!ReadConfig(inipath, startup.create_trans_window) ||
+      !g_worker.Start(startup.worker)) {
+    CleanUpSession();
+    return nullptr;
+  }
   RegisterAllHotkeys(inipath);
-
-  // Hook mouse if a permanent hook is needed
   if (KeepMouseHook()) {
     HookMouse();
-    SetTimer(g_mainhwnd, REHOOK_TIMER, 5000,
-             static_cast<TIMERPROC>(TimerWindowProc));  // Start rehook timer
+    if (!mousehook ||
+        !SetTimer(g_mainhwnd, REHOOK_TIMER, 5000, TimerWindowProc)) {
+      CleanUpSession();
+      return nullptr;
+    }
   }
-
-  // Set up the keyboard hook
   g_keyhook =
-      SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, hinstDLL, 0);
-  if (g_keyhook == nullptr) {
-    LOG("ERROR: Keyboard HOOK could not be set");
+      startup.keyboard_hook(WH_KEYBOARD_LL, LowLevelKeyboardProc, hinstDLL, 0);
+  if (!g_keyhook) {
+    CleanUpSession();
+    return nullptr;
   }
-
-  // Create worker thread.
-  g_WorkerThreadHANDLE =
-      CreateThread(nullptr, STACK, WorkerThread, nullptr,
-                   STACK_SIZE_PARAM_IS_A_RESERVATION, &g_WorkerThreadID);
-  // SetThreadPriority(g_WorkerThreadHANDLE, THREAD_PRIORITY_BELOW_NORMAL);
-
+  g_phase = Phase::kActive;
   return HooksWinProc;
 }
 

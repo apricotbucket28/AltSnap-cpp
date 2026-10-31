@@ -103,8 +103,7 @@ int StartMoveOrResize(POINT pt, action_t action, RECT& wnd, int button) {
       !(GetKeyState(VK_SHIFT) & 0x8000)) {
     // This will pop down menu and stuff
     // In case autofocus did not do it.
-    PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                      reinterpret_cast<WPARAM>(SendAltCtrlAlt), 0);
+    (void)PostWorkerTask([] { SendAltCtrlAlt(nullptr); });
   }
 
   // Set action state.
@@ -305,8 +304,8 @@ static DWORD WINAPI FinishMovementNow(LPVOID pp) {
 }
 void FinishMovementAsync() {
   g_InFinishMovement = 1;
-  PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                    reinterpret_cast<WPARAM>(FinishMovementNow), 0);
+  if (!PostWorkerTask([] { FinishMovementNow(nullptr); }))
+    g_InFinishMovement = 0;
 }
 
 // state.action is the current action

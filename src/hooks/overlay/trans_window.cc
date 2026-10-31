@@ -175,7 +175,7 @@ void UpdateCursor(POINT pt) {
   }
 }
 
-void CreateTransWin(const IniSection& section) {
+bool CreateTransWin(const IniSection& section) {
   // Read the color for the TransWin from ini file
   const COLORREF color =
       ReadColor(section, "FrameColor", L"80 00 80", ColorChannels::kRgb);
@@ -186,7 +186,10 @@ void CreateTransWin(const IniSection& section) {
   wnd.hInstance = hinstDLL;
   wnd.hbrBackground = CreateSolidBrush(color);
   wnd.lpszClassName = APP_NAME L"-Trans";
-  RegisterClass(&wnd);
+  if (!wnd.hbrBackground || !RegisterClass(&wnd)) {
+    if (wnd.hbrBackground) DeleteObject(wnd.hbrBackground);
+    return false;
+  }
   g_transhwnd[0] = nullptr;
   if (conf.TransWinOpacity) {
     int xflags = conf.TransWinOpacity == 255
@@ -195,9 +198,11 @@ void CreateTransWin(const IniSection& section) {
     g_transhwnd[0] =
         CreateWindowEx(xflags, wnd.lpszClassName, nullptr, WS_POPUP, 0, 0, 0, 0,
                        nullptr, nullptr, hinstDLL, nullptr);
-    if (conf.TransWinOpacity != 255)
-      SetLayeredWindowAttributes(g_transhwnd[0], 0, conf.TransWinOpacity,
-                                 LWA_ALPHA);
+    if (g_transhwnd[0] && conf.TransWinOpacity != 255 &&
+        !SetLayeredWindowAttributes(g_transhwnd[0], 0, conf.TransWinOpacity,
+                                    LWA_ALPHA))
+      return false;
+    if (g_transhwnd[0]) return true;
   }
   if (!g_transhwnd[0]) {
     for (auto& i :
@@ -209,6 +214,8 @@ void CreateTransWin(const IniSection& section) {
           static_cast<DWORD>(reinterpret_cast<DorQWORD>(i)));
     }
   }
+  return std::ranges::all_of(g_transhwnd,
+                             [](HWND window) { return window != nullptr; });
 }
 
 }  // namespace altsnap::hooks

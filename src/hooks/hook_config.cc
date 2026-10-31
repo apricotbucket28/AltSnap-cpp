@@ -321,7 +321,8 @@ void ReadMenuAccelerators(const IniSection& input) {
   g_config.MenuAccelMap[std::size(g_config.MenuAccelMap) - 1] = 0;
 }
 
-void ReadInputOptions(const wchar_t* inipath) {
+bool ReadInputOptions(const wchar_t* inipath,
+                      bool (*create_trans_window)(const IniSection&)) {
   const IniSection input = IniSection::Read(inipath, L"Input");
   ReadAllUchars(input, Input_uchars, std::size(Input_uchars));
   g_config.actions = ReadButtonActions(input);
@@ -331,15 +332,17 @@ void ReadInputOptions(const wchar_t* inipath) {
         ReadColor(input, "PinColor", L"FF FF 00 54", ColorChannels::kRgba);
   }
   if (!g_config.FullWin) {
-    CreateTransWin(input);  // The hollow window used while moving.
+    if (!create_trans_window(input))
+      return false;  // The hollow window used while moving.
   }
 
   ReadHotkeyLists(input);
   ReadMenuAccelerators(input);
   ReadAllInputSequences(input);  // User shortcuts / input sequences
+  return true;
 }
 
-void ReadZoneOptions(const wchar_t* inipath) {
+bool ReadZoneOptions(const wchar_t* inipath) {
   const IniSection zones = IniSection::Read(inipath, L"Zones");
   ReadAllUchars(zones, Zones_uchars, std::size(Zones_uchars));
 
@@ -350,31 +353,35 @@ void ReadZoneOptions(const wchar_t* inipath) {
     } else {
       ReadZones(zones);
     }
-    SnapLayoutPreviewCreateDestroy(&zones /*CREATE*/);
+    if (!SnapLayoutPreviewCreateDestroy(&zones /*CREATE*/)) return false;
   }
+  return true;
 }
 
 }  // namespace
 
-void ReadConfig(const wchar_t* inipath) {
+bool ReadConfig(const wchar_t* inipath,
+                bool (*create_trans_window)(const IniSection&)) {
+  g_config = {};
   g_config.dbclickX = GetSystemMetrics(SM_CXDOUBLECLK);
   g_config.dbclickY = GetSystemMetrics(SM_CYDOUBLECLK);
 
   ReadGeneralOptions(inipath);
   ReadAdvancedOptions(inipath);
   ReadPerformanceOptions(inipath);
-  ReadInputOptions(inipath);
+  if (!ReadInputOptions(inipath, create_trans_window)) return false;
 
   BlkLst = Blacklists::Read(IniSection::Read(inipath, L"Blacklist"));
 
   ResetDB();  // Zero the database of restore info (snap.cc)
 
-  ReadZoneOptions(inipath);
+  if (!ReadZoneOptions(inipath)) return false;
 
   SetKeepMouseHook((g_config.TTBActions & 1)    // titlebar action w/o Alt
                    || g_config.InactiveScroll   // Inactive scrolling
                    || g_config.Hotclick[0]      // Hotclick
                    || g_config.LongClickMove);  // Move with long click
+  return true;
 }
 
 }  // namespace altsnap::hooks

@@ -17,54 +17,6 @@
 
 namespace altsnap::hooks {
 
-// Worker Thread, use PostThreadMessage...
-DWORD WINAPI WorkerThread(LPVOID p) {
-  MSG msg;
-  BOOL ret = 0;
-  while ((ret = GetMessage(&msg, nullptr, 0, 0))) {
-    if (ret == -1) return FALSE;
-    if (msg.hwnd != nullptr) continue;
-
-    // use wParam as proc and lParam as parameter
-    UINT message = msg.message;
-    if (message == WM_DOWORK) {
-      auto work_funk = reinterpret_cast<LPTHREAD_START_ROUTINE>(msg.wParam);
-      auto work_param = reinterpret_cast<LPVOID>(msg.lParam);
-
-      // Quit WorkerThread
-      if (!work_funk) break;
-      ;
-
-      // DO THE WORK!!!
-      work_funk(work_param);
-    } else if (message == WM_DOMOUSEMOVE) {
-      // Skip all consecutive MouseMove messages and only execute the last one.
-      MSG next_msg;
-      int skip_count = 0;
-      while (PeekMessage(&next_msg, reinterpret_cast<HWND>(-1), 0, 0,
-                         PM_NOREMOVE)) {
-        if (next_msg.message == WM_DOMOUSEMOVE) {
-          PeekMessage(&msg, reinterpret_cast<HWND>(-1), 0, 0,
-                      PM_REMOVE);  // Override msg...
-          skip_count++;
-        } else {
-          break;
-        }
-      }
-      LOG("WM_DOMOUSEMOVE (%d,%d) skip_count = %d",
-          static_cast<int>(msg.wParam), static_cast<int>(msg.lParam),
-          skip_count);
-
-      POINT pt = {static_cast<long>(msg.wParam), static_cast<long>(msg.lParam)};
-
-      g_InMouseMove = 1;
-      MouseMoveNow(pt);
-      g_InMouseMove = 0;
-    }
-  }
-  return TRUE;
-}
-
 static void EndDeferWindowPosNow(HDWP hwndSS) {
   EndDeferWindowPos(hwndSS);
   if (conf.RefreshRate) ASleep(conf.RefreshRate);
@@ -241,9 +193,6 @@ void RestoreWindowTo(HWND hwnd, int x, int y, int w, int h) {
 /* Helper function to Move the window in the worker thread
  * Also restores the window if needed. */
 void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
-  static struct windowRR winrr_buf[8];
-  static size_t winrr_idx = 0;
-
   RECT rc;
   UCHAR moveonly = 0;
   resizexy_t resize = {RZ_XCENTER, RZ_YCENTER};
@@ -259,30 +208,18 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
     if (rc.bottom == y + h) resize.y &= ~RZ_BOTTOM;
   }
 
-  // Next item in list
-  winrr_idx = winrr_idx & (std::size(winrr_buf) - 1);
-
-  if (!winrr_buf[winrr_idx].hwnd) {
-    // The entry is free
-    ZeroObject(winrr_buf[winrr_idx]);
-    winrr_buf[winrr_idx].hwnd = hwnd;
-    winrr_buf[winrr_idx].x = x;
-    winrr_buf[winrr_idx].y = y;
-    winrr_buf[winrr_idx].width = w;
-    winrr_buf[winrr_idx].height = h;
-    winrr_buf[winrr_idx].end = 1;
-    winrr_buf[winrr_idx].start = 1;
-
-    winrr_buf[winrr_idx].resize = resize;
-    winrr_buf[winrr_idx].moveonly = moveonly;
-
-    PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                      reinterpret_cast<WPARAM>(MoveWindowNow),
-                      reinterpret_cast<LPARAM>(&winrr_buf[winrr_idx]));
-  } else {
-    LOG("MoveWindowAsync: NOT MOVING %X, NO MORE ROOM IN RING BUFFER!",
-        static_cast<UINT>(reinterpret_cast<LPARAM>(hwnd)));
-  }
+  windowRR request{};
+  request.hwnd = hwnd;
+  request.x = x;
+  request.y = y;
+  request.width = w;
+  request.height = h;
+  request.end = 1;
+  request.start = 1;
+  request.resize = resize;
+  request.moveonly = moveonly;
+  (void)PostWorkerTask([request]() mutable { MoveWindowNow(&request); },
+                       Worker::Importance::kDroppable);
 }
 
 /* Send WM_SIZING before SetWindowPos so that apps like terminal

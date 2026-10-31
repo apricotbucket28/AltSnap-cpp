@@ -10,6 +10,7 @@
 
 #include <algorithm>
 
+#include "app/hook_shutdown.h"
 #include "app/languages.h"
 #include "app/tray.h"
 #include "hooks/hooks.h"
@@ -24,6 +25,9 @@ UINT WM_TASKBARCREATED = 0;
 std::wstring inipath;  // Path of the ini file in use
 
 WNDPROC G_HooksWinProc = nullptr;
+static bool g_hooks_shutting_down = false;
+static bool g_hooks_idle_confirmed = false;
+static DWORD g_hooks_owner_thread = 0;
 
 // Cool stuff
 HINSTANCE hinstDLL = nullptr;
@@ -75,13 +79,21 @@ static HINSTANCE LoadHooksDLL() {
 }
 static void FreeHooksDLL() {
   if (hinstDLL) {
-    BOOL ret = FreeLibrary(hinstDLL);
-    if (!ret) LOG("FreeLibrary() FAILED!!!");
+    if (!g_hooks_idle_confirmed || g_hooks_shutting_down ||
+        g_hooks_owner_thread != GetCurrentThreadId()) {
+      LOG("Keeping HOOKS.DLL loaded: owner-thread shutdown not confirmed");
+      return;
+    }
+    if (!FreeLibrary(hinstDLL)) {
+      LOG("FreeLibrary() FAILED!!!");
+      return;
+    }
     hinstDLL = nullptr;
   }
 }
 
 int HookSystem() {
+  if (g_hooks_shutting_down) return 1;
   if (G_HooksWinProc) return 1;  // System already hooked
   LOG("Going to Hook the system...");
 
@@ -92,6 +104,8 @@ int HookSystem() {
       return 1;
     }
   }
+  g_hooks_owner_thread = GetCurrentThreadId();
+  g_hooks_idle_confirmed = false;
   WNDPROC(WINAPI * Load)
   (HWND, const wchar_t*) =
       reinterpret_cast<WNDPROC(WINAPI*)(HWND, const wchar_t*)>(
@@ -100,6 +114,11 @@ int HookSystem() {
     G_HooksWinProc = Load(g_hwnd, inipath.c_str());
   }
 
+  if (!G_HooksWinProc) {
+    LOG("HOOKS.DLL initialization failed");
+    UpdateTray();
+    return 1;
+  }
   LOG("HOOKS.DLL Loaded");
 
   // Reading some config options...
@@ -118,20 +137,24 @@ int HookSystem() {
 }
 
 int UnhookSystem() {
-  if (G_HooksWinProc == nullptr) return 0;
-  LOG("Going to UnHook the system...");
-
-  // Tell dll file that we are unloading
-  void(WINAPI * Unload)() = reinterpret_cast<void(WINAPI*)()>(
-      GetProcAddress(hinstDLL, kUnloadProcName));
-  if (Unload) {
-    Unload();
+  if (!hinstDLL) return 0;
+  if (g_hooks_shutting_down || g_hooks_owner_thread != GetCurrentThreadId()) {
+    LOG("UnhookSystem rejected: recursive or foreign-thread shutdown");
+    return 1;
   }
-  // FreeHooksDLL();
-  // Zero out the message hwnd from DLL.
+  LOG("Going to UnHook the system...");
+  // Set before entering the DLL: Stop services synchronous sends to this UI.
+  g_hooks_shutting_down = true;
+  const auto unload = reinterpret_cast<BOOL(WINAPI*)()>(
+      GetProcAddress(hinstDLL, kUnloadProcName));
+  const bool stopped = unload && unload();
+  g_hooks_shutting_down = false;
+  if (!stopped) {
+    LOG("HOOKS.DLL shutdown not confirmed; keeping module and callback");
+    return 1;
+  }
+  g_hooks_idle_confirmed = true;
   G_HooksWinProc = nullptr;
-
-  // Success
   UpdateTray();
   return 0;
 }
@@ -154,6 +177,7 @@ void UpdateSettings() {
 }
 
 static void ShowSClickMenu(HWND hwnd, LPARAM param) {
+  if (g_hooks_shutting_down) return;
   POINT pt;
   if (param & LP_CURSORPOS) {
     // Use cursor position to place menu.
@@ -258,6 +282,7 @@ static void GetKaretPos(POINT* pt) {
   GetCursorPos(pt);
 }
 static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
+  if (g_hooks_shutting_down) return;
   UCHAR vkey = LOBYTE(LOWORD(param));
   UCHAR capital = HIBYTE(LOWORD(param));
   wchar_t const* const* const ukmap = &l10n->a;  // EXTRAKEYS_MAP;
@@ -308,6 +333,7 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
 
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam) {
+  if (DeferDuringHookShutdown(g_hooks_shutting_down, msg)) return 0;
   if (!msg) {
     // In case some messages are not registered.
   } else if (wParam && msg == WM_ERASEBKGND) {

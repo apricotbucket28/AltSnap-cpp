@@ -65,6 +65,23 @@ exports exactly `Load` and `Unload`. Every header compiles on its own.
   upstream identifiers carry a `// Upstream: OldName` note; the string helpers
   from nanolibc.h are listed at the top of `common/strutil.h`.
 
+## Worker lifecycle
+- `Worker` owns its event, thread handle and queue. Initialize it before installing
+  hooks; close admission, remove hooks/timers/hotkeys, and drain/join before
+  releasing shared configuration or windows. Pending droppable tasks are limited
+  to 64; control tasks bypass capacity but are rejected after admission closes.
+  Adjacent mouse moves coalesce; window-move requests own their payloads.
+- `Load`/`Unload` belong to the main window's thread. Backport the DLL and app
+  caller together: `Unload` now returns `BOOL` to confirm an idle session before
+  `FreeLibrary`. Shutdown services synchronous sends, so the app blocks commands
+  that could enter modal loops or reload settings during the join.
+- The join deliberately has no timeout: foreign-window operations may block on a
+  hung target, but releasing state under a live worker is unsafe. Preserve the
+  existing synchronous positioning where subsequent border/MDI geometry reads
+  depend on completion. The worker object is intentionally process-lived and its
+  destructor never joins under loader lock; sessions require explicit cleanup.
+  This does not eliminate the remaining shared drag-state globals.
+
 ## Done
 - macro-free `strutil.h` (replaces nanolibc.h); direct Win32 linking, no
   GetProcAddress shims; thunks.cc removed

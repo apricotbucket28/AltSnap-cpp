@@ -291,9 +291,8 @@ static int ClickComboActions(action_t action) {
   if (!(conf.MMMaximize & 1)) return 0;
   // Maximize/Restore the window if pressing Move, Resize mouse buttons.
   if (state.action.ac == AC_MOVE && action.ac == AC_RESIZE) {
-    PostThreadMessage(g_WorkerThreadID, WM_DOWORK,
-                      reinterpret_cast<WPARAM>(DoMoveResizeMaxMinComboAction),
-                      0);
+    if (!PostWorkerTask([] { DoMoveResizeMaxMinComboAction(nullptr); }))
+      return 0;
     state.blockmouseup = 1;
     return 1;
   }
