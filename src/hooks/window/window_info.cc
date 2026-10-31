@@ -73,7 +73,7 @@ HMONITOR GetMonitorInfoFromWin(HWND hwnd, MONITORINFO* mi) {
   GetMonitorInfo(hmon, mi);
   return hmon;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static BOOL IsFullscreen(HWND hwnd) {
   LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
 
@@ -96,7 +96,7 @@ int IsFullscreenF(HWND hwnd, const RECT* wnd, const RECT* fmon) {
 int IsFullScreenBL(HWND hwnd) {
   return conf.FullScreen && IsFullscreen(hwnd);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // WM_ENTERSIZEMOVE or WM_EXITSIZEMOVE...
 void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta) {
   // Don't send WM_ENTER/EXIT SIZEMOVE if the window is in SSizeMove BL
@@ -111,7 +111,6 @@ void NotifySizeMoveStaEnd(HWND hwnd, UCHAR sta) {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Overloading of the Hittest function to include a whitelist
 // x and y are in screen coordinate.
 int HitTestTimeoutbl(HWND hwnd, POINT pt) {
@@ -137,12 +136,11 @@ int HitTestTimeoutbl(HWND hwnd, POINT pt) {
   }
   return area;
 }
-/////////////////////////////////////////////////////////////////////////////
-//
+
 void GetMinMaxInfo(HWND hwnd, POINT* Min, POINT* Max) {
   GetMinMaxInfoF(hwnd, Min, Max, conf.IgnoreMinMaxInfo);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Use NULL to restore old transparency.
 // Set to -1 to clear old state
 void SetWindowTrans(HWND hwnd) {
@@ -180,7 +178,6 @@ void SetWindowTrans(HWND hwnd) {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Enumerate callback proc
 BOOL CALLBACK EnumMonitorsProc(HMONITOR hMonitor, HDC hdcMonitor,
                                LPRECT lprcMonitor, LPARAM dwData) {
@@ -191,7 +188,7 @@ BOOL CALLBACK EnumMonitorsProc(HMONITOR hMonitor, HDC hdcMonitor,
   monitors.push_back(mi.rcWork);
   return TRUE;  //*lprcMonitor;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void OffsetRectMDI(RECT* wnd) {
   OffsetRect(wnd, -state.mdipt.x, -state.mdipt.y);
 }
@@ -206,7 +203,7 @@ int ShouldSnapTo(HWND hwnd) {
              GetBorderlessFlag(hwnd)  //&(WS_THICKFRAME|WS_CAPTION)
              || IsBlacklisted(hwnd, BlkLst.Snaplist));
 }
-///////////////////////////////////////////////////////////////////////////
+
 void GetMonitorRect(const POINT* pt, int full, RECT* _mon) {
   if (state.mdiclient && GetClientRect(state.mdiclient, _mon)) {
     return;  // MDI!
@@ -218,7 +215,7 @@ void GetMonitorRect(const POINT* pt, int full, RECT* _mon) {
 
   CopyRect(_mon, full ? &mi.rcMonitor : &mi.rcWork);
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Get state.mdipt and mdi monitor
 BOOL GetMDInfo(POINT* mdicpt, RECT* wnd) {
   mdicpt->x = mdicpt->y = 0;
@@ -257,7 +254,7 @@ int IsAltTabAble(HWND window) {
 int IsToolWindow(HWND hwnd) {
   return GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW;
 }
-////////////////////////////////////////////////////////////////////////////
+
 // Returns the GA_ROOT window if not MDI or MDIblacklist
 HWND MDIorNOT(HWND hwnd, HWND* mdiclient_) {
   HWND mdiclient = nullptr;

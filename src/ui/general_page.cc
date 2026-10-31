@@ -18,7 +18,6 @@
 
 namespace altsnap::app {
 
-/////////////////////////////////////////////////////////////////////////////
 // No error reporting since we don't want the user to be interrupted
 static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   *_on = *_hidden = *_elevated = 0;
@@ -55,7 +54,6 @@ static void CheckAutostart(int* _on, int* _hidden, int* _elevated) {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 static void SetAutostart(int on, int hhide, int eelevate) {
   // Open key
   HKEY key = nullptr;
@@ -85,8 +83,6 @@ static void SetAutostart(int on, int hhide, int eelevate) {
   RegCloseKey(key);
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// Only used in the case of Vista+
 BOOL ElevateNow(int showconfig) {
   wchar_t path[MAX_PATH];
   GetModuleFileName(nullptr, path, std::size(path));
@@ -106,7 +102,7 @@ BOOL ElevateNow(int showconfig) {
   }
   return FALSE;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static DWORD IsUACEnabled() {
   DWORD uac_enabled = 0;
   if (elevated) {
@@ -123,7 +119,7 @@ static DWORD IsUACEnabled() {
   }
   return uac_enabled;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam) {
   // Options to bead or written...

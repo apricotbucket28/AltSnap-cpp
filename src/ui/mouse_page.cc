@@ -79,7 +79,7 @@ void WriteActionDropListS(HWND hwnd, int idc, const wchar_t* inioption,
   GetActionStringFromDropList(hwnd, idc, actions, txt, std::size(txt));
   WritePrivateProfileString(L"Input", inioption, txt, inipath.c_str());
 }
-/////////////////////////////////////////////////////////////////////////////
+
 INT_PTR CALLBACK MousePageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                      LPARAM lParam) {
   static int have_to_apply = 0;

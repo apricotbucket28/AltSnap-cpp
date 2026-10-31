@@ -25,12 +25,11 @@
 namespace altsnap::hooks {
 
 static void UnhookMouseOnly();
-/////////////////////////////////////////////////////////////////////////////
+
 // This is somewhat the main function, it is active only when the ALT key is
 // pressed, or is always on when g_keep_mousehook is enabled.
 //
 // We should not call the next Hook for button 6-20 (manual call only).
-
 //
 // Buttons 6-20 are for manual calls only: they are never passed to the next
 // hook.
@@ -315,7 +314,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
   return PassOn(e);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Whether the mouse hook stays installed permanently (needed by some options)
 // instead of only while a button is pressed. Set from the configuration.
 static bool g_keep_mousehook = false;
@@ -338,7 +336,7 @@ void HookMouse() {
   // Set up the mouse hook
   mousehook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, hinstDLL, 0);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static void UnhookMouseOnly() {
   // Do not unhook if not hooked or if the hook is still used for something
   if (!mousehook || g_keep_mousehook || state.blockmouseup) return;

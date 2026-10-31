@@ -17,7 +17,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 // Upstream: Send_KEY
 void SendKey(unsigned char vkey) {
   KEYBDINPUT ctrl[2] = {{0, 0, 0, 0, 0}, {0, 0, KEYEVENTF_KEYUP, 0, 0}};
@@ -71,7 +70,6 @@ void SendInputSequence(const UCHAR* seq) {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Sends the click down/click up sequence to the system
 // Upstream: Send_ClickProc
 static DWORD WINAPI SendClickProc(LPVOID buttonD) {
@@ -112,7 +110,7 @@ void SendClickThread(enum button button) {
                     reinterpret_cast<WPARAM>(SendClickProc),
                     static_cast<LPARAM>(button));
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Sends an unicode character to the system.
 // KEYEVENTF_UNICODE requires at least Windows 2000
 // Extended unicode page can be accessed by sending both lo&hi surrogates

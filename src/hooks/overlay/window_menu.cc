@@ -151,7 +151,7 @@ void ActionMenu(HWND hwnd) {
                   | (state.alt <= BT_MB5) << 6  // LP_NOALTACTION
   );
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Function to calculate the necessary dimentions for the menuitem.
 // In response to the WM_MEASUREITEM message
 static LPARAM MeasureMenuItem(HWND hwnd, WPARAM wParam, LPARAM lParam, UINT dpi,
@@ -193,7 +193,7 @@ static LPARAM MeasureMenuItem(HWND hwnd, WPARAM wParam, LPARAM lParam, UINT dpi,
   ReleaseDC(hwnd, dc);
   return TRUE;
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Function to custom draw the menu item, in response to WM_DRAWITEM.
 // We must both draw he small icon and the menu text.
 // We must also draw the selected menu with the highligh color.
@@ -304,7 +304,7 @@ static void SendSYSCOMMANDToMenuItem(HWND hwnd, int id, HMENU hmenu,
       EnableMenuItem(hmenu, id, MF_BYPOSITION | MF_GRAYED);
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Window for single click commands for menu
 LRESULT CALLBACK MenuWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                 LPARAM lParam) {

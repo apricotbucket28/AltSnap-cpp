@@ -67,7 +67,6 @@ static void LoadAllIcons() {
     g_icons[i] = LoadIcon(g_hinst, MAKEINTRESOURCE(TRAY_OFF + i));
 }
 
-/////////////////////////////////////////////////////////////////////////////
 int InitTray() {
   ScrollLockState =
       GetPrivateProfileInt(L"Input", L"ScrollLockState", 0, inipath.c_str());
@@ -94,7 +93,7 @@ int InitTray() {
 
   return 0;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int UpdateTray() {
   int Index = !!IsEnabled();
   if (Index) {
@@ -138,7 +137,7 @@ int UpdateTray() {
   }
   return 0;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int RemoveTray() {
   LOG("RemoveTray() tray_added=%d", static_cast<int>(tray_added));
   if (!tray_added) return 1;
@@ -151,7 +150,6 @@ int RemoveTray() {
   return 0;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Zones functions
 void WriteCurrentLayoutNumber() {
   if (MaxLayouts) {
@@ -222,7 +220,6 @@ std::wstring FullLayoutName(int laynum) {
   return name + L"  " + l10n->MenuEmptyZone;  // (empty)
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void ShowContextMenu(HWND hwnd) {
   POINT pt;
   GetCursorPos(&pt);

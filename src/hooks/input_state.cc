@@ -22,12 +22,12 @@ namespace altsnap::hooks {
   }
   return 0;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Mod Key can return 0 or 1, maybe more in the future...
 [[nodiscard]] int ModKey() {
   return conf.ModKey[0] && IsAKeyDown(conf.ModKey);
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Get action of button
 action_t GetAction(const int button) {
   return conf.actions.GetMouse(button, ActionContext::kNormal, ModKey());
@@ -136,8 +136,7 @@ int ScrollLockState() {
   }
   return -1;
 }
-/////////////////////////////////////////////////////////////////////////////
-//
+
 [[nodiscard]] int GetButton(WPARAM wp, LPARAM lp) {
   auto msg = reinterpret_cast<PMSLLHOOKSTRUCT>(lp);
   return (wp == WM_LBUTTONDOWN || wp == WM_LBUTTONUP)   ? BT_LMB

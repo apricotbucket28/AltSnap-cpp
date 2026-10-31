@@ -17,7 +17,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////
 // Worker Thread, use PostThreadMessage...
 DWORD WINAPI WorkerThread(LPVOID p) {
   MSG msg;
@@ -65,8 +64,7 @@ DWORD WINAPI WorkerThread(LPVOID p) {
   }
   return TRUE;
 }
-/////////////////////////////////////////////////////////////////////////////
-//
+
 static void EndDeferWindowPosNow(HDWP hwndSS) {
   EndDeferWindowPos(hwndSS);
   if (conf.RefreshRate) ASleep(conf.RefreshRate);
@@ -142,7 +140,7 @@ int ResizeTouchingWindows(LPVOID lwptr) {
   }
   return 1;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void ResizeAllSnappedWindows() {
   if (!conf.StickyResize || snwnds.empty()) return;
 
@@ -287,7 +285,6 @@ void MoveWindowAsync(HWND hwnd, int x, int y, int w, int h) {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 /* Send WM_SIZING before SetWindowPos so that apps like terminal
  * emulators can snap to their character-cell grid.  */
 BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
@@ -348,7 +345,6 @@ BOOL LetWindowKickBack(HWND hwnd, struct windowRR* lw) {
   return FALSE;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Move the windows in a thread in case it is very slow to resize
 // Upstream: MoveResizeWindowNow_
 static void MoveResizeWindowNowEx(struct windowRR* lw, UINT flag) {
@@ -457,7 +453,6 @@ DWORD WINAPI MoveWindowNow(struct windowRR* lw) {
   return 0;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // index 1 => normal restore on any move restore & 1
 // restore & 3 => Both 1 & 2 ie: Maximized then rolled.
 void RestoreOldWin(const POINT pt, unsigned was_snapped, RECT* ownd) {
@@ -511,8 +506,7 @@ void RestoreOldWin(const POINT pt, unsigned was_snapped, RECT* ownd) {
     ClearRestoreData(state.hwnd);
   }
 }
-///////////////////////////////////////////////////////////////////////////
-//
+
 void SetOriginFromRestoreData(HWND hwnd, action_t action) {
   // Set Origin width and height needed for AC_MOVE/RESIZE/CENTER/MAXHV
   int rwidth = 0, rheight = 0;

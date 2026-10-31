@@ -19,7 +19,6 @@
 
 namespace altsnap::hooks {
 
-///////////////////////////////////////////////////////////////////////////
 void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
   if (!state.snap || state.Speed > conf.AeroMaxSpeed) return;
   const RECT& bd = EnumOnce();
@@ -143,7 +142,6 @@ void MoveSnap(int* _posx, int* _posy, int wndwidth, int wndheight, UCHAR pth) {
   }
 }
 
-///////////////////////////////////////////////////////////////////////////
 void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
                 UCHAR pthy) {
   if (!state.snap || state.Speed > conf.AeroMaxSpeed) return;
@@ -269,7 +267,6 @@ void ResizeSnap(int* posx, int* posy, int* wndwidth, int* wndheight, UCHAR pthx,
   }
 }
 
-///////////////////////////////////////////////////////////////////////////
 // use snwnds[snwnds.size()].rc / .flag
 static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
                                    int* topHeight, int* bottomHeight,
@@ -313,7 +310,7 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
     }
   }  // next i
 }
-/////////////////////////////////////////////////////////////////////////
+
 // also return monitor's DPI
 // static UINT GetDPIMonitorRect(const POINT *pt, int full, RECT *_mon)
 //{
@@ -336,7 +333,6 @@ static void GetAeroSnappingMetrics(int* leftWidth, int* rightWidth,
 //    return dpi;
 //}
 
-///////////////////////////////////////////////////////////////////////////
 int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
                  int* wndheight) {
   // return if last resizing is not finished or no Aero or not resizable.
@@ -506,7 +502,7 @@ int AeroMoveSnap(POINT pt, int* posx, int* posy, int* wndwidth,
   }
   return 0;
 }
-///////////////////////////////////////////////////////////////////////////
+
 void AeroResizeSnap(POINT pt, int* posx, int* posy, int* wndwidth,
                     int* wndheight) {
   // return if last resizing is not finished

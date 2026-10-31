@@ -35,7 +35,7 @@ namespace altsnap::app {
 static BOOL CALLBACK PropSheetProc(HWND, UINT, LPARAM);
 
 HWND g_cfgwnd = nullptr;
-/////////////////////////////////////////////////////////////////////////////
+
 // Entry point
 void OpenConfig(int startpage) {
   ListAllTranslations();  // In case
@@ -83,11 +83,11 @@ void OpenConfig(int startpage) {
   InitCommonControls();
   PropertySheet(&psh);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void CloseConfig() {
   PostMessage(g_cfgwnd, WM_CLOSE, 0, 0);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void UpdateStrings() {
   // Update window title
   PropSheet_SetTitle(g_cfgwnd, 0, l10n->ConfigTitle);
@@ -140,7 +140,6 @@ void UpdateStrings() {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 static BOOL CALLBACK PropSheetProc(HWND hwnd, UINT msg, LPARAM lParam) {
   if (msg == PSCB_INITIALIZED) {
     g_cfgwnd = hwnd;

@@ -12,7 +12,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 enum { NUMWNDDB = 16 };
 struct wnddata {
   unsigned restore;
@@ -24,7 +23,6 @@ struct wnddata {
 };
 static struct wnddata wnddb[NUMWNDDB];
 
-/////////////////////////////////////////////////////////////////////////////
 // Database functions: used as fallback if SetProp fails
 
 // Zero-out the database to be called in Load()
@@ -71,7 +69,7 @@ static void DelWindowFromDB(HWND hwnd) {
     }
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Windows restore data are saved in properties
 // In 32b mode width and height are shrunk to 16b WORDS
 // In 64b mode width and height are stored on 32b DWORDS
@@ -184,7 +182,7 @@ int IsAnySnapped(HWND hwnd) {
           !(flg & SNCLEAR)) ||
          IsWindowSnapped(hwnd);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // borderless flag (saving old GWL_STYLE)
 void SetBorderlessFlag(HWND hwnd, LONG_PTR flag) {
   SetProp(hwnd, kPropBorderlessStyle, reinterpret_cast<HANDLE>(flag));
@@ -196,7 +194,6 @@ LONG_PTR ClearBorderlessFlag(HWND hwnd) {
   return reinterpret_cast<LONG_PTR>(RemoveProp(hwnd, kPropBorderlessStyle));
 }
 
-///////////////////////////////////////////////////////////////////////////////
 //// Roll unroll stuff
 // static int GetRolledHeight(HWND hwnd)
 //{

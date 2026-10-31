@@ -206,7 +206,6 @@ enum {
   return action.ac <= AC_RESIZE;
 }
 
-///////////////////////////////////////////////////////////////////////////
 // Check if key is assigned in the HKlist
 [[nodiscard]] inline int IsHotkeyy(unsigned char key,
                                    const unsigned char* HKlist) {

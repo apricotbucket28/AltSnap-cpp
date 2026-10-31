@@ -19,7 +19,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 // Pin window callback function
 // We store the old owner window style in GWLP_USERDATA
 // and the rightoffset/topoffset in the first LONG_PTR of cbWndExtra (+0)
@@ -224,7 +223,6 @@ HWND GetPinWindow(HWND owner) {
   return inouth[0];
 }
 
-/////////////////////////////////////////////////////////////////////////////
 void TogglesAlwaysOnTop(HWND hwnd) {
   // Use the Root owner
   hwnd = GetRootOwner(hwnd);

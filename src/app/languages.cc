@@ -36,7 +36,6 @@ static strings l10n_ini_strings = {};
 static strings* l10n_ini = nullptr;  // &l10n_ini_strings once loaded.
 const strings* l10n = &en_US;
 
-/////////////////////////////////////////////////////////////////////////////
 // Copies and remove the accelerators & sign. and txt between ( ).
 // Upstream: lstrcpy_noaccel
 size_t CopyWithoutAccelerator(wchar_t* dest, size_t destlen,
@@ -73,8 +72,6 @@ static void CopyResolvingEscapes(wchar_t* dest, size_t dstlen,
   *dest = '\0';
 }
 
-/////////////////////////////////////////////////////////////////////////////
-//
 // Loads the strings (offset 0, [Translation]) or the tooltips (offset 1,
 // [ToolTips]) of a translation file; strings it lacks stay English.
 static void LoadTranslationOrTT(const wchar_t* ini, const wchar_t* section_name,
@@ -122,7 +119,6 @@ void LoadTranslation(const wchar_t* ini) {
 
 std::vector<langinfoitem> langinfo;
 
-/////////////////////////////////////////////////////////////////////////////
 void ListAllTranslations() {
   if (!langinfo.empty()) return;
 
@@ -154,7 +150,6 @@ void ListAllTranslations() {
 }
 
 #ifdef UNICODE
-/////////////////////////////////////////////////////////////////////////////
 // Helper function to get
 // Upstream: GetCUserLanguage_xx_XX
 int GetUserLanguageCode(wchar_t txt[16]) {
@@ -162,7 +157,7 @@ int GetUserLanguageCode(wchar_t txt[16]) {
   return LCIDToLocaleName(GetUserDefaultLCID(), txt, 16, 0);
 }
 #endif
-/////////////////////////////////////////////////////////////////////////////
+
 void UpdateLanguage() {
   wchar_t txt[16];
   GetPrivateProfileString(L"General", L"Language", L"Auto", txt, std::size(txt),

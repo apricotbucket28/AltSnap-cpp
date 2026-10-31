@@ -17,7 +17,6 @@
 
 namespace altsnap::app {
 
-/////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK AboutPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                      LPARAM lParam) {
   if (msg == WM_INITDIALOG) {

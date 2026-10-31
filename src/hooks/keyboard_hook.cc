@@ -23,7 +23,6 @@
 
 namespace altsnap::hooks {
 
-///////////////////////////////////////////////////////////////////////////
 static void HotkeyUp() {
   // Prevent the alt keyup from triggering the window menu to be selected
   // The way this works is that the alt key is "disguised" by sending
@@ -53,7 +52,7 @@ static void HotkeyUp() {
     UnhookMouse();
   }
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Keep this one minimalist, it is always on.
 namespace {
 

@@ -24,7 +24,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 static void StartSpeedMes() {
   if (conf.AeroMaxSpeed < MAX_SNAP_SPEED)
     SetTimer(g_mainhwnd, SPEED_TIMER, conf.AeroSpeedTau,
@@ -48,9 +47,7 @@ void StopSpeedMes() {
 
   return posx;
 }
-/////////////////////////////////////////////////////////////////////////////
-// If we pass buttonX BT_PROBE it will tell us if we pass the blacklist.
-// Upstream: init_movement_and_actions
+
 namespace {
 
 // The window to act on: the given one, or the one under the cursor (the MDI
@@ -156,6 +153,8 @@ int RestoreSnappedWindow(POINT pt, int button) {
 
 }  // namespace
 
+// If we pass buttonX BT_PROBE it will tell us if we pass the blacklist.
+// Upstream: init_movement_and_actions
 int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
   LOG("\ninit_movement_and_actions(pt=%d,%d, hwnd=%x, action=%d, button=%d)",
       static_cast<int>(pt.x), static_cast<int>(pt.y),
@@ -240,7 +239,6 @@ int InitMovementAndActions(POINT pt, HWND hwnd, action_t action, int buttonX) {
   return 1;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Called on MouseUp and on AltUp when using GrabWithAlt
 static DWORD WINAPI FinishMovementNow(LPVOID pp) {
   LOG("FinishMovement");
@@ -311,7 +309,6 @@ void FinishMovementAsync() {
                     reinterpret_cast<WPARAM>(FinishMovementNow), 0);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // state.action is the current action
 // TODO: Generalize click combo...
 void LockMovement() {

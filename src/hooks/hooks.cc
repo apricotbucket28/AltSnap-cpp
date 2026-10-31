@@ -54,7 +54,6 @@ HWND g_mainhwnd = nullptr;
 HINSTANCE hinstDLL = nullptr;
 HHOOK mousehook = nullptr;
 static HHOOK g_keyhook = nullptr;
-/////////////////////////////////////////////////////////////////////////////
 // snapped windows database.
 std::vector<snwdata> snwnds;
 void LogState(const char* Title) {
@@ -94,13 +93,11 @@ void LogState(const char* Title) {
   fclose(f);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Changes the Volume on Windows 2000+ using VK_VOLUME_UP/VK_VOLUME_DOWN
 // Also uses OLE API if available
 
-/////////////////////////////////////////////////////////////////////////////
 std::vector<HWND> minhwnds;
-/////////////////////////////////////////////////////////////////////////////
+
 // Window for timers only...
 VOID CALLBACK TimerWindowProc(HWND hwnd, UINT msg, UINT_PTR idEvent,
                               DWORD dwTime) {
@@ -304,7 +301,7 @@ void WINAPI Unload() {
   WaitForSingleObject(g_WorkerThreadHANDLE, 5000);
   CloseHandle(g_WorkerThreadHANDLE);
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Create a window for msessages handeling timers, menu etc.
 HWND KreateMsgWin(WNDPROC proc, const wchar_t* name, LONG_PTR userdata) {
   WNDCLASS wnd;
@@ -323,7 +320,6 @@ HWND KreateMsgWin(WNDPROC proc, const wchar_t* name, LONG_PTR userdata) {
   return hwnd;
 }
 
-///////////////////////////////////////////////////////////////////////////
 // Has to be called at startup, it mainly reads the config.
 WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
   assert(g_keyhook == nullptr);  // We cannot Load twice again...
@@ -362,7 +358,6 @@ WNDPROC WINAPI Load(HWND mainhwnd, const wchar_t* inipath) {
 
   return HooksWinProc;
 }
-/////////////////////////////////////////////////////////////////////////////
 
 }  // namespace altsnap::hooks
 using altsnap::hooks::hinstDLL;

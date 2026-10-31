@@ -80,7 +80,7 @@ static void FreeHooksDLL() {
     hinstDLL = nullptr;
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int HookSystem() {
   if (G_HooksWinProc) return 1;  // System already hooked
   LOG("Going to Hook the system...");
@@ -116,7 +116,7 @@ int HookSystem() {
   UpdateTray();
   return 0;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int UnhookSystem() {
   if (G_HooksWinProc == nullptr) return 0;
   LOG("Going to UnHook the system...");
@@ -135,7 +135,7 @@ int UnhookSystem() {
   UpdateTray();
   return 0;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static void ToggleState() {
   if (IsEnabled()) {
     UnhookSystem();
@@ -144,7 +144,7 @@ static void ToggleState() {
     HookSystem();
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void UpdateSettings() {
   // PostMessage(g_hwnd, WM_UPDATESETTINGS, 0, 0);
   if (IsEnabled()) {
@@ -152,8 +152,7 @@ void UpdateSettings() {
     HookSystem();
   }
 }
-/////////////////////////////////////////////////////////////////////////////
-//
+
 static void ShowSClickMenu(HWND hwnd, LPARAM param) {
   POINT pt;
   if (param & LP_CURSORPOS) {
@@ -306,7 +305,7 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
   }
   DestroyMenu(menu);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam) {
   if (!msg) {
@@ -435,7 +434,6 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
   }
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
-/////////////////////////////////////////////////////////////////////////////
 
 }  // namespace altsnap::app
 using namespace altsnap::app;

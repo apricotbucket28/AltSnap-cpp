@@ -18,7 +18,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 void HideCursor() {
   // Reduce the size to 0 to avoid redrawing.
   if (!IsWindowVisible(g_mainhwnd)) return;
@@ -26,7 +25,7 @@ void HideCursor() {
                SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOREDRAW | SWP_DEFERERASE);
   ShowWindow(g_mainhwnd, SW_HIDE);
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Do not reclip the cursor if it is already clipped
 // Do not unclip the cursor if it was not clipped by AltDrag.
 void ClipCursorOnce(const RECT* clip) {
@@ -66,7 +65,7 @@ void RestrictCursorToMon() {
     ClipCursorOnce(&clip);
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Transparent window
 // We use 4 thin windows to simulate a hollow window because the
 // SetWindowRgn() function is very slow and would have to be called at every
@@ -125,7 +124,6 @@ void MoveTransWin(struct windowRR* lw) {
   MoveTransWinRaw(x, y, w, h);
 }
 
-///////////////////////////////////////////////////////////////////////////
 void RestrictToCurentMonitor() {
   if (state.action.ac || state.alt) {
     POINT pt;
@@ -135,7 +133,6 @@ void RestrictToCurentMonitor() {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 static HCURSOR CursorToDraw() {
   HCURSOR cursor = nullptr;
 
@@ -178,7 +175,6 @@ void UpdateCursor(POINT pt) {
   }
 }
 
-///////////////////////////////////////////////////////////////////////////
 void CreateTransWin(const IniSection& section) {
   // Read the color for the TransWin from ini file
   const COLORREF color =

@@ -18,7 +18,6 @@
 
 namespace altsnap::app {
 
-/////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                         LPARAM lParam) {
   static const DialogOption optlst[] = {

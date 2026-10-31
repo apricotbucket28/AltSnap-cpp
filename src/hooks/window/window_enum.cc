@@ -18,7 +18,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 static BOOL CALLBACK EnumWindowsProc(HWND window, LPARAM lParam) {
   // Only store window if it's visible, not minimized to taskbar,
   // not the window we are dragging and not IsBlacklisted
@@ -106,7 +105,7 @@ void EnumSnapped() {
       EnumDesktopWindows(nullptr, EnumSnappedWindows, 0);
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Uses the same DB than snapped windows db because they will never
 // be used together Enum() vs EnumSnapped()
 static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
@@ -135,7 +134,6 @@ static BOOL CALLBACK EnumTouchingWindows(HWND hwnd, LPARAM lParam) {
   return TRUE;
 }
 
-///////////////////////////////////////////////////////////////////////////
 // Just used in Enum
 static void EnumMdi() {
   // Add MDIClient as the monitor
@@ -149,7 +147,7 @@ static void EnumMdi() {
     EnumChildWindows(state.mdiclient, EnumTouchingWindows, 0);
   }
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Enumerate all monitors/windows/MDI depending on state.
 static void Enum() {
   monitors.clear();
@@ -174,8 +172,7 @@ static void Enum() {
     EnumDesktopWindows(nullptr, EnumTouchingWindows, 0);
   }
 }
-///////////////////////////////////////////////////////////////////////////
-//
+
 // Invisible borders (DWM shadow) of the window being moved.
 static RECT g_invisible_borders;
 
@@ -201,7 +198,7 @@ void EnumSnappedOnce() {
     state.enumed |= 2;
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // lParam means to include minimized windows (pass TRK_LASERMODE to
 // TrackMenuOfWindows)
 BOOL CALLBACK EnumAltTabWindows(HWND window, LPARAM lParam) {
@@ -243,7 +240,6 @@ BOOL CALLBACK EnumTopMostWindows(HWND window, LPARAM lParam) {
   return TRUE;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 [[nodiscard]] static BOOL StackedRectsT(
     const RECT* a, const RECT* b,
     const int T) {  // Determine wether or not the windows are stacked...

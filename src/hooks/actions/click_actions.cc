@@ -23,7 +23,6 @@
 
 namespace altsnap::hooks {
 
-/////////////////////////////////////////////////////////////////////////////
 // Single click commands
 void SClickActions(HWND hwnd, action_t action) {
   static const resizexy_t rxy_map[] = {
@@ -184,8 +183,7 @@ void SClickActions(HWND hwnd, action_t action) {
       break;
   }
 }
-/////////////////////////////////////////////////////////////////////////////
-//
+
 int DoWheelActions(HWND hwnd, action_t action) {
   state.sactiondone = action;
   // Return if in the scroll blacklist.
@@ -257,7 +255,7 @@ int DoWheelActions(HWND hwnd, action_t action) {
   state.blockaltup = ret && state.alt > BT_HWHEELU;  // block or not;
   return ret;                                        // block or next hook
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Actions to be performed in the Titlebar...
 int TitleBarActions(POINT pt, action_t action, enum button button) {
   state.hittest = 0;                // Cursor in titlebar?

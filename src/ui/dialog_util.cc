@@ -130,7 +130,7 @@ int ReadOptionInt(HWND hwnd, WORD id, const wchar_t* section,
   CheckDlgButton(hwnd, id, (ret & mask) ? BST_CHECKED : BST_UNCHECKED);
   return ret;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Description:
 //   Creates a tooltip for an item in a dialog box.
 // Parameters:

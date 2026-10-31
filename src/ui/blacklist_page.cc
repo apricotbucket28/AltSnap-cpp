@@ -22,7 +22,6 @@ namespace altsnap::app {
 
 static LRESULT CALLBACK FindWindowProc(HWND, UINT, WPARAM, LPARAM);
 
-/////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                          LPARAM lParam) {
   static const DialogOption optlst[] = {
@@ -116,7 +115,7 @@ INT_PTR CALLBACK BlacklistPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   return FALSE;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 static LRESULT CALLBACK FindWindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                        LPARAM lParam) {
   if (msg == WM_LBUTTONUP || msg == WM_MBUTTONUP || msg == WM_RBUTTONUP) {

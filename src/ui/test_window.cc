@@ -20,7 +20,6 @@
 
 namespace altsnap::app {
 
-/////////////////////////////////////////////////////////////////////////////
 // to be used with EnumDesktopWindows()
 BOOL CALLBACK RefreshTestWin(HWND hwnd, LPARAM lp) {
   wchar_t classn[256];
@@ -53,7 +52,7 @@ static void ToggleFullScreen(HWND hwnd) {
     SendMessage(hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Simple windows proc that draws the resizing regions.
 // Label of a mouse message in the "test window" event log; null for messages
 // that are not mouse events.

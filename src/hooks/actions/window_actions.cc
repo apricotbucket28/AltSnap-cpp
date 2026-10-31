@@ -23,7 +23,6 @@
 
 namespace altsnap::hooks {
 
-///////////////////////////////////////////////////////////////////////////
 int ActionPause(HWND hwnd, UCHAR pause) {
   //    LOGA("Entering pause/resume %d", (int)pause);
   if (!IsBlacklisted(hwnd, BlkLst.Pause)) {
@@ -57,7 +56,7 @@ int ActionPause(HWND hwnd, UCHAR pause) {
   }
   return 0;
 }
-///////////////////////////////////////////////////////////////////////////
+
 // Kill the process from hwnd
 static DWORD WINAPI ActionKillThread(LPVOID hwnd) {
   if (state.shift) {
@@ -137,8 +136,7 @@ void SetForegroundWindowL(HWND hwnd) {
 void ToggleSnapState() {
   state.snap = state.snap ? 0 : 3;
 }
-/////////////////////////////////////////////////////////////////////////////
-// 1.44
+
 int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
   // Get window and foreground window
   HWND hwnd = WindowFromPoint(pt);
@@ -191,7 +189,7 @@ int ScrollPointedWindow(POINT pt, int delta, WPARAM wParam) {
   // Block original scroll event
   return 1;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int ActionAltTab(POINT pt, short delta, short laser, WNDENUMPROC lpEnumFunc) {
   hwnds.clear();
 
@@ -330,7 +328,7 @@ void ActionLower(HWND hwnd, short delta, UCHAR shift, UCHAR fg) {
     }
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void ActionMaxRestMin(HWND hwnd, int delta) {
   int maximized = IsZoomed(hwnd);
   if (state.shift) {
@@ -349,7 +347,6 @@ void ActionMaxRestMin(HWND hwnd, int delta) {
   if (conf.AutoFocus) SetForegroundWindowL(hwnd);
 }
 
-/////////////////////////////////////////////////////////////////////////////
 // Adjust brightness
 // Only works for desktop monitors that support DDC/CI, and is disabled for
 // now. It is kept compiled (not #if'd out) so it cannot silently rot.
@@ -386,7 +383,7 @@ void ActionBrightness(const POINT pt, const short delta) {
   }
   DestroyPhysicalMonitors(count, physical_monitors.data());
 }
-/////////////////////////////////////////////////////////////////////////////
+
 // Roll/Unroll Window. If delta > 0: Roll if < 0: Unroll if == 0: Toggle.
 void RollWindow(HWND hwnd, int delta) {
   // if the window is maximized do a spetial
@@ -529,7 +526,7 @@ int ActionZoom(HWND hwnd, short delta, short center) {
   MoveWindowAsync(hwnd, x, y, width, height);
   return 1;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 int ActionMove(POINT pt, int button) {
   // If this is a double-click
   if (IsDoubleClick(button)) {
@@ -570,7 +567,6 @@ int ActionMove(POINT pt, int button) {
   return -1;
 }
 
-/////////////////////////////////////////////////////////////////////////////
 int ActionResize(POINT pt, const RECT* wnd, int button) {
   if (!state.resizable) {
     state.action = k_action_none;
@@ -614,7 +610,7 @@ int ActionResize(POINT pt, const RECT* wnd, int button) {
   }
   return -1;
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void ActionBorderless(HWND hwnd) {
   LONG_PTR style = 0;
   // Get anc clear eventual old style.
@@ -687,7 +683,7 @@ void CenterWindow(HWND hwnd, unsigned flags, int full_monitor) {
   }
   MoveWindowAsync(hwnd, x, y, width, height);
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void ActionMaximize(HWND hwnd) {
   LastWin.hwnd = nullptr;
   if (state.shift) {
@@ -696,7 +692,7 @@ void ActionMaximize(HWND hwnd) {
     ToggleMaxRestore(hwnd);
   }
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void MaximizeHV(HWND hwnd, int horizontal) {
   RECT rc, bd, mon;
   if (!IsResizable(hwnd) || !GetWindowRect(hwnd, &rc)) return;

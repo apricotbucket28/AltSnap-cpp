@@ -19,7 +19,6 @@
 
 namespace altsnap::app {
 
-/////////////////////////////////////////////////////////////////////////////
 void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
                  const wchar_t* const name) {
   // Get the current config in case there are some user added keys.
@@ -31,7 +30,7 @@ void SaveHotKeys(const struct hk_struct* const hotkeys, HWND hwnd,
   }
   WritePrivateProfileString(L"Input", name, keys.c_str(), inipath.c_str());
 }
-/////////////////////////////////////////////////////////////////////////////
+
 void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
                         const wchar_t* hotkeystr, const wchar_t* def) {
   // Hotkeys
@@ -55,7 +54,6 @@ void CheckConfigHotKeys(const struct hk_struct* hotkeys, HWND hwnd,
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////
 INT_PTR CALLBACK KeyboardPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                         LPARAM lParam) {
   static int have_to_apply = 0;
