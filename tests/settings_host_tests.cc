@@ -8,6 +8,7 @@
 #include <string>
 
 #include "settings/protocol.h"
+#include "settings_ui/shortcut_capture.h"
 
 namespace {
 using namespace altsnap::settings;
@@ -80,6 +81,103 @@ Snapshot Exchange(DWORD pid, Operation operation, uint64_t revision = 0,
   CloseHandle(pipe);
   return snapshot;
 }
+
+unsigned downstream_keys = 0;
+LRESULT CALLBACK ObserveKeys(int code, WPARAM message, LPARAM data) {
+  if (code == HC_ACTION) ++downstream_keys;
+  return CallNextHookEx(nullptr, code, message, data);
+}
+void PumpInput() {
+  const ULONGLONG deadline = GetTickCount64() + 150;
+  do {
+    MSG message;
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+    }
+    MsgWaitForMultipleObjects(0, nullptr, FALSE, 10, QS_ALLINPUT);
+  } while (GetTickCount64() < deadline);
+}
+void SendKeys(std::initializer_list<std::pair<WORD, bool>> keys) {
+  std::vector<INPUT> inputs;
+  for (const auto [key, down] : keys) {
+    INPUT input{};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = key;
+    input.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
+    inputs.push_back(input);
+  }
+  CHECK(SendInput(static_cast<UINT>(inputs.size()), inputs.data(),
+                  sizeof(INPUT)) == inputs.size());
+  PumpInput();
+}
+void CaptureIntegration() {
+  HWND window =
+      CreateWindowExW(0, L"STATIC", L"AltSnap capture integration",
+                      WS_OVERLAPPEDWINDOW | WS_VISIBLE, 80, 80, 420, 160,
+                      nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  CHECK(window);
+  SetForegroundWindow(window);
+  SetFocus(window);
+  PumpInput();
+  if (GetForegroundWindow() != window) {
+    std::puts(
+        "SKIP native capture delivery: this desktop did not grant foreground "
+        "activation");
+    DestroyWindow(window);
+    return;
+  }
+  HHOOK observer = SetWindowsHookExW(WH_KEYBOARD_LL, ObserveKeys,
+                                     GetModuleHandleW(nullptr), 0);
+  CHECK(observer);
+  {
+    altsnap::settings_ui::CaptureSession capture(window, [] {});
+    CHECK(capture.Started());
+    downstream_keys = 0;
+    SendKeys({{VK_LCONTROL, true},
+              {VK_LSHIFT, true},
+              {VK_F11, true},
+              {VK_F11, false},
+              {VK_LSHIFT, false},
+              {VK_LCONTROL, false}});
+    CHECK(capture.state.Value() == uint16_t(0x0600 | VK_F11) &&
+          capture.state.Ready());
+    CHECK(downstream_keys ==
+          0);  // Neither AltSnap nor app/system commands see capture input.
+  }
+  {
+    altsnap::settings_ui::CaptureSession capture(window, [] {});
+    CHECK(capture.Started());
+    SendKeys(
+        {{VK_LMENU, true}, {VK_F4, true}, {VK_F4, false}, {VK_LMENU, false}});
+    CHECK(capture.state.Value() == uint16_t(0x0100 | VK_F4));
+    CHECK(IsWindow(window) &&
+          downstream_keys == 0);  // Alt+F4 did not close the test window.
+  }
+  {
+    altsnap::settings_ui::CaptureSession capture(window, [] {});
+    CHECK(capture.Started());
+    SendKeys({{VK_LCONTROL, true}, {VK_ESCAPE, true}, {VK_ESCAPE, false}});
+    CHECK(!capture.state.Value() && !capture.state.Ready());
+    SendKeys({{VK_LCONTROL, false}});
+    CHECK(capture.state.Ready() && downstream_keys == 0);
+  }
+  {
+    altsnap::settings_ui::CaptureSession capture(window, [] {});
+    CHECK(capture.Started());
+    SendKeys({{VK_LCONTROL, true}, {VK_F11, true}, {VK_F11, false}});
+    capture.Cancel();  // Same transition used by deactivation / Cancel.
+    SendKeys({{VK_LCONTROL, false}});
+    CHECK(capture.state.Ready() && !capture.state.Value() &&
+          downstream_keys == 0);
+  }
+  std::puts(
+      "Native capture: Ctrl+Shift+F11, Alt+F4, Escape, cancellation and "
+      "downstream suppression passed");
+  CHECK(UnhookWindowsHookEx(observer));
+  DestroyWindow(window);
+}
+
 int Client(DWORD pid) {
   Snapshot initial = Exchange(pid, Operation::kRead);
   CHECK(initial.result == Result::kOk && initial.enabled);
@@ -167,6 +265,44 @@ int Client(DWORD pid) {
                             &result));
   saved = Exchange(pid, Operation::kRead);
   CHECK(saved.result == Result::kOk && saved.enabled);
+
+  // Keyboard batch and real OS conflicts: saved vs active remain distinct.
+  saved = Exchange(pid, Operation::kRead);
+  draft.Load(saved.values);
+  draft.SetText(kHotkeys, L"A4 A5 42");
+  draft.SetText(kGrabWithAltB, L"Future_Custom_42");
+  draft.Set(Option::kUsePtWindow, 1);
+  draft.Set(Option::kScrollLockEnabled, 1);
+  draft.Set(Option::kScrollLockInvert, 1);
+  draft.SetShortcut(L"ASOnOff", uint16_t(0x0600 | VK_F11));
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kOk && saved.enabled &&
+        !saved.shortcut_failures);
+  CHECK(saved.values.text[kHotkeys].raw == L"A4 A5 42");
+  CaptureIntegration();
+  CHECK(Exchange(pid, Operation::kRead)
+            .enabled);  // Captured ASOnOff never reached the host.
+  draft.Load(saved.values);
+  draft.SetShortcut(L"Close", uint16_t(0x0600 | VK_F11));
+  CHECK(Exchange(pid, Operation::kApply, saved.revision, draft.Changes())
+            .result == Result::kConflict);
+  CHECK(RegisterHotKey(nullptr, 0x5132, MOD_CONTROL | MOD_ALT | MOD_SHIFT,
+                       VK_F10));
+  draft.Load(saved.values);
+  draft.SetShortcut(L"Minimize", uint16_t(0x0700 | VK_F10));
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kActivationFailed && saved.enabled &&
+        saved.shortcut_failures == 1);
+  CHECK(Exchange(pid, Operation::kRead).shortcut_failures == 1);
+  CHECK(UnregisterHotKey(nullptr, 0x5132));
+  draft.Load(saved.values);
+  draft.SetShortcut(L"Minimize", std::nullopt);
+  draft.SetShortcut(L"ASOnOff", std::nullopt);
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kOk && saved.enabled &&
+        !saved.shortcut_failures);
+  CHECK(saved.values.text[kGrabWithAltB].raw == L"Future_Custom_42");
+
   // External edits invalidate the complete-file revision.
   CHECK(WritePrivateProfileStringW(L"Unknown", L"Keep", L"external",
                                    saved.path.c_str()));

@@ -8,6 +8,8 @@
 #include <microsoft.ui.xaml.window.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Windowing.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
@@ -26,6 +28,7 @@
 
 #include "common/text_format.h"
 #include "settings/protocol.h"
+#include "settings_ui/shortcut_capture.h"
 namespace altsnap::settings_ui {
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -48,7 +51,10 @@ constexpr std::array<const wchar_t*, settings::kOptionCount> kControlNames{
     L"AeroThreshold",     L"SnapGap",
     L"AeroMaxSpeed",      L"AeroSpeedTau",
     L"MoveTrans",         L"TitlebarWithoutAlt",
-    L"TitlebarWithAlt",   L"LongClickMove"};
+    L"TitlebarWithAlt",   L"LongClickMove",
+    L"KeyCombo",          L"ScrollLockEnabled",
+    L"ScrollLockInvert",  L"UniKeyHoldMenu",
+    L"UsePtWindow"};
 struct Handle {
   HANDLE value = INVALID_HANDLE_VALUE;
   explicit Handle(HANDLE handle = INVALID_HANDLE_VALUE) : value(handle) {}
@@ -186,8 +192,9 @@ class Shell : public std::enable_shared_from_this<Shell> {
           if (auto self = weak.lock()) {
             const hstring tag =
                 args.SelectedItemContainer().Tag().as<hstring>();
-            for (const wchar_t* page : {L"General", L"Snapping", L"Mouse",
-                                        L"Advanced", L"Appearance", L"About"})
+            for (const wchar_t* page :
+                 {L"General", L"Snapping", L"Mouse", L"Keyboard", L"Advanced",
+                  L"Appearance", L"About"})
               self->Find<FrameworkElement>(
                       (std::wstring(page) + L"Page").c_str())
                   .Visibility(tag == page ? Visibility::Visible
@@ -251,6 +258,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
       }
     }
     BuildMouse();
+    BuildKeyboard();
     window_.AppWindow().Closing([weak](auto&&, auto&& args) {
       if (auto self = weak.lock(); self && !self->allow_close_) {
         if (self->busy_ || self->dialog_open_) {
@@ -321,6 +329,12 @@ class Shell : public std::enable_shared_from_this<Shell> {
     return root_.FindName(name).as<T>();
   }
   std::vector<settings::ActionChoice> MouseActions(size_t index) const {
+    if (index >= settings::kGrabWithAlt) {
+      std::vector<settings::ActionChoice> result;
+      for (const wchar_t* id : settings::kGrabActions)
+        result.push_back({id, id});
+      return result;
+    }
     const auto& binding = settings::kBindings[index];
     if (binding.input == settings::MouseInput::kWheel ||
         binding.input == settings::MouseInput::kHorizontalWheel)
@@ -368,6 +382,14 @@ class Shell : public std::enable_shared_from_this<Shell> {
     loading_ = true;
     const auto& value = draft_.GetText(settings::kModKey);
     Find<TextBox>(L"MouseModifier").Text(value);
+    Find<TextBox>(L"KeyboardModifier").Text(value);
+    const std::array keyboard_values{
+        L"",   L"A4 A5", L"5B 5C", L"A2 A3", L"A0 A1", L"A4", L"A5",
+        L"5B", L"5C",    L"A2",    L"A3",    L"A0",    L"A1"};
+    int keyboard_selected = -1;
+    for (size_t i = 0; i < keyboard_values.size(); ++i)
+      if (value == keyboard_values[i]) keyboard_selected = static_cast<int>(i);
+    Find<ComboBox>(L"KeyboardModifierPreset").SelectedIndex(keyboard_selected);
     const std::array values{L"", L"A2 A3", L"A0 A1", L"5B 5C"};
     int selected = 4;
     for (size_t i = 0; i < values.size(); ++i)
@@ -383,7 +405,15 @@ class Shell : public std::enable_shared_from_this<Shell> {
   }
   void BuildMouse() {
     const auto weak = weak_from_this();
-    for (size_t i = 0; i < settings::kBindings.size(); ++i) {
+    mouse_rows_.resize(settings::kTextCount, nullptr);
+    for (size_t i = 0; i < settings::kTextCount; ++i) {
+      if (i >= settings::kBindings.size() && i < settings::kGrabWithAlt)
+        continue;
+      const wchar_t* label = i < settings::kBindings.size()
+                                 ? settings::kBindings[i].label
+                             : i == settings::kGrabWithAlt
+                                 ? L"Activation key without a click"
+                                 : L"Activation key with alternate modifier";
       const auto row =
           Markup::XamlReader::Load(
               LR"xaml(<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"><StackPanel Spacing="8">
@@ -402,13 +432,15 @@ class Shell : public std::enable_shared_from_this<Shell> {
         </Expander>
       </StackPanel></UserControl>)xaml")
               .as<Control>();
-      mouse_rows_.push_back(row);
-      Find<StackPanel>(L"MouseMappings").Children().Append(row);
+      mouse_rows_[i] = row;
+      Find<StackPanel>(i < settings::kBindings.size() ? L"MouseMappings"
+                                                      : L"KeyboardActions")
+          .Children()
+          .Append(row);
       const auto combo = row.FindName(L"Action").as<ComboBox>();
-      combo.Header(box_value(settings::kBindings[i].label));
+      combo.Header(box_value(label));
       row.FindName(L"Raw").as<TextBox>().Header(
-          box_value(std::wstring(settings::kBindings[i].label) +
-                    L" — action ID and parameters"));
+          box_value(std::wstring(label) + L" — action ID and parameters"));
       for (const auto& action : MouseActions(i)) {
         ComboBoxItem item;
         item.Content(box_value(action.label));
@@ -504,6 +536,380 @@ class Shell : public std::enable_shared_from_this<Shell> {
       Find<CheckBox>(names[i]).Unchecked(change);
     }
   }
+
+  std::optional<uint16_t> EditedShortcut() {
+    const std::wstring text(Find<TextBox>(L"ShortcutKey").Text());
+    if (text.empty()) return uint16_t{0};
+    const auto key = settings::ParseVirtualKey(text);
+    if (!key) return std::nullopt;
+    unsigned mods = 0;
+    const std::array names{L"ShortcutAlt", L"ShortcutCtrl", L"ShortcutShift",
+                           L"ShortcutWin"};
+    for (size_t i = 0; i < names.size(); ++i)
+      if (Find<CheckBox>(names[i]).IsChecked().Value()) mods |= 1u << i;
+    const uint16_t value = static_cast<uint16_t>(*key | (mods << 8));
+    return settings::SupportedShortcut(value) ? std::optional{value}
+                                              : std::nullopt;
+  }
+  std::wstring ShortcutAction() {
+    return std::wstring(Find<ComboBox>(L"ShortcutAction").Text());
+  }
+  void ShowShortcut() {
+    const bool was_loading = loading_;
+    loading_ = true;
+    const auto action = ShortcutAction();
+    std::wstring raw;
+    for (const auto& entry : draft_.Shortcuts())
+      if (settings::SameAction(entry.action, action)) {
+        raw = entry.raw;
+        break;
+      }
+    const uint16_t value = settings::ShortcutNumber(raw);
+    Find<TextBlock>(L"ShortcutSaved")
+        .Text(raw.empty()
+                  ? L"Saved binding: none / empty"
+                  : L"Saved: " +
+                        (value ? ShortcutDisplayName(value) : L"unbound") +
+                        L" (INI: " + raw + L")");
+    Find<TextBox>(L"ShortcutKey").Text(value ? ToHex(value & 255) : L"");
+    const std::array names{L"ShortcutAlt", L"ShortcutCtrl", L"ShortcutShift",
+                           L"ShortcutWin"};
+    for (size_t i = 0; i < names.size(); ++i)
+      Find<CheckBox>(names[i]).IsChecked((value & (1u << (8 + i))) != 0);
+    shortcut_edit_dirty_ = false;
+    loading_ = was_loading;
+    UpdateShortcutFeedback();
+  }
+  void UpdateShortcutFeedback() {
+    const auto binding = EditedShortcut();
+    const auto action = ShortcutAction();
+    std::wstring feedback = L"Edit or capture a shortcut, then Set to save.";
+    bool valid = settings::ValidShortcutAction(action) && binding.has_value();
+    if (!settings::ValidShortcutAction(action))
+      feedback = L"Enter an action ID (UsePtWindow is reserved).";
+    else if (!binding)
+      feedback =
+          L"Use a modifier plus a supported key, or Clear to remove the "
+          L"binding.";
+    else if (*binding) {
+      const auto conflict =
+          settings::ShortcutConflict(draft_.Shortcuts(), action, *binding);
+      if (!conflict.empty()) {
+        valid = false;
+        feedback =
+            L"Already assigned to " + conflict + L". Clear that binding first.";
+      } else {
+        feedback = L"Editor: " + ShortcutDisplayName(*binding);
+        feedback += L". Set saves; capture alone does not.";
+      }
+    } else
+      feedback = L"Set will remove this action's binding.";
+    Find<TextBlock>(L"ShortcutFeedback").Text(feedback);
+    Find<Button>(L"ShortcutSet")
+        .IsEnabled(connected_ && !busy_ && shortcut_edit_dirty_ && valid &&
+                   ValidInput());
+    Find<ComboBox>(L"ShortcutAction")
+        .IsEnabled(connected_ && !busy_ && !shortcut_edit_dirty_);
+    Find<Button>(L"ShortcutBuild")
+        .IsEnabled(connected_ && !busy_ && !shortcut_edit_dirty_);
+  }
+  void ShowKeyboard() {
+    Find<TextBox>(L"ActivationKeys").Text(draft_.GetText(settings::kHotkeys));
+    Find<TextBox>(L"KeyboardModifier").Text(draft_.GetText(settings::kModKey));
+    const std::array names{L"KeyLeftAlt",  L"KeyRightAlt", L"KeyLeftWin",
+                           L"KeyRightWin", L"KeyLeftCtrl", L"KeyRightCtrl"};
+    const std::array keys{0xa4u, 0xa5u, 0x5bu, 0x5cu, 0xa2u, 0xa3u};
+    for (size_t i = 0; i < names.size(); ++i)
+      Find<CheckBox>(names[i]).IsChecked(
+          IsKeyInList(draft_.GetText(settings::kHotkeys), keys[i]));
+    auto combo = Find<ComboBox>(L"ShortcutAction");
+    const std::wstring action(combo.Text());
+    combo.Items().Clear();
+    for (const wchar_t* id : settings::kShortcutActions)
+      combo.Items().Append(box_value(id));
+    for (const auto& entry : draft_.Shortcuts()) {
+      if (std::ranges::none_of(settings::kShortcutActions,
+                               [&](const wchar_t* id) {
+                                 return settings::SameAction(entry.action, id);
+                               }))
+        combo.Items().Append(box_value(entry.action));
+    }
+    combo.Text(action.empty() ? L"Close" : action);
+    ShowShortcut();
+  }
+  fire_and_forget CaptureShortcut() {
+    if (busy_ || dialog_open_) co_return;
+    const auto lifetime = shared_from_this();
+    dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(root_.XamlRoot());
+    dialog.RequestedTheme(root_.ActualTheme());
+    dialog.Title(box_value(L"Capture a shortcut"));
+    TextBlock message;
+    message.Text(
+        L"Press a modifier and a key, then release all keys. Escape cancels. "
+        L"Nothing is saved until Set.");
+    message.TextWrapping(TextWrapping::Wrap);
+    Automation::AutomationProperties::SetLiveSetting(
+        message, Automation::Peers::AutomationLiveSetting::Polite);
+    dialog.Content(message);
+    dialog.CloseButtonText(L"Cancel");
+    CaptureSession* session = nullptr;
+    dialog.CloseButtonClick([&](auto&&, auto&&) {
+      if (session) session->Cancel();
+    });
+    dialog.Closing([&](auto&&, ContentDialogClosingEventArgs const& args) {
+      if (session && !session->state.Ready()) {
+        args.Cancel(true);
+        session->Cancel();
+      }
+    });
+    const auto dispatcher = root_.DispatcherQueue();
+    // Queue callbacks hold only a weak gate; no callback outlives stack locals.
+    auto alive = std::make_shared<bool>(true);
+    HWND capture_owner = nullptr;
+    check_hresult(
+        window_.as<IWindowNative>()->get_WindowHandle(&capture_owner));
+    CaptureSession capture(
+        capture_owner, [&, gate = std::weak_ptr<bool>(alive), dispatcher] {
+          dispatcher.TryEnqueue([&, gate] {
+            if (gate.expired()) return;
+            if (session->state.Rejected())
+              message.Text(
+                  L"That combination is unsupported. Try a modifier plus "
+                  L"another key, or Escape to cancel.");
+            if (const auto value = session->state.Value())
+              message.Text(L"Captured " + ShortcutDisplayName(*value) +
+                           L". Release all keys to return to the editor.");
+            else if (session->state.Modifiers() && !session->state.Rejected())
+              message.Text(L"Holding " +
+                           ShortcutDisplayName(static_cast<uint16_t>(
+                               session->state.Modifiers() << 8)) +
+                           L". Press a key, or Escape to cancel.");
+            if (session->state.Ready()) dialog.Hide();
+          });
+        });
+    session = &capture;
+    if (!capture.Started()) {
+      alive.reset();
+      dialog_open_ = false;
+      Find<TextBlock>(L"ShortcutFeedback")
+          .Text(
+              L"Release all keys and try capture again. The keyboard hook "
+              L"could not start.");
+      co_return;
+    }
+    // Deactivation cancels without accepting a candidate. Draining prevents
+    // unmatched releases from reaching AltSnap or another foreground window.
+    const auto activated =
+        window_.Activated([&](auto&&, WindowActivatedEventArgs const& args) {
+          if (args.WindowActivationState() ==
+              WindowActivationState::Deactivated)
+            capture.Cancel();
+        });
+    try {
+      co_await dialog.ShowAsync();
+    } catch (const hresult_error&) {
+      capture.Cancel();
+    }
+    window_.Activated(activated);
+    alive.reset();
+    dialog_open_ = false;
+    const auto result = capture.state.Value();
+    if (result) {
+      loading_ = true;
+      Find<TextBox>(L"ShortcutKey").Text(ToHex(*result & 255));
+      const std::array names{L"ShortcutAlt", L"ShortcutCtrl", L"ShortcutShift",
+                             L"ShortcutWin"};
+      for (size_t i = 0; i < names.size(); ++i)
+        Find<CheckBox>(names[i]).IsChecked((*result & (1u << (8 + i))) != 0);
+      loading_ = false;
+      shortcut_edit_dirty_ = true;
+    }
+    UpdateApply();
+    if (!result)
+      Find<TextBlock>(L"ShortcutFeedback")
+          .Text(L"Capture cancelled. Your shortcut editor is unchanged.");
+    Find<Button>(L"ShortcutCapture").Focus(FocusState::Programmatic);
+  }
+  void SetShortcut() {
+    const auto value = EditedShortcut();
+    const auto action = ShortcutAction();
+    if (!value || !settings::ValidShortcutAction(action) || !ValidInput() ||
+        busy_ || !connected_)
+      return;
+    if (*value) {
+      if (!settings::ShortcutConflict(draft_.Shortcuts(), action, *value)
+               .empty())
+        return;
+      // The host owns an unchanged binding; probing it would falsely conflict
+      // with ourselves. Other assignments are checked against the OS now.
+      bool existing = false;
+      for (const auto& entry : snapshot_.values.shortcuts)
+        if (settings::SameAction(entry.action, action) &&
+            settings::ShortcutNumber(entry.raw) == *value)
+          existing = snapshot_.enabled;
+      if (!existing) {
+        if (!RegisterHotKey(nullptr, 0x5131, *value >> 8, *value & 255)) {
+          Find<TextBlock>(L"ShortcutFeedback")
+              .Text(
+                  L"This shortcut is reserved or used by another application. "
+                  L"Choose another combination.");
+          return;
+        }
+        UnregisterHotKey(nullptr, 0x5131);
+      }
+    }
+    draft_.SetShortcut(action, *value ? std::optional{*value} : std::nullopt);
+    shortcut_edit_dirty_ = false;
+    Request(Operation::kApply);
+  }
+  void BuildKeyboard() {
+    const auto weak = weak_from_this();
+    const std::array names{L"KeyLeftAlt",  L"KeyRightAlt", L"KeyLeftWin",
+                           L"KeyRightWin", L"KeyLeftCtrl", L"KeyRightCtrl"};
+    const std::array keys{0xa4u, 0xa5u, 0x5bu, 0x5cu, 0xa2u, 0xa3u};
+    for (size_t i = 0; i < names.size(); ++i) {
+      const auto change = [weak, key = keys[i]](auto&& sender, auto&&) {
+        if (auto self = weak.lock(); self && !self->loading_) {
+          auto value = self->draft_.GetText(settings::kHotkeys);
+          if (sender.template as<CheckBox>().IsChecked().Value())
+            value = AddKeyToList(std::move(value), key);
+          else
+            while (IsKeyInList(value, key))
+              value = RemoveKeyFromList(std::move(value), key);
+          self->draft_.SetText(settings::kHotkeys, value);
+          self->loading_ = true;
+          self->Find<TextBox>(L"ActivationKeys").Text(value);
+          self->loading_ = false;
+          self->UpdateApply();
+        }
+      };
+      Find<CheckBox>(names[i]).Checked(change);
+      Find<CheckBox>(names[i]).Unchecked(change);
+    }
+    for (const auto [name, index] :
+         {std::pair{L"ActivationKeys", settings::kHotkeys},
+          {L"KeyboardModifier", settings::kModKey}})
+      Find<TextBox>(name).TextChanged([weak, index](auto&& sender, auto&&) {
+        if (auto self = weak.lock(); self && !self->loading_) {
+          self->draft_.SetText(
+              index, std::wstring(sender.template as<TextBox>().Text()));
+          self->loading_ = true;
+          if (index == settings::kModKey)
+            self->ShowModifier();
+          else {
+            const std::array controls{L"KeyLeftAlt",  L"KeyRightAlt",
+                                      L"KeyLeftWin",  L"KeyRightWin",
+                                      L"KeyLeftCtrl", L"KeyRightCtrl"};
+            const std::array codes{0xa4u, 0xa5u, 0x5bu, 0x5cu, 0xa2u, 0xa3u};
+            for (size_t i = 0; i < controls.size(); ++i)
+              self->Find<CheckBox>(controls[i])
+                  .IsChecked(
+                      IsKeyInList(self->draft_.GetText(index), codes[i]));
+          }
+          self->loading_ = false;
+          self->Find<TextBlock>(L"KeyboardError")
+              .Visibility(
+                  settings::ValidTextOption(index, self->draft_.GetText(index))
+                      ? Visibility::Collapsed
+                      : Visibility::Visible);
+          self->UpdateApply();
+        }
+      });
+    const std::array presets{L"None",       L"Alt",          L"Windows",
+                             L"Ctrl",       L"Shift",        L"Left Alt",
+                             L"Right Alt",  L"Left Windows", L"Right Windows",
+                             L"Left Ctrl",  L"Right Ctrl",   L"Left Shift",
+                             L"Right Shift"};
+    for (const wchar_t* label : presets)
+      Find<ComboBox>(L"KeyboardModifierPreset")
+          .Items()
+          .Append(box_value(label));
+    Find<ComboBox>(L"KeyboardModifierPreset")
+        .SelectionChanged([weak](auto&& sender, auto&&) {
+          if (auto self = weak.lock(); self && !self->loading_) {
+            const int index = sender.template as<ComboBox>().SelectedIndex();
+            const std::array values{
+                L"",   L"A4 A5", L"5B 5C", L"A2 A3", L"A0 A1", L"A4", L"A5",
+                L"5B", L"5C",    L"A2",    L"A3",    L"A0",    L"A1"};
+            if (index >= 0 && index < static_cast<int>(values.size()))
+              self->Find<TextBox>(L"KeyboardModifier").Text(values[index]);
+          }
+        });
+    Find<ComboBox>(L"ShortcutAction")
+        .RegisterPropertyChangedCallback(
+            ComboBox::TextProperty(), [weak](auto&&, auto&&) {
+              if (auto self = weak.lock(); self && !self->loading_) {
+                self->ShowShortcut();
+                self->UpdateApply();
+              }
+            });
+    Find<ComboBox>(L"ShortcutAction").TextSubmitted([weak](auto&&, auto&&) {
+      if (auto self = weak.lock(); self && !self->loading_)
+        self->ShowShortcut();
+    });
+    Find<ComboBox>(L"ShortcutAction").SelectionChanged([weak](auto&&, auto&&) {
+      if (auto self = weak.lock(); self && !self->loading_)
+        self->ShowShortcut();
+    });
+    Find<TextBox>(L"ShortcutKey").TextChanged([weak](auto&&, auto&&) {
+      if (auto self = weak.lock(); self && !self->loading_) {
+        self->shortcut_edit_dirty_ = true;
+        self->UpdateApply();
+      }
+    });
+    for (const wchar_t* name :
+         {L"ShortcutCtrl", L"ShortcutAlt", L"ShortcutShift", L"ShortcutWin"}) {
+      const auto change = [weak](auto&&, auto&&) {
+        if (auto self = weak.lock(); self && !self->loading_) {
+          self->shortcut_edit_dirty_ = true;
+          self->UpdateApply();
+        }
+      };
+      Find<CheckBox>(name).Checked(change);
+      Find<CheckBox>(name).Unchecked(change);
+    }
+    Find<Button>(L"ShortcutClear").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) {
+        self->loading_ = true;
+        self->Find<TextBox>(L"ShortcutKey").Text(L"");
+        for (const wchar_t* name : {L"ShortcutCtrl", L"ShortcutAlt",
+                                    L"ShortcutShift", L"ShortcutWin"})
+          self->Find<CheckBox>(name).IsChecked(false);
+        self->loading_ = false;
+        self->shortcut_edit_dirty_ = true;
+        self->UpdateApply();
+      }
+    });
+    Find<Button>(L"ShortcutDiscard").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) {
+        self->ShowShortcut();
+        self->UpdateApply();
+      }
+    });
+    Find<Button>(L"ShortcutSet").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) self->SetShortcut();
+    });
+    Find<Button>(L"ShortcutCapture").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) self->CaptureShortcut();
+    });
+    Find<Button>(L"ShortcutBuild").Click([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) {
+        const auto result = settings::BuildAction(
+            self->ShortcutAction(),
+            self->Find<ComboBox>(L"ShortcutFlag").SelectedIndex(),
+            std::wstring(self->Find<TextBox>(L"ShortcutAmount").Text()));
+        if (result) {
+          self->Find<ComboBox>(L"ShortcutAction").Text(*result);
+          self->ShowShortcut();
+        } else
+          self->Find<TextBlock>(L"ShortcutFeedback")
+              .Text(L"Enter a number from -32768 to 32767.");
+      }
+    });
+  }
+
   void Status(const wchar_t* title, const wchar_t* message,
               InfoBarSeverity severity) {
     const auto status = Find<InfoBar>(L"Status");
@@ -549,7 +955,9 @@ class Shell : public std::enable_shared_from_this<Shell> {
            std::none_of(invalid_.begin(), invalid_.end(),
                         [](bool value) { return value; });
   }
-  bool HasChanges() const { return draft_.Changes().Any() || !ValidInput(); }
+  bool HasChanges() const {
+    return shortcut_edit_dirty_ || draft_.Changes().Any() || !ValidInput();
+  }
   void SetControlsEnabled(bool enabled) {
     Find<Button>(L"TestWindow").IsEnabled(enabled && !HasChanges());
     for (size_t i = 0; i < settings::kOptionCount; ++i)
@@ -565,7 +973,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
         : context == 2 ? draft_.Get(Option::kTitlebarWithoutAlt) ||
                              draft_.Get(Option::kTitlebarWithAlt)
                        : true;
-    for (size_t i = 0; i < mouse_rows_.size(); ++i) {
+    for (size_t i = 0; i < settings::kBindings.size(); ++i) {
       mouse_rows_[i].Visibility(
           static_cast<int>(settings::kBindings[i].context) == context
               ? Visibility::Visible
@@ -589,6 +997,19 @@ class Shell : public std::enable_shared_from_this<Shell> {
                        : L"Used with your activation key (Alt by default), or "
                          L"a hotclick button.";
     Find<TextBlock>(L"MouseContextHelp").Text(help);
+    for (const wchar_t* name :
+         {L"KeyLeftAlt", L"KeyRightAlt", L"KeyLeftWin", L"KeyRightWin",
+          L"KeyLeftCtrl", L"KeyRightCtrl", L"ActivationKeys",
+          L"KeyboardModifierPreset", L"KeyboardModifier", L"ShortcutCapture",
+          L"ShortcutClear", L"ShortcutDiscard", L"ShortcutFlag",
+          L"ShortcutAmount", L"ShortcutKey", L"ShortcutAlt", L"ShortcutCtrl",
+          L"ShortcutShift", L"ShortcutWin"})
+      Find<Control>(name).IsEnabled(enabled);
+    mouse_rows_[settings::kGrabWithAlt].IsEnabled(enabled);
+    mouse_rows_[settings::kGrabWithAltB].IsEnabled(
+        enabled && !draft_.GetText(settings::kModKey).empty());
+    Find<Control>(L"ScrollLockInvert")
+        .IsEnabled(enabled && draft_.Get(Option::kScrollLockEnabled));
     // Dependent options keep their draft values while the parent is off.
     Find<Control>(L"SmartSizing")
         .IsEnabled(enabled && draft_.Get(Option::kAero));
@@ -631,6 +1052,9 @@ class Shell : public std::enable_shared_from_this<Shell> {
       }
     }
     for (size_t i = 0; i < settings::kBindings.size(); ++i) ShowMouseBinding(i);
+    ShowMouseBinding(settings::kGrabWithAlt);
+    ShowMouseBinding(settings::kGrabWithAltB);
+    ShowKeyboard();
     ShowModifier();
     const std::array names{L"HotclickMiddle", L"Hotclick4", L"Hotclick5"};
     for (size_t i = 0; i < names.size(); ++i)
@@ -642,14 +1066,29 @@ class Shell : public std::enable_shared_from_this<Shell> {
   void UpdateApply() {
     const auto patch = draft_.Changes();
     Find<Button>(L"Okay").IsEnabled(connected_ && !busy_ && patch.Valid() &&
-                                    ValidInput());
+                                    !shortcut_edit_dirty_ && ValidInput());
     Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ && patch.Any() &&
-                                     patch.Valid() && ValidInput());
+                                     patch.Valid() && !shortcut_edit_dirty_ &&
+                                     ValidInput());
     Find<Button>(L"Cancel").IsEnabled(!busy_);
     Find<TextBlock>(L"DraftStatus")
         .Text(HasChanges() ? L"You have unsaved changes."
                            : L"All changes are saved.");
     SetControlsEnabled(connected_ && !busy_);
+    bool keyboard_error = false;
+    for (const size_t index : {settings::kHotkeys, settings::kModKey})
+      if ((patch.text_changed & (uint64_t{1} << index)) &&
+          !settings::ValidTextOption(index, draft_.GetText(index)))
+        keyboard_error = true;
+    Find<TextBlock>(L"KeyboardError")
+        .Visibility(keyboard_error ? Visibility::Visible
+                                   : Visibility::Collapsed);
+    if (shortcut_edit_dirty_)
+      Find<TextBlock>(L"DraftStatus")
+          .Text(
+              L"Shortcut edit pending. Set and save, or Discard edit before "
+              L"Apply.");
+    UpdateShortcutFeedback();
   }
   void UpdateTitleTheme() {
     using Microsoft::UI::Windowing::TitleBarTheme;
@@ -720,6 +1159,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
       }
       snapshot_ = *response;
       draft_.Load(snapshot_.values);
+      shortcut_edit_dirty_ = false;
       ShowDraft();
       Find<TextBlock>(L"ConfigPath").Text(L"Configuration\n" + snapshot_.path);
       Status(operation == Operation::kApply ? L"Changes saved"
@@ -728,6 +1168,12 @@ class Shell : public std::enable_shared_from_this<Shell> {
                                : L"Hooks remain disabled. Saved settings take "
                                  L"effect when AltSnap is enabled.",
              InfoBarSeverity::Success);
+      if (snapshot_.shortcut_failures)
+        Status(L"Shortcut registration needs attention",
+               L"Some saved shortcuts could not be registered. Check for "
+               L"reserved combinations or another application using them, then "
+               L"edit or Clear the affected binding.",
+               InfoBarSeverity::Warning);
       if (operation == Operation::kLegacy || close_after) {
         allow_close_ = true;
         window_.Close();
@@ -759,13 +1205,15 @@ class Shell : public std::enable_shared_from_this<Shell> {
             L"value.";
       if (response->result == Result::kActivationFailed)
         message =
-            L"The setting was saved, but hook activation failed. Your draft is "
+            L"Settings were saved, but hook startup or shortcut registration "
+            L"failed. Your draft is "
             L"retained. Reload to inspect the state; check the resident host "
             L"before enabling hooks.";
       Status(L"Action needed", message, InfoBarSeverity::Error);
     }
     UpdateApply();
   }
+  bool shortcut_edit_dirty_ = false;
   DWORD host_;
   uint32_t request_id_ = 0;
   bool closed_ = false, busy_ = false, connected_ = false;

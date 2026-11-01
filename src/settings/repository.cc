@@ -97,6 +97,22 @@ Snapshot Repository::Read() const {
     }
     value.effective = value.present ? value.raw : TextDefault(i);
   }
+  for (const wchar_t* line = sections.at(L"KBShortcuts").data(); *line;
+       line += std::wcslen(line) + 1) {
+    const std::wstring_view entry(line);
+    const size_t equal = entry.find(L'=');
+    if (equal == entry.npos ||
+        SameAction(entry.substr(0, equal), L"UsePtWindow"))
+      continue;
+    if (snapshot.values.shortcuts.size() >= kMaxShortcutEntries ||
+        equal > 4095 || entry.size() - equal - 1 > 4095) {
+      snapshot.result = Result::kReadFailed;
+      return snapshot;
+    }
+    snapshot.values.shortcuts.push_back(
+        {std::wstring(entry.substr(0, equal)),
+         std::wstring(entry.substr(equal + 1))});
+  }
   if (Revision() != revision) snapshot.result = Result::kConflict;
   return snapshot;
 }
@@ -116,13 +132,21 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
   const Snapshot before = Read();
   if (before.result != Result::kOk) return before.result;
   if (before.revision != revision) return Result::kConflict;
+  auto shortcuts = before.values.shortcuts;
+  for (const auto& edit : patch.shortcuts)
+    SetShortcutEntry(shortcuts, edit.action, edit.binding);
+  if (shortcuts.size() > kMaxShortcutEntries) return Result::kInvalid;
+  for (const auto& edit : patch.shortcuts)
+    if (edit.binding &&
+        !ShortcutConflict(shortcuts, edit.action, *edit.binding).empty())
+      return Result::kConflict;
   // Coalesce edits to the same bit field into one checked key write.
   for (size_t i = 0; i < kOptionCount; ++i) {
-    if (!(patch.changed & (1u << i))) continue;
+    if (!(patch.changed & (uint64_t{1} << i))) continue;
     const auto& definition = kOptions[i];
     bool already_written = false;
     for (size_t j = 0; j < i; ++j)
-      if ((patch.changed & (1u << j)) &&
+      if ((patch.changed & (uint64_t{1} << j)) &&
           std::wcscmp(kOptions[j].key, definition.key) == 0 &&
           std::wcscmp(kOptions[j].section, definition.section) == 0)
         already_written = true;
@@ -133,7 +157,7 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
             ? static_cast<uint32_t>(ParseInt(before.values[i].raw.c_str()))
             : definition.engine_default;
     for (size_t j = i; j < kOptionCount; ++j) {
-      if (!(patch.changed & (1u << j)) ||
+      if (!(patch.changed & (uint64_t{1} << j)) ||
           std::wcscmp(kOptions[j].key, definition.key) != 0 ||
           std::wcscmp(kOptions[j].section, definition.section) != 0)
         continue;
@@ -164,6 +188,25 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
         after.values.text[i].raw != patch.text[i])
       return Result::kWriteFailed;
   }
+  for (const auto& edit : patch.shortcuts) {
+    const std::wstring text =
+        edit.binding ? std::to_wstring(*edit.binding) : L"";
+    if (!WritePrivateProfileStringW(L"KBShortcuts", edit.action.c_str(),
+                                    edit.binding ? text.c_str() : nullptr,
+                                    path_.c_str()))
+      return Result::kWriteFailed;
+    const Snapshot after = Read();
+    if (after.result != Result::kOk) return Result::kWriteFailed;
+    const auto found =
+        std::find_if(after.values.shortcuts.begin(),
+                     after.values.shortcuts.end(), [&](const auto& entry) {
+                       return SameAction(entry.action, edit.action);
+                     });
+    if (edit.binding
+            ? found == after.values.shortcuts.end() || found->raw != text
+            : found != after.values.shortcuts.end())
+      return Result::kWriteFailed;
+  }
   return Result::kOk;
 }
 Result Repository::WriteIfUnchanged(const Snapshot& base,
@@ -173,7 +216,7 @@ Result Repository::WriteIfUnchanged(const Snapshot& base,
   const Snapshot current = Read();
   if (current.result != Result::kOk) return current.result;
   for (size_t i = 0; i < kOptionCount; ++i) {
-    if (!(patch.changed & (1u << i))) continue;
+    if (!(patch.changed & (uint64_t{1} << i))) continue;
     if (current.values[i].present != base.values[i].present ||
         current.values[i].raw != base.values[i].raw)
       return Result::kConflict;
@@ -184,6 +227,9 @@ Result Repository::WriteIfUnchanged(const Snapshot& base,
         current.values.text[i].raw != base.values.text[i].raw)
       return Result::kConflict;
   }
+  if (!patch.shortcuts.empty() &&
+      current.values.shortcuts != base.values.shortcuts)
+    return Result::kConflict;
   return Write(current.revision, patch);
 }
 Result Repository::WriteIfAutoFocusUnchanged(const Snapshot& base,

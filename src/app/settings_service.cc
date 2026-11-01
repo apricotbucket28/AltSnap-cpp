@@ -7,6 +7,7 @@
 #include <wrl/client.h>
 
 #include "app/altsnap.h"
+#include "app/tray.h"
 #include "common/winutil.h"
 #include "settings/apply.h"
 #include "ui/config.h"
@@ -124,6 +125,10 @@ settings::Snapshot SettingsService::Execute(const settings::Request& request,
   using settings::Result;
   auto snapshot = repository_.Read();
   snapshot.enabled = IsEnabled();
+  snapshot.shortcut_failures = G_HooksWinProc
+                                   ? static_cast<uint32_t>(G_HooksWinProc(
+                                         g_hwnd, WM_GETSHORTCUTERRORS, 0, 0))
+                                   : 0;
   if (stopping || MultipleHosts() || IsWindow(g_cfgwnd) ||
       (FrontendActive() && frontend_pid_ != client)) {
     snapshot.result = Result::kBusy;
@@ -156,15 +161,28 @@ settings::Snapshot SettingsService::Execute(const settings::Request& request,
      public:
       bool Enabled() const override { return IsEnabled(); }
       bool Stop() override { return UnhookSystem() == 0; }
-      bool Start() override { return HookSystem() == 0; }
+      bool Start() override {
+        if (HookSystem() != 0) return false;
+        return !G_HooksWinProc ||
+               G_HooksWinProc(g_hwnd, WM_GETSHORTCUTERRORS, 0, 0) == 0;
+      }
     } runtime;
     const Result result = settings::ApplyPatch(repository_, request.revision,
                                                request.patch, runtime);
     if (result == Result::kOk || result == Result::kActivationFailed)
       EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);
     snapshot = repository_.Read();
+    if (snapshot.result == Result::kOk) {
+      ScrollLockState = static_cast<unsigned char>(GetPrivateProfileIntW(
+          L"Input", L"ScrollLockState", 0, inipath.c_str()));
+      UpdateTray();
+    }
     snapshot.result = result;
     snapshot.enabled = IsEnabled();
+    snapshot.shortcut_failures = G_HooksWinProc
+                                     ? static_cast<uint32_t>(G_HooksWinProc(
+                                           g_hwnd, WM_GETSHORTCUTERRORS, 0, 0))
+                                     : 0;
   }
   return snapshot;
 }

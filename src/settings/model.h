@@ -10,6 +10,7 @@
 #include <string_view>
 #include <utility>
 
+#include "settings/keyboard_model.h"
 #include "settings/mouse_model.h"
 
 namespace altsnap::settings {
@@ -44,6 +45,11 @@ enum class Option : size_t {
   kTitlebarWithoutAlt,
   kTitlebarWithAlt,
   kLongClickMove,
+  kKeyCombo,
+  kScrollLockEnabled,
+  kScrollLockInvert,
+  kUniKeyHoldMenu,
+  kUsePtWindow,
   kCount
 };
 inline constexpr size_t kOptionCount = static_cast<size_t>(Option::kCount);
@@ -93,11 +99,16 @@ inline constexpr std::array<OptionDefinition, kOptionCount> kOptions{
      {ValueKind::kNumber, L"MoveTrans", 255, 0, 255, L"General"},
      {ValueKind::kToggle, L"TTBActions", 0, 1, 1, L"Input"},
      {ValueKind::kToggle, L"TTBActions", 0, 2, 1, L"Input"},
-     {ValueKind::kToggle, L"LongClickMove", 0, 0, 1, L"Input"}}};
+     {ValueKind::kToggle, L"LongClickMove", 0, 0, 1, L"Input"},
+     {ValueKind::kToggle, L"KeyCombo", 0, 0, 1, L"Input"},
+     {ValueKind::kToggle, L"ScrollLockState", 0, 1, 1, L"Input"},
+     {ValueKind::kToggle, L"ScrollLockState", 0, 2, 1, L"Input"},
+     {ValueKind::kToggle, L"UniKeyHoldMenu", 0, 0, 1, L"Input"},
+     {ValueKind::kToggle, L"UsePtWindow", 0, 0, 1, L"KBShortcuts"}}};
 inline constexpr size_t Index(Option option) {
   return static_cast<size_t>(option);
 }
-static_assert(kOptionCount < 32);  // Bounded wire change mask.
+static_assert(kOptionCount < 64);  // Bounded wire change mask.
 inline int32_t SignedNumber(uint32_t value) {
   return std::bit_cast<int32_t>(value);
 }
@@ -132,21 +143,25 @@ struct Value {
 };
 struct Values : std::array<Value, kOptionCount> {
   TextValues text;
+  std::vector<ShortcutEntry> shortcuts;
 };
 struct Patch {
-  uint32_t changed = 0;
+  uint64_t changed = 0;
   std::array<uint32_t, kOptionCount> values{};
   uint64_t text_changed = 0;
   std::array<std::wstring, kTextCount> text{};
-  bool Any() const { return changed || text_changed; }
+  std::vector<ShortcutEdit> shortcuts;
+  bool Any() const { return changed || text_changed || !shortcuts.empty(); }
   bool Valid() const {
+    if (!ValidShortcutEdits(shortcuts)) return false;
     if (text_changed >> kTextCount) return false;
     for (size_t i = 0; i < kTextCount; ++i)
       if ((text_changed & (uint64_t{1} << i)) && !ValidTextOption(i, text[i]))
         return false;
     if (changed >> kOptionCount) return false;
     for (size_t i = 0; i < kOptionCount; ++i)
-      if ((changed & (1u << i)) && !ValidValue(i, values[i])) return false;
+      if ((changed & (uint64_t{1} << i)) && !ValidValue(i, values[i]))
+        return false;
     return true;
   }
 };
@@ -154,6 +169,7 @@ struct Patch {
 class Draft {
  public:
   void Load(const Values& values) {
+    shortcuts_base_ = shortcuts_edited_ = values.shortcuts;
     for (size_t i = 0; i < kOptionCount; ++i)
       base_[i] = edited_[i] = values[i].effective;
     for (size_t i = 0; i < kTextCount; ++i)
@@ -167,11 +183,28 @@ class Draft {
   const std::wstring& GetText(size_t index) const {
     return text_edited_[index];
   }
+  const std::vector<ShortcutEntry>& Shortcuts() const {
+    return shortcuts_edited_;
+  }
+  void SetShortcut(std::wstring action, std::optional<uint16_t> binding) {
+    SetShortcutEntry(shortcuts_edited_, action, binding);
+    // Returning to the original binding restores its exact legacy spelling.
+    if (!binding) return;
+    for (const auto& original : shortcuts_base_) {
+      if (!SameAction(original.action, action) ||
+          ShortcutNumber(original.raw) != *binding)
+        continue;
+      for (auto& edited : shortcuts_edited_)
+        if (SameAction(edited.action, action)) edited.raw = original.raw;
+      break;
+    }
+  }
   Patch Changes() const {
     Patch patch;
+    patch.shortcuts = ShortcutChanges(shortcuts_base_, shortcuts_edited_);
     patch.values = edited_;
     for (size_t i = 0; i < kOptionCount; ++i)
-      if (edited_[i] != base_[i]) patch.changed |= 1u << i;
+      if (edited_[i] != base_[i]) patch.changed |= uint64_t{1} << i;
     patch.text = text_edited_;
     for (size_t i = 0; i < kTextCount; ++i)
       if (text_edited_[i] != text_base_[i])
@@ -180,12 +213,13 @@ class Draft {
   }
 
  private:
+  std::vector<ShortcutEntry> shortcuts_base_, shortcuts_edited_;
   std::array<uint32_t, kOptionCount> base_{}, edited_{};
   std::array<std::wstring, kTextCount> text_base_{}, text_edited_{};
 };
 inline Patch SingleChange(Option option, uint32_t value) {
   Patch patch;
-  patch.changed = 1u << Index(option);
+  patch.changed = uint64_t{1} << Index(option);
   patch.values[Index(option)] = value;
   return patch;
 }

@@ -36,7 +36,7 @@ int main() {
     CHECK(!Decode(bad, decoded));
   }
   auto bad_mask = bytes;
-  bad_mask[27] = 128;
+  bad_mask[31] = 128;
   CHECK(!Decode(bad_mask, decoded));
   Request tool{74, Operation::kTestWindow};
   CHECK(Decode(Encode(tool), decoded));
@@ -44,12 +44,13 @@ int main() {
   CHECK(!Decode(Encode(tool), decoded));
   Snapshot snapshot, restored;
   snapshot.result = Result::kConflict;
+  snapshot.shortcut_failures = 3;
   snapshot.revision = 0xfedcba9876543210ull;
   snapshot.path = L"C:\\設定\\AltSnap.ini";
   snapshot.values[0] = {1, true, L"custom"};
   bytes = Encode(snapshot, 73);
   CHECK(Decode(bytes, 73, restored));
-  CHECK(restored.path == snapshot.path &&
+  CHECK(restored.shortcut_failures == 3 && restored.path == snapshot.path &&
         restored.values[0].raw == snapshot.values[0].raw &&
         restored.revision == snapshot.revision);
   CHECK(!Decode(bytes, 74, restored));
@@ -216,7 +217,7 @@ int main() {
   Patch invalid = SingleChange(Option::kAutoSnap, 4);
   CHECK(repository.Write(current.revision, invalid) == Result::kInvalid);
   CHECK(repository.Read().revision == current.revision);
-  invalid.changed = 1u << kOptionCount;
+  invalid.changed = uint64_t{1} << kOptionCount;
   CHECK(!invalid.Valid());
   // Complete model and protocol round trip, including all raw/presence fields.
   bytes = Encode(current, 123);
@@ -449,6 +450,7 @@ int main() {
   maximum_request.patch.text_changed = (uint64_t{1} << kTextCount) - 1;
   for (auto& text : maximum_request.patch.text) text.assign(4095, L'x');
   maximum_request.patch.text[kModKey] = L"A2 A3";
+  maximum_request.patch.text[kHotkeys] = L"A4 A5";
   bytes = Encode(maximum_request);
   CHECK(bytes.size() <= kMaxRequest && Decode(bytes, decoded));
   // Every option can be written and read through its own declared section/key.
@@ -458,6 +460,167 @@ int main() {
                            SingleChange(option, 0)) == Result::kOk);
     CHECK(repository.Read().values[i].effective == 0);
   }
+
+  // Keyboard inventory: absent values, raw preservation and high change bits.
+  CHECK(TextDefault(kHotkeys) == L"A4 A5");
+  CHECK(TextDefault(kGrabWithAlt) == L"Nothing" &&
+        TextDefault(kGrabWithAltB) == L"Nothing");
+  CHECK(kGrabActions.size() == 15 && kShortcutActions.size() == 32);
+  CHECK(ParseVirtualKey(L"aF") == 0xafu && ParseVirtualKey(L"00") == 0u);
+  for (const auto* bad : {L"", L"100", L"-1", L"0xA", L"GG", L" A"})
+    CHECK(!ParseVirtualKey(bad));
+  CHECK(ShortcutNumber(L" +65537suffix") == 1);
+  CHECK(ShortcutNumber(L"-1") == 65535);
+  CHECK(ShortcutNumber(L"\t123") == 0);  // Match ParseInt, not wcstoul.
+  CHECK(ValidModifier(L"A4 A5 42") && !ValidModifier(L"00"));
+  CHECK(ValidTextOption(kHotkeys, L"A4 A5 42") &&
+        !ValidTextOption(kHotkeys, L"ZZ"));
+  CHECK(SupportedShortcut(0x064b));  // Ctrl+Shift+K.
+  for (int bad : {0x004b, 0x024b + 0x1000, 0x02a2, 0x017b, 0x011b, 0x0112,
+                  0x0120, 0x0109, 0x032e, 0x084c})
+    CHECK(!SupportedShortcut(static_cast<uint16_t>(bad)));
+  for (const auto* bad : {L"", L"UsePtWindow", L"useptwindow", L"Close=123",
+                          L";Close", L" Close", L"Close\n", L"[Close]"})
+    CHECK(!ValidShortcutAction(bad));
+  CHECK(!ValidShortcutAction(std::wstring(L"Close\0x", 7)));
+  CHECK(ValidShortcutAction(L"Step_R_10"));
+  CHECK(!ValidShortcutEdits(
+      {{L"Close", uint16_t{0x024b}}, {L"close", std::nullopt}}));
+  CHECK(!ValidShortcutEdits(
+      {{L"Close", uint16_t{0x024b}}, {L"Roll", uint16_t{0x024b}}}));
+  CHECK(!ValidShortcutEdits({{L"UsePtWindow", std::nullopt}}));
+  // Capture accepts only a nonmodifier with modifiers; repeats cannot alter a
+  // candidate. Both left/right modifiers contribute until each is released.
+  ShortcutCapture capture;
+  capture.Key(0xa2, true);
+  capture.Key(0xa3, true);
+  capture.Key(0xa0, true);
+  CHECK(!capture.Value() && !capture.Ready());
+  capture.Key(0x4b, true);
+  capture.Key(0x4b, true);
+  CHECK(capture.Value() == 0x064b && !capture.Ready());
+  capture.Key(0x4b, false);
+  capture.Key(0xa2, false);
+  capture.Key(0xa0, false);
+  CHECK(!capture.Ready());
+  capture.Key(0xa3, false);
+  CHECK(capture.Ready());
+  capture.Cancel();
+  CHECK(capture.Ready() && !capture.Value());
+  ShortcutCapture rejected;
+  rejected.Key(0x4b, true);
+  CHECK(rejected.Rejected() && !rejected.Value());
+  rejected.Key(0x4b, false);
+  rejected.Key(0xa4, true);
+  rejected.Key(9, true);
+  CHECK(!rejected.Value());
+  rejected.Key(9, false);
+  rejected.Key(0xa4, false);
+  rejected.Key(0xa2, true);
+  rejected.Key(0x4a, true);
+  CHECK(rejected.Value() == 0x024a);
+  rejected.Cancel();
+  CHECK(!rejected.Value() && !rejected.Ready());
+  rejected.Key(0x4a, false);
+  rejected.Key(0xa2, false);
+  CHECK(rejected.Ready());
+  ShortcutCapture escape;
+  escape.Key(0x1b, true);
+  CHECK(!escape.Ready() && !escape.Value());
+  escape.Key(0x1b, false);
+  CHECK(escape.Ready());
+  // Viewing/capture changes no persisted draft. Set stages one typed edit.
+  CHECK(WritePrivateProfileStringW(L"KBShortcuts", L"Future_Action_42",
+                                   L"custom raw", path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"KBShortcuts", L"Roll_U", L"0001611",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"ScrollLockState", L"260",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"Hotkeys", L"A4 A5 42",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"GrabWithAltB", L"Future_X_42",
+                                   path.c_str()));
+  current = repository.Read();
+  Draft keyboard;
+  keyboard.Load(current.values);
+  CHECK(!keyboard.Changes().Any());
+  keyboard.SetShortcut(L"roll_u", uint16_t{1611});
+  CHECK(!keyboard.Changes().Any());
+  keyboard.SetShortcut(L"roll_u", uint16_t{0x064a});
+  CHECK(keyboard.Changes().Any());
+  keyboard.SetShortcut(L"roll_u", uint16_t{1611});
+  CHECK(!keyboard.Changes().Any());
+  keyboard.Set(Option::kScrollLockEnabled, 1);
+  keyboard.Set(Option::kScrollLockInvert, 1);
+  keyboard.Set(Option::kUsePtWindow, 1);
+  keyboard.Set(Option::kKeyCombo, 1);
+  keyboard.SetText(kHotkeys, L"A5 42");
+  keyboard.SetShortcut(L"Step_R_10", uint16_t{0x064a});
+  const auto keyboard_patch = keyboard.Changes();
+  CHECK(keyboard_patch.Valid() && !keyboard_patch.shortcuts.empty());
+  Request keyboard_request{123, Operation::kApply, current.revision,
+                           keyboard_patch};
+  bytes = Encode(keyboard_request);
+  CHECK(Decode(bytes, decoded) && decoded.patch.shortcuts[0].binding == 0x064a);
+  for (size_t length = 0; length < bytes.size(); ++length)
+    CHECK(!Decode(std::span(bytes.data(), length), decoded));
+  runtime.enabled = true;
+  runtime.start_ok = runtime.stop_ok = true;
+  const int keyboard_stops = runtime.stops, keyboard_starts = runtime.starts;
+  CHECK(ApplyPatch(repository, current.revision, keyboard_patch, runtime) ==
+        Result::kOk);
+  CHECK(runtime.stops == keyboard_stops + 1 &&
+        runtime.starts == keyboard_starts + 1);
+  current = repository.Read();
+  CHECK(current.values[Index(Option::kScrollLockEnabled)].raw == L"263");
+  CHECK(current.values[Index(Option::kUsePtWindow)].raw == L"1");
+  CHECK(current.values.text[kHotkeys].raw == L"A5 42");
+  CHECK(current.values.text[kGrabWithAltB].raw == L"Future_X_42");
+  CHECK(Decode(Encode(current, 9), 9, restored) &&
+        restored.values.shortcuts == current.values.shortcuts);
+  CHECK(ShortcutConflict(current.values.shortcuts, L"Close",
+                         uint16_t{0x064a}) == L"Step_R_10");
+  keyboard.Load(current.values);
+  keyboard.SetShortcut(L"Close", uint16_t{0x064a});
+  keyboard.Set(Option::kUsePtWindow, 0);
+  CHECK(repository.Write(current.revision, keyboard.Changes()) ==
+        Result::kConflict);
+  CHECK(repository.Read().revision ==
+        current.revision);          // Validate before all writes.
+  CHECK(keyboard.Changes().Any());  // Failure retains draft.
+  keyboard.Load(repository.Read().values);
+  CHECK(!keyboard.Changes().Any());
+  keyboard.SetShortcut(L"Step_R_10", std::nullopt);
+  keyboard.SetShortcut(
+      L"Close", uint16_t{0x064a});  // Atomic validation permits reassignment.
+  CHECK(repository.Write(current.revision, keyboard.Changes()) == Result::kOk);
+  current = repository.Read();
+  keyboard.Load(current.values);
+  CHECK(ShortcutConflict(current.values.shortcuts, L"Close", 0x064a).empty());
+  const auto unknown = std::find_if(
+      current.values.shortcuts.begin(), current.values.shortcuts.end(),
+      [](const auto& e) { return e.action == L"Future_Action_42"; });
+  CHECK(unknown != current.values.shortcuts.end() &&
+        unknown->raw == L"custom raw");
+  keyboard.SetShortcut(L"Close", std::nullopt);
+  CHECK(WritePrivateProfileStringW(L"KBShortcuts", L"External", L"999",
+                                   path.c_str()));
+  CHECK(repository.Write(current.revision, keyboard.Changes()) ==
+        Result::kConflict);
+  CHECK(keyboard.Changes().Any());
+  keyboard.Load(repository.Read().values);
+  CHECK(!keyboard.Changes().Any());
+  keyboard.SetShortcut(L"Close", std::nullopt);
+  runtime.enabled = false;
+  const int disabled_starts = runtime.starts;
+  CHECK(ApplyPatch(repository, repository.Read().revision, keyboard.Changes(),
+                   runtime) == Result::kOk);
+  CHECK(!runtime.enabled && runtime.starts == disabled_starts);
+  current = repository.Read();
+  CHECK(std::ranges::none_of(current.values.shortcuts, [](const auto& e) {
+    return SameAction(e.action, L"Close");
+  }));
+
   CHECK(DeleteFileW(path.c_str()));
   CHECK(DeleteFileW(filename));
   CHECK(repository.Read().result == Result::kReadFailed);

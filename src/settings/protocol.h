@@ -11,9 +11,8 @@
 namespace altsnap::settings {
 inline constexpr unsigned kWake = 0x8000 + 71;
 inline constexpr uint32_t kMagic = 0x31535441;
-inline constexpr size_t kMaxRequest =
-    40 + 4 * kOptionCount + kTextCount * (4 + 8190);
-inline constexpr size_t kMaxReply = 1048576;
+inline constexpr size_t kMaxRequest = 1048576;
+inline constexpr size_t kMaxReply = 2097152;
 enum class Operation : uint32_t {
   kRead = 1,
   kApply = 2,
@@ -39,6 +38,24 @@ inline uint32_t Get(std::span<const uint8_t> bytes, size_t offset) {
     value |= uint32_t(bytes[offset + i]) << (i * 8);
   return value;
 }
+inline void PutString(std::vector<uint8_t>& bytes, std::wstring_view value) {
+  Put(bytes, static_cast<uint32_t>(value.size()));
+  for (wchar_t c : value) {
+    bytes.push_back(static_cast<uint8_t>(c));
+    bytes.push_back(static_cast<uint8_t>(c >> 8));
+  }
+}
+inline bool GetString(std::span<const uint8_t> bytes, size_t& offset,
+                      std::wstring& value, size_t maximum) {
+  if (bytes.size() - offset < 4) return false;
+  const uint32_t length = Get(bytes, offset);
+  offset += 4;
+  if (length > maximum || length > (bytes.size() - offset) / 2) return false;
+  for (uint32_t i = 0; i < length; ++i, offset += 2)
+    value.push_back(static_cast<wchar_t>(bytes[offset] |
+                                         (uint16_t(bytes[offset + 1]) << 8)));
+  return true;
+}
 struct Request {
   uint32_t id = 0;
   Operation operation = Operation::kRead;
@@ -48,10 +65,11 @@ struct Request {
 inline std::vector<uint8_t> Encode(const Request& request) {
   std::vector<uint8_t> bytes;
   for (uint32_t value :
-       {kMagic, 4u, request.id, static_cast<uint32_t>(request.operation),
+       {kMagic, 5u, request.id, static_cast<uint32_t>(request.operation),
         static_cast<uint32_t>(request.revision),
-        static_cast<uint32_t>(request.revision >> 32), request.patch.changed,
-        0u})
+        static_cast<uint32_t>(request.revision >> 32),
+        static_cast<uint32_t>(request.patch.changed),
+        static_cast<uint32_t>(request.patch.changed >> 32)})
     Put(bytes, value);
   for (uint32_t value : request.patch.values) Put(bytes, value);
   Put(bytes, static_cast<uint32_t>(request.patch.text_changed));
@@ -63,18 +81,24 @@ inline std::vector<uint8_t> Encode(const Request& request) {
       bytes.push_back(static_cast<uint8_t>(c >> 8));
     }
   }
+  Put(bytes, static_cast<uint32_t>(request.patch.shortcuts.size()));
+  for (const auto& edit : request.patch.shortcuts) {
+    PutString(bytes, edit.action);
+    Put(bytes, edit.binding ? *edit.binding : 65536u);
+  }
   return bytes;
 }
 inline bool Decode(std::span<const uint8_t> bytes, Request& request) {
   if (bytes.size() < 40 + 4 * kOptionCount || bytes.size() > kMaxRequest ||
-      Get(bytes, 0) != kMagic || Get(bytes, 4) != 4 || Get(bytes, 12) < 1 ||
-      Get(bytes, 12) > 4 || Get(bytes, 28))
+      Get(bytes, 0) != kMagic || Get(bytes, 4) != 5 || Get(bytes, 12) < 1 ||
+      Get(bytes, 12) > 4)
     return false;
   request = {Get(bytes, 8),
              static_cast<Operation>(Get(bytes, 12)),
              uint64_t(Get(bytes, 16)) | (uint64_t(Get(bytes, 20)) << 32),
              {}};
-  request.patch.changed = Get(bytes, 24);
+  request.patch.changed =
+      uint64_t(Get(bytes, 24)) | (uint64_t(Get(bytes, 28)) << 32);
   for (size_t i = 0; i < kOptionCount; ++i)
     request.patch.values[i] = Get(bytes, 32 + 4 * i);
   size_t offset = 32 + 4 * kOptionCount;
@@ -90,6 +114,21 @@ inline bool Decode(std::span<const uint8_t> bytes, Request& request) {
       value.push_back(static_cast<wchar_t>(bytes[offset] |
                                            (uint16_t(bytes[offset + 1]) << 8)));
   }
+  if (bytes.size() - offset < 4) return false;
+  const uint32_t count = Get(bytes, offset);
+  offset += 4;
+  if (count > kMaxShortcutEntries) return false;
+  for (uint32_t i = 0; i < count; ++i) {
+    ShortcutEdit edit;
+    if (!GetString(bytes, offset, edit.action, 255) ||
+        bytes.size() - offset < 4)
+      return false;
+    const uint32_t number = Get(bytes, offset);
+    offset += 4;
+    if (number > 65536) return false;
+    if (number < 65536) edit.binding = static_cast<uint16_t>(number);
+    request.patch.shortcuts.push_back(std::move(edit));
+  }
   if (offset != bytes.size()) return false;
   if (!request.patch.Valid() ||
       (request.operation != Operation::kApply && request.patch.Any()))
@@ -100,13 +139,14 @@ struct Snapshot {
   Result result = Result::kOk;
   uint64_t revision = 0;
   bool enabled = false;
+  uint32_t shortcut_failures = 0;
   Values values;
   std::wstring path;
 };
 inline std::vector<uint8_t> Encode(const Snapshot& s, uint32_t id) {
   std::vector<uint8_t> bytes;
   for (uint32_t value :
-       {kMagic, 4u, id, static_cast<uint32_t>(s.result),
+       {kMagic, 5u, id, static_cast<uint32_t>(s.result),
         static_cast<uint32_t>(s.revision),
         static_cast<uint32_t>(s.revision >> 32), uint32_t(s.enabled),
         static_cast<uint32_t>(s.path.size())})
@@ -131,11 +171,17 @@ inline std::vector<uint8_t> Encode(const Snapshot& s, uint32_t id) {
     Put(bytes, static_cast<uint32_t>(value.effective.size()));
     text(value.effective);
   }
+  Put(bytes, static_cast<uint32_t>(s.values.shortcuts.size()));
+  for (const auto& entry : s.values.shortcuts) {
+    PutString(bytes, entry.action);
+    PutString(bytes, entry.raw);
+  }
+  Put(bytes, s.shortcut_failures);
   return bytes;
 }
 inline bool Decode(std::span<const uint8_t> bytes, uint32_t id, Snapshot& s) {
   if (bytes.size() < 32 || bytes.size() > kMaxReply ||
-      Get(bytes, 0) != kMagic || Get(bytes, 4) != 4 || Get(bytes, 8) != id ||
+      Get(bytes, 0) != kMagic || Get(bytes, 4) != 5 || Get(bytes, 8) != id ||
       Get(bytes, 12) > 6 || Get(bytes, 24) > 1)
     return false;
   Snapshot decoded;
@@ -171,12 +217,24 @@ inline bool Decode(std::span<const uint8_t> bytes, uint32_t id, Snapshot& s) {
     offset += 4;
     if (length > 4095 || !text(length, value.effective)) return false;
   }
-  if (offset != bytes.size()) return false;
+  if (bytes.size() - offset < 4) return false;
+  const uint32_t count = Get(bytes, offset);
+  offset += 4;
+  if (count > kMaxShortcutEntries) return false;
+  for (uint32_t i = 0; i < count; ++i) {
+    ShortcutEntry entry;
+    if (!GetString(bytes, offset, entry.action, 4095) ||
+        !GetString(bytes, offset, entry.raw, 4095))
+      return false;
+    decoded.values.shortcuts.push_back(std::move(entry));
+  }
+  if (bytes.size() - offset != 4) return false;
+  decoded.shortcut_failures = Get(bytes, offset);
   s = std::move(decoded);
   return true;
 }
 inline std::wstring PipeName(uint32_t pid) {
-  return L"\\\\.\\pipe\\AltSnap.Settings.v4." + std::to_wstring(pid);
+  return L"\\\\.\\pipe\\AltSnap.Settings.v5." + std::to_wstring(pid);
 }
 }  // namespace altsnap::settings
 #endif

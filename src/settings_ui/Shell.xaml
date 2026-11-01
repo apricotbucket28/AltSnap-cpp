@@ -11,6 +11,7 @@
       <NavigationViewItem Content="General" Tag="General" Icon="Home" />
       <NavigationViewItem Content="Snapping" Tag="Snapping" Icon="DockLeft" />
       <NavigationViewItem Content="Mouse" Tag="Mouse" Icon="TouchPointer" />
+      <NavigationViewItem Content="Keyboard" Tag="Keyboard" Icon="Edit" />
       <NavigationViewItem Content="Advanced" Tag="Advanced" Icon="Repair" />
       <NavigationViewItem Content="Appearance" Tag="Appearance" Icon="Setting" />
       <NavigationViewItem Content="About" Tag="About" Icon="Help" />
@@ -42,7 +43,7 @@
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
               <StackPanel Spacing="12">
                 <TextBlock Text="Everything else, right where you left it" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                <TextBlock Text="Keyboard shortcuts, exclusions, startup, language, and zone layouts are available in the legacy settings window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Exclusions, startup, language, and zone layouts are available in the legacy settings window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Button x:Name="Legacy" Content="Open legacy settings" IsEnabled="False" />
               </StackPanel>
             </Border>
@@ -124,7 +125,11 @@
               <StackPanel Spacing="16">
                 <TextBlock Text="Activation and modifiers" Style="{ThemeResource SubtitleTextBlockStyle}" />
                 <ComboBox x:Name="ModifierPreset" Header="Alternate action modifier" HorizontalAlignment="Stretch">
-                  <ComboBoxItem Content="None" /><ComboBoxItem Content="Ctrl (either side)" /><ComboBoxItem Content="Shift (either side)" /><ComboBoxItem Content="Windows (either side)" /><ComboBoxItem Content="Custom key list" />
+                  <ComboBoxItem Content="None" />
+                  <ComboBoxItem Content="Ctrl (either side)" />
+                  <ComboBoxItem Content="Shift (either side)" />
+                  <ComboBoxItem Content="Windows (either side)" />
+                  <ComboBoxItem Content="Custom key list" />
                 </ComboBox>
                 <TextBox x:Name="MouseModifier" Header="Alternate action modifier (hex virtual-key codes)" PlaceholderText="None — e.g. A2 A3 for either Ctrl key" />
                 <TextBlock Text="Hold any listed modifier with your activation key to use Alternate actions. A2 A3 = Ctrl, A0 A1 = Shift, 5B 5C = Windows keys. This is the shared Input/ModKey setting. Activation keys are configured in legacy Keyboard settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -140,6 +145,94 @@
                 <TextBlock x:Name="MouseError" Visibility="Collapsed" Text="Enter up to 15 nonzero hex virtual-key codes (01–FF), separated by spaces." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
               </StackPanel>
             </Border>
+          </StackPanel>
+          <StackPanel x:Name="KeyboardPage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="Keyboard" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Activation keys and window shortcuts, with your custom mappings kept intact." TextWrapping="Wrap" />
+            <StackPanel x:Name="KeyboardEditors" Spacing="20">
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Activation" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftAlt" Content="Left Alt" />
+                    <CheckBox x:Name="KeyRightAlt" Content="Right Alt" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftWin" Content="Left Windows" />
+                    <CheckBox x:Name="KeyRightWin" Content="Right Windows" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftCtrl" Content="Left Ctrl" />
+                    <CheckBox x:Name="KeyRightCtrl" Content="Right Ctrl" />
+                  </StackPanel>
+                  <TextBox x:Name="ActivationKeys" Header="Activation keys (hex virtual-key list)" />
+                  <TextBlock Text="Checkboxes preserve other keys in the list. The engine uses up to 15 keys. Default: A4 A5 (left and right Alt)." TextWrapping="Wrap" />
+                  <ToggleSwitch x:Name="KeyCombo" Header="Require two activation keys together" />
+                  <ComboBox x:Name="KeyboardModifierPreset" Header="Alternate modifier preset" HorizontalAlignment="Stretch" />
+                  <TextBox x:Name="KeyboardModifier" Header="Alternate modifiers (hex virtual-key list)" />
+                  <TextBlock Text="Shared with Mouse. These keys select the alternate action; they do not add shortcut modifiers." TextWrapping="Wrap" />
+                  <TextBlock x:Name="KeyboardError" Visibility="Collapsed" Text="Use up to 15 nonzero hex virtual keys, separated by spaces." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Actions without a click" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <StackPanel x:Name="KeyboardActions" Spacing="16" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Typing and Scroll Lock" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <ToggleSwitch x:Name="ScrollLockEnabled" Header="Gate AltSnap with Scroll Lock" />
+                  <ToggleSwitch x:Name="ScrollLockInvert" Header="Disable when Scroll Lock is on" />
+                  <TextBlock Text="With the second switch off, AltSnap is disabled while Scroll Lock is off. Other ScrollLockState bits are preserved." TextWrapping="Wrap" />
+                  <ToggleSwitch x:Name="UniKeyHoldMenu" Header="Hold a letter for accented characters" />
+                  <TextBlock Text="The hold menu respects the existing full-screen and excluded-window rules." TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Global window shortcuts" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <ToggleSwitch x:Name="UsePtWindow" Header="Act on the window under the pointer" />
+                  <TextBlock Text="Otherwise shortcuts target the foreground window. Choose an action to display its saved binding; edits and capture remain in this editor until Set. Set immediately saves all pending settings and reloads enabled hooks once." TextWrapping="Wrap" />
+                  <ComboBox x:Name="ShortcutAction" Header="Action ID" IsEditable="True" HorizontalAlignment="Stretch" />
+                  <Expander Header="Action parameters" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="10">
+                      <ComboBox x:Name="ShortcutFlag" Header="Direction / operation" SelectedIndex="0">
+                        <ComboBoxItem Content="Default" />
+                        <ComboBoxItem Content="Left" />
+                        <ComboBoxItem Content="Up" />
+                        <ComboBoxItem Content="Right" />
+                        <ComboBoxItem Content="Down" />
+                        <ComboBoxItem Content="Set" />
+                        <ComboBoxItem Content="Toggle" />
+                      </ComboBox>
+                      <TextBox x:Name="ShortcutAmount" Header="Number (optional, -32768 to 32767)" />
+                      <TextBlock Text="Roll: Up/Down. Transparency: Up/Down/Set/Toggle and number. Edge, zone and Focus actions: direction. Step: direction and number. Other actions ignore unused parameters. Custom IDs can be entered above." TextWrapping="Wrap" />
+                      <Button x:Name="ShortcutBuild" Content="Use action parameters" />
+                    </StackPanel>
+                  </Expander>
+                  <TextBlock x:Name="ShortcutSaved" TextWrapping="Wrap" />
+                  <TextBox x:Name="ShortcutKey" Header="Virtual key (hex, 00 to FF)" MaxLength="2" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <CheckBox x:Name="ShortcutCtrl" Content="Ctrl" />
+                    <CheckBox x:Name="ShortcutAlt" Content="Alt" />
+                    <CheckBox x:Name="ShortcutShift" Content="Shift" />
+                    <CheckBox x:Name="ShortcutWin" Content="Windows" />
+                  </StackPanel>
+                  <TextBlock x:Name="ShortcutFeedback" Text="Select an action, then edit or capture its shortcut." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ShortcutCapture" Content="Capture shortcut…" />
+                    <Button x:Name="ShortcutClear" Content="Clear" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ShortcutDiscard" Content="Discard edit" />
+                    <Button x:Name="ShortcutSet" Content="Set and save" IsEnabled="False" />
+                  </StackPanel>
+                  <TextBlock Text="Use a modifier plus a key. Modifier-only input, F12, Escape and reserved system combinations cannot be assigned. Duplicate AltSnap bindings and unavailable global shortcuts are refused. Escape cancels capture; Tab can be captured with modifiers. Windows security shortcuts cannot be intercepted." TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
           </StackPanel>
           <StackPanel x:Name="AdvancedPage" Visibility="Collapsed" Spacing="20">
             <TextBlock Text="Advanced" Style="{ThemeResource TitleTextBlockStyle}" />

@@ -121,7 +121,7 @@ manual INI workflow; they are not new page requirements.
 | --- | --- |
 | General | InactiveScroll, MDI, ResizeAll, UseZones bit 0, PiercingClick, four ResizeCenter choices; language/Auto and translation refresh; autostart enabled/hidden/elevated registry state and Elevate now/UAC cancellation. AutoFocus and Snapping are already migrated. |
 | Mouse | Implemented below: all 41 legacy-surface bindings, custom/parameterized actions, modifiers, title-bar flags, long-click move and hotclicks. Native visual/accessibility and gesture acceptance remains open. |
-| Keyboard | Six activation-key checkboxes preserving hidden keys; ModKey/custom lists, KeyCombo, two GrabWithAlt actions; ScrollLockState bits and host cache update, UniKeyHoldMenu; foreground/pointed-window shortcuts, modifier/virtual-key editing, capture/Clear, parameterized action editor and immediate Set/reload semantics. |
+| Keyboard | Implemented below: activation keys, shared modifier lists, keyboard actions, Scroll Lock/typing behavior and immediate Set shortcut editor/capture. WinUI capture-dialog and accessibility acceptance remains open. |
 | Blacklist | Processes, Windows, Scroll, MDIs, Pause editors with existing wildcard/whitelist syntax and conditional enablement; cancellable crosshair picker producing executable, title/class rule, styles, child/root hit tests, caption-button hit, rectangle and handles. |
 | Advanced | Implemented: ten new behavior switches, ten numeric fields and native test-window launch. SmartAero bit 2 (keep snapped sizes) remains on Snapping, with a note on Advanced. Native visual/accessibility and gesture acceptance remains open. |
 | About | Existing shell attribution/license text is incomplete: add actual version, project link, translation catalog/credits and localized text. |
@@ -210,10 +210,63 @@ Narrator, theme/high-contrast/mixed-DPI and actual mouse-gesture acceptance rema
 open, along with the earlier deployment/elevation/failure gates. The preview
 remains opt-in and legacy remains the default.
 
+### Keyboard settings migration (2026-11-01)
+
+Inventory in [keyboard_model.h](../src/settings/keyboard_model.h) matches the
+legacy Keyboard page: six activation checkboxes and custom/hidden Hotkeys
+(default A4 A5), all 13 ModKey presets plus custom lists (empty default, shared
+with Mouse), KeyCombo (0), both GrabWithAlt actions (Nothing; all 15 choices and
+custom/parameterized IDs), ScrollLockState enable/invert bits (0), UniKeyHoldMenu
+(0), and KBShortcuts/UsePtWindow (0: foreground, 1: pointed window). The shortcut
+catalog includes all 32 legacy actions and direction/operation/number building;
+custom entries and raw values remain visible and untouched until edited.
+
+The scrolling Keyboard page retains drafts and disabled alternate actions.
+Selecting an action displays its saved binding; manual hex/modifier edits and
+capture only edit it. Set immediately saves the complete valid draft through
+the existing checked host batch and reloads enabled hooks once. Clear + Set
+deletes only that action key. Pending shortcut edits block ordinary Apply/OK
+until Set or Discard edit, and participate in close/Reload discard confirmation.
+Unknown strings, absent/empty values, hidden activation keys, unrelated fields
+and unedited ScrollLockState bits survive. The host refreshes its Scroll Lock
+cache and tray after persistence, including disabled-host Apply.
+
+Capture uses a standard themed WinUI dialog, live feedback, Escape/Cancel and
+focus-loss cancellation. A temporary STA-owned low-level hook consumes events
+before AltSnap, global hotkeys and XAML commands, then drains captured key
+releases before closing. Initial Enter/Space used to launch capture is handled
+separately. Modifier-only input, reserved combinations and unsupported keys are
+refused; captured input is never committed implicitly. Duplicate AltSnap bindings
+are checked before any writes, and Set probes OS availability. The existing
+private DLL callback now reports registration failures separately from saving;
+Reload also shows a warning when saved shortcuts are unavailable. OS probing
+cannot reserve a binding across Apply, so actual registration diagnostics remain
+authoritative. Secure-desktop/system security shortcuts cannot be intercepted.
+
+Protocol **v5** extends the existing model, draft and repository with bounded,
+typed per-action shortcut edits, a 64-bit option mask and registration diagnostics;
+deploy host and companion together. No second persistence path was added.
+
+Verified: Release configure with ALTSNAP_BUILD_TESTS=ON, core build/all four
+CTest suites, MSVC shared-source tests, WinUI build/Publish, and isolated native
+host integration outside the sandbox. Regressions cover key parsing, defaults,
+raw/custom preservation, modifier sides/repeats/release draining/cancellation,
+serialization/truncation, duplicate/stale conflicts, deletion/reassignment,
+Apply/Reload and disabled behavior. Host tests exercise real OS registration
+conflicts, saved-versus-active failure reporting and recovery. The native capture
+input-delivery test passed on the final foreground-granted run: Ctrl+Shift+F11
+never triggered the configured ASOnOff binding, Alt+F4 did not close the target,
+Escape/cancellation drained releases and an older observer hook received no
+captured events. Earlier runs explicitly skipped when Windows denied foreground
+activation. End-to-end WinUI dialog acceptance remains open. Computer
+Use stopped with Escape during inspection; visual, keyboard-only/Narrator,
+light/dark/high-contrast/mixed-DPI and secure-desktop capture acceptance remain
+open. Earlier deployment/elevation/failure gates remain; preview stays opt-in.
+
 ### Next development handoff
 
-Next migrate the complete Keyboard page with its specialized editors,
-then Blacklist and its picker, General host commands/localization, and About.
+Next migrate Blacklist and its picker, General host commands/localization,
+and About.
 Complete the remaining delivery/accessibility/runtime acceptance above before
 switching defaults. Continue cohesive page migrations using the explicit
 settings draft and patch, not the engine's effective config struct. General's

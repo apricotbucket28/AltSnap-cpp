@@ -96,14 +96,24 @@ inline constexpr std::array<BindingDefinition, 41> kBindings{{
 }};
 inline constexpr size_t kHotclicks = kBindings.size();
 inline constexpr size_t kModKey = kHotclicks + 1;
-inline constexpr size_t kTextCount = kModKey + 1;
+inline constexpr size_t kHotkeys = kModKey + 1;
+inline constexpr size_t kGrabWithAlt = kHotkeys + 1;
+inline constexpr size_t kGrabWithAltB = kGrabWithAlt + 1;
+inline constexpr size_t kTextCount = kGrabWithAltB + 1;
 inline const wchar_t* TextKey(size_t index) {
   return index < kBindings.size() ? kBindings[index].key
          : index == kHotclicks    ? L"Hotclicks"
-                                  : L"ModKey";
+         : index == kModKey       ? L"ModKey"
+         : index == kHotkeys      ? L"Hotkeys"
+         : index == kGrabWithAlt  ? L"GrabWithAlt"
+                                  : L"GrabWithAltB";
 }
 inline std::wstring TextDefault(size_t index) {
-  return index < kBindings.size() ? L"Nothing" : L"";
+  return index < kBindings.size() || index == kGrabWithAlt ||
+                 index == kGrabWithAltB
+             ? L"Nothing"
+         : index == kHotkeys ? L"A4 A5"
+                             : L"";
 }
 // Do not restrict action IDs to the catalog: custom IDs and parameterized
 // actions are a supported INI interface. Reject profile-API transformations.
@@ -168,7 +178,7 @@ inline bool ValidModifier(std::wstring_view text) {
 }
 inline bool ValidTextOption(size_t index, std::wstring_view text) {
   return index < kTextCount && ValidText(text) &&
-         (index != kModKey || ValidModifier(text));
+         ((index != kModKey && index != kHotkeys) || ValidModifier(text));
 }
 struct TextValue {
   bool present = false;

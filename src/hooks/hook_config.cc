@@ -44,7 +44,12 @@ void FreeBlacklists() {
 }
 
 // Upstream: registerAllHotkeys
+static unsigned shortcut_registration_failures = 0;
+unsigned ShortcutRegistrationFailures() {
+  return shortcut_registration_failures;
+}
 void RegisterAllHotkeys(const wchar_t* inipath) {
+  shortcut_registration_failures = 0;
   LOG("RegisterAllHotkeys START");
   ChangeWindowMessageFilterEx(g_mainhwnd, WM_HOTKEY, /*MSGFLT_ALLOW*/ 1,
                               nullptr);
@@ -62,7 +67,6 @@ void RegisterAllHotkeys(const wchar_t* inipath) {
   UnregisterAllHotkeys();
   for (const wchar_t* p : section.lines()) {
     const size_t idx = g_registered_hotkeys.size();
-    if (idx >= kMaxRegisteredHotkeys) break;
     if (*p == ';') continue;
 
     action_t action = MapActionW(p);
@@ -73,6 +77,10 @@ void RegisterAllHotkeys(const wchar_t* inipath) {
 
     WORD HK = ParseInt(p = ++pp);  // Read HOTKEY
     if (LOBYTE(HK) && HIBYTE(HK)) {
+      if (idx >= kMaxRegisteredHotkeys) {
+        ++shortcut_registration_failures;
+        continue;
+      }
       // Lobyte is the virtual key code and hibyte is the mod_key
       if (RegisterHotKey(g_mainhwnd, kFirstRegisteredHotkey + idx, HIBYTE(HK),
                          LOBYTE(HK))) {
@@ -82,6 +90,7 @@ void RegisterAllHotkeys(const wchar_t* inipath) {
             static_cast<int>(action.wp), static_cast<unsigned>(HK),
             static_cast<int>(idx));
       } else {
+        ++shortcut_registration_failures;
         LOG("Error registering hotkey %s=%x", action_names[action.ac],
             static_cast<unsigned>(HK));
 #ifdef LOG_STUFF

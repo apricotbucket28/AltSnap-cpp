@@ -260,7 +260,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         const size_t option = altsnap::settings::Index(control.option);
         const bool value = IsChecked(hwnd, control.id);
         if (value != (behavior_snapshot.values[option].effective != 0)) {
-          patch.changed |= 1u << option;
+          patch.changed |= uint64_t{1} << option;
           patch.values[option] = value;
         }
       }
@@ -270,7 +270,7 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       if (snap >= 0 && snap <= 3 &&
           static_cast<uint32_t>(snap) !=
               behavior_snapshot.values[snap_option].effective) {
-        patch.changed |= 1u << snap_option;
+        patch.changed |= uint64_t{1} << snap_option;
         patch.values[snap_option] = static_cast<uint32_t>(snap);
       }
       if (patch.changed &&

@@ -147,7 +147,7 @@ INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
           }
           value = *parsed;
         }
-        patch.changed |= 1u << index;
+        patch.changed |= uint64_t{1} << index;
         patch.values[index] = value;
       }
       if (patch.changed &&
