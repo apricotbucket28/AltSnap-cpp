@@ -80,6 +80,23 @@ Snapshot Repository::Read() const {
       value.effective = std::bit_cast<uint32_t>(
           static_cast<int32_t>(static_cast<int8_t>(number)));
   }
+  for (size_t i = 0; i < kTextCount; ++i) {
+    auto& value = snapshot.values.text[i];
+    const std::wstring prefix = std::wstring(TextKey(i)) + L"=";
+    for (const wchar_t* line = sections.at(L"Input").data(); *line;
+         line += std::wcslen(line) + 1) {
+      if (!_wcsnicmp(line, prefix.c_str(), prefix.size())) {
+        value.present = true;
+        value.raw = line + prefix.size();
+        break;
+      }
+    }
+    if (value.raw.size() > 4095) {
+      snapshot.result = Result::kReadFailed;
+      return snapshot;
+    }
+    value.effective = value.present ? value.raw : TextDefault(i);
+  }
   if (Revision() != revision) snapshot.result = Result::kConflict;
   return snapshot;
 }
@@ -137,6 +154,16 @@ Result Repository::Write(uint64_t revision, const Patch& patch) const {
         after.values[i].raw != text)
       return Result::kWriteFailed;
   }
+  for (size_t i = 0; i < kTextCount; ++i) {
+    if (!(patch.text_changed & (uint64_t{1} << i))) continue;
+    if (!WritePrivateProfileStringW(L"Input", TextKey(i), patch.text[i].c_str(),
+                                    path_.c_str()))
+      return Result::kWriteFailed;
+    const Snapshot after = Read();
+    if (after.result != Result::kOk || !after.values.text[i].present ||
+        after.values.text[i].raw != patch.text[i])
+      return Result::kWriteFailed;
+  }
   return Result::kOk;
 }
 Result Repository::WriteIfUnchanged(const Snapshot& base,
@@ -149,6 +176,12 @@ Result Repository::WriteIfUnchanged(const Snapshot& base,
     if (!(patch.changed & (1u << i))) continue;
     if (current.values[i].present != base.values[i].present ||
         current.values[i].raw != base.values[i].raw)
+      return Result::kConflict;
+  }
+  for (size_t i = 0; i < kTextCount; ++i) {
+    if (!(patch.text_changed & (uint64_t{1} << i))) continue;
+    if (current.values.text[i].present != base.values.text[i].present ||
+        current.values.text[i].raw != base.values.text[i].raw)
       return Result::kConflict;
   }
   return Write(current.revision, patch);

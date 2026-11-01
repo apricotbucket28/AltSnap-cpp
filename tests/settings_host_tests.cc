@@ -107,6 +107,20 @@ int Client(DWORD pid) {
   CHECK(saved.values[Index(Option::kSnapGap)].raw == L"-8");
   CHECK(saved.values[Index(Option::kFancyZone)].raw == L"1");
   CHECK(saved.values[Index(Option::kAeroMaxSpeed)].raw == L"1024");
+  draft.Load(saved.values);
+  draft.SetText(0, L"Move");
+  draft.SetText(38, L"Menu");  // MB5R, independent of MB5M.
+  draft.SetText(kHotclicks, L"04 AA");
+  draft.SetText(kModKey, L"A2 A3");
+  draft.Set(Option::kTitlebarWithAlt, 1);
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kOk && saved.enabled);
+  CHECK(saved.values.text[38].raw == L"Menu" && !saved.values.text[31].present);
+  CHECK(saved.values.text[kHotclicks].raw == L"04 AA");
+  const auto stale_mouse = draft.Changes();
+  CHECK(
+      Exchange(pid, Operation::kApply, initial.revision, stale_mouse).result ==
+      Result::kConflict);
   const auto opened = Exchange(pid, Operation::kTestWindow);
   CHECK(opened.result == Result::kOk && opened.revision == saved.revision);
   struct TestSearch {
@@ -144,6 +158,11 @@ int Client(DWORD pid) {
                    SingleChange(Option::kAero, 0));
   CHECK(saved.result == Result::kOk && !saved.enabled);
   CHECK(saved.values[Index(Option::kAero)].raw == L"0");
+  draft.Load(saved.values);
+  draft.SetText(38, L"SideSnap_L");
+  saved = Exchange(pid, Operation::kApply, saved.revision, draft.Changes());
+  CHECK(saved.result == Result::kOk && !saved.enabled &&
+        saved.values.text[38].raw == L"SideSnap_L");
   CHECK(SendMessageTimeoutW(window, WM_COMMAND, 401, 0, SMTO_ABORTIFHUNG, 10000,
                             &result));
   saved = Exchange(pid, Operation::kRead);

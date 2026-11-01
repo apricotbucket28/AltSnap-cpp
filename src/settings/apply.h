@@ -16,7 +16,7 @@ inline Result ApplyPatch(Repository& repository, uint64_t revision,
   const bool was_enabled = runtime.Enabled();
   const Result persisted = repository.Write(revision, patch);
   if (persisted != Result::kOk) return persisted;
-  if (patch.changed && was_enabled && (!runtime.Stop() || !runtime.Start()))
+  if (patch.Any() && was_enabled && (!runtime.Stop() || !runtime.Start()))
     return Result::kActivationFailed;
   return Result::kOk;
 }

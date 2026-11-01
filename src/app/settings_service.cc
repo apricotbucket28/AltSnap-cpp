@@ -239,7 +239,7 @@ void SettingsService::Serve() {
         ProcessIdToSessionId(GetCurrentProcessId(), &host_session) &&
         client_session == host_session &&
         !_wcsicmp(ClientPath(client).c_str(), expected.c_str());
-    std::array<uint8_t, settings::kRequestSize + 1> bytes{};
+    std::vector<uint8_t> bytes(settings::kMaxRequest + 1);
     bool received = false;
     if (trusted && !stop_) {
       ResetEvent(io_event);

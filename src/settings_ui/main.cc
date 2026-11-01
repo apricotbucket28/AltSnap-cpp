@@ -24,6 +24,7 @@
 #include <memory>
 #include <optional>
 
+#include "common/text_format.h"
 #include "settings/protocol.h"
 namespace altsnap::settings_ui {
 using namespace winrt;
@@ -46,7 +47,8 @@ constexpr std::array<const wchar_t*, settings::kOptionCount> kControlNames{
     L"AeroVoffset",       L"SnapThreshold",
     L"AeroThreshold",     L"SnapGap",
     L"AeroMaxSpeed",      L"AeroSpeedTau",
-    L"MoveTrans"};
+    L"MoveTrans",         L"TitlebarWithoutAlt",
+    L"TitlebarWithAlt",   L"LongClickMove"};
 struct Handle {
   HANDLE value = INVALID_HANDLE_VALUE;
   explicit Handle(HANDLE handle = INVALID_HANDLE_VALUE) : value(handle) {}
@@ -184,8 +186,8 @@ class Shell : public std::enable_shared_from_this<Shell> {
           if (auto self = weak.lock()) {
             const hstring tag =
                 args.SelectedItemContainer().Tag().as<hstring>();
-            for (const wchar_t* page : {L"General", L"Snapping", L"Advanced",
-                                        L"Appearance", L"About"})
+            for (const wchar_t* page : {L"General", L"Snapping", L"Mouse",
+                                        L"Advanced", L"Appearance", L"About"})
               self->Find<FrameworkElement>(
                       (std::wstring(page) + L"Page").c_str())
                   .Visibility(tag == page ? Visibility::Visible
@@ -248,6 +250,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
             });
       }
     }
+    BuildMouse();
     window_.AppWindow().Closing([weak](auto&&, auto&& args) {
       if (auto self = weak.lock(); self && !self->allow_close_) {
         if (self->busy_ || self->dialog_open_) {
@@ -298,6 +301,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
                     InfoBarSeverity::Error);
       }
     });
+    UpdateApply();
     window_.Activate();
     if (host_)
       Request(Operation::kRead);
@@ -315,6 +319,190 @@ class Shell : public std::enable_shared_from_this<Shell> {
   template <class T>
   T Find(const wchar_t* name) {
     return root_.FindName(name).as<T>();
+  }
+  std::vector<settings::ActionChoice> MouseActions(size_t index) const {
+    const auto& binding = settings::kBindings[index];
+    if (binding.input == settings::MouseInput::kWheel ||
+        binding.input == settings::MouseInput::kHorizontalWheel)
+      return {settings::kWheelActions.begin(), settings::kWheelActions.end()};
+    const bool restricted =
+        binding.context == settings::MouseContext::kMoving ||
+        binding.context == settings::MouseContext::kResizing ||
+        binding.input == settings::MouseInput::kMoveUp ||
+        binding.input == settings::MouseInput::kResizeUp;
+    std::vector<settings::ActionChoice> actions;
+    for (const auto& action : settings::kButtonActions)
+      if (!restricted || !action.idle_button_only) actions.push_back(action);
+    return actions;
+  }
+  void ShowMouseBinding(size_t index) {
+    const bool was_loading = loading_;
+    loading_ = true;
+    const auto row = mouse_rows_[index];
+    const auto combo = row.FindName(L"Action").as<ComboBox>();
+    const auto actions = MouseActions(index);
+    while (combo.Items().Size() > actions.size()) combo.Items().RemoveAtEnd();
+    const auto& value = draft_.GetText(index);
+    int selected = -1;
+    for (size_t i = 0; i < actions.size(); ++i)
+      if (value == actions[i].id) selected = static_cast<int>(i);
+    if (selected < 0) {
+      ComboBoxItem custom;
+      custom.Content(box_value(value.empty() ? L"Empty action (no action)"
+                                             : L"Custom / parameterized: " +
+                                                   value.substr(0, 80)));
+      combo.Items().Append(custom);
+      selected = static_cast<int>(actions.size());
+    }
+    combo.SelectedIndex(selected);
+    row.FindName(L"Raw").as<TextBox>().Text(value);
+    row.FindName(L"Error").as<TextBlock>().Visibility(
+        (!(draft_.Changes().text_changed & (uint64_t{1} << index)) ||
+         settings::ValidText(value))
+            ? Visibility::Collapsed
+            : Visibility::Visible);
+    loading_ = was_loading;
+  }
+  void ShowModifier() {
+    const bool was_loading = loading_;
+    loading_ = true;
+    const auto& value = draft_.GetText(settings::kModKey);
+    Find<TextBox>(L"MouseModifier").Text(value);
+    const std::array values{L"", L"A2 A3", L"A0 A1", L"5B 5C"};
+    int selected = 4;
+    for (size_t i = 0; i < values.size(); ++i)
+      if (value == values[i]) selected = static_cast<int>(i);
+    Find<ComboBox>(L"ModifierPreset").SelectedIndex(selected);
+    Find<TextBlock>(L"MouseError")
+        .Visibility((!(draft_.Changes().text_changed &
+                       (uint64_t{1} << settings::kModKey)) ||
+                     settings::ValidTextOption(settings::kModKey, value))
+                        ? Visibility::Collapsed
+                        : Visibility::Visible);
+    loading_ = was_loading;
+  }
+  void BuildMouse() {
+    const auto weak = weak_from_this();
+    for (size_t i = 0; i < settings::kBindings.size(); ++i) {
+      const auto row =
+          Markup::XamlReader::Load(
+              LR"xaml(<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"><StackPanel Spacing="8">
+        <ComboBox x:Name="Action" HorizontalAlignment="Stretch" />
+        <Expander x:Name="Details" Header="Parameters and custom action" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+          <StackPanel Spacing="10">
+            <TextBox x:Name="Raw" Header="Action ID and parameters" />
+            <TextBlock Text="Edit the full ID, or choose an action above and build its parameters below. Custom IDs are kept exactly. Examples: MoveTNEdge_L or Step_R_10. Parameter effects depend on the action; wheel actions usually use wheel direction." TextWrapping="Wrap" />
+            <ComboBox x:Name="Flag" Header="Direction / operation" SelectedIndex="0" HorizontalAlignment="Stretch">
+              <ComboBoxItem Content="Default (0)" /><ComboBoxItem Content="Left (L)" /><ComboBoxItem Content="Up (U)" /><ComboBoxItem Content="Right (R)" /><ComboBoxItem Content="Down (D)" /><ComboBoxItem Content="Set (S)" /><ComboBoxItem Content="Toggle (T)" />
+            </ComboBox>
+            <TextBox x:Name="Amount" Header="Number (optional, signed 16-bit)" PlaceholderText="Use the action's default" />
+            <Button x:Name="Build" Content="Use these parameters" />
+            <TextBlock x:Name="Error" Visibility="Collapsed" Text="Use a single-line ID without surrounding whitespace or quotes; numbers must be from -32768 to 32767." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+          </StackPanel>
+        </Expander>
+      </StackPanel></UserControl>)xaml")
+              .as<Control>();
+      mouse_rows_.push_back(row);
+      Find<StackPanel>(L"MouseMappings").Children().Append(row);
+      const auto combo = row.FindName(L"Action").as<ComboBox>();
+      combo.Header(box_value(settings::kBindings[i].label));
+      row.FindName(L"Raw").as<TextBox>().Header(
+          box_value(std::wstring(settings::kBindings[i].label) +
+                    L" — action ID and parameters"));
+      for (const auto& action : MouseActions(i)) {
+        ComboBoxItem item;
+        item.Content(box_value(action.label));
+        combo.Items().Append(item);
+      }
+      combo.SelectionChanged([weak, i](auto&& sender, auto&&) {
+        if (auto self = weak.lock(); self && !self->loading_) {
+          const int selected = sender.template as<ComboBox>().SelectedIndex();
+          const auto actions = self->MouseActions(i);
+          if (selected < 0 || static_cast<size_t>(selected) >= actions.size())
+            return;
+          self->draft_.SetText(i, actions[selected].id);
+          self->ShowMouseBinding(i);
+          self->UpdateApply();
+        }
+      });
+      row.FindName(L"Raw").as<TextBox>().TextChanged(
+          [weak, i](auto&& sender, auto&&) {
+            if (auto self = weak.lock(); self && !self->loading_) {
+              self->draft_.SetText(
+                  i, std::wstring(sender.template as<TextBox>().Text()));
+              self->ShowMouseBinding(i);
+              self->UpdateApply();
+            }
+          });
+      row.FindName(L"Build").as<Button>().Click([weak, i](auto&&, auto&&) {
+        if (auto self = weak.lock()) {
+          const auto row = self->mouse_rows_[i];
+          const std::wstring amount(
+              row.FindName(L"Amount").as<TextBox>().Text());
+          const auto result = settings::BuildAction(
+              self->draft_.GetText(i),
+              row.FindName(L"Flag").as<ComboBox>().SelectedIndex(), amount);
+          if (!result) {
+            row.FindName(L"Error").as<TextBlock>().Visibility(
+                Visibility::Visible);
+            return;
+          }
+          self->draft_.SetText(i, *result);
+          self->ShowMouseBinding(i);
+          self->UpdateApply();
+        }
+      });
+    }
+    Find<ComboBox>(L"MouseContext").SelectionChanged([weak](auto&&, auto&&) {
+      if (auto self = weak.lock()) self->UpdateApply();
+    });
+    Find<ComboBox>(L"ModifierPreset")
+        .SelectionChanged([weak](auto&& sender, auto&&) {
+          if (auto self = weak.lock(); self && !self->loading_) {
+            const int selected = sender.template as<ComboBox>().SelectedIndex();
+            const std::array values{L"", L"A2 A3", L"A0 A1", L"5B 5C"};
+            if (selected >= 0 && selected < 4) {
+              self->draft_.SetText(settings::kModKey, values[selected]);
+              self->ShowModifier();
+              self->UpdateApply();
+            } else
+              self->Find<TextBox>(L"MouseModifier")
+                  .Focus(FocusState::Programmatic);
+          }
+        });
+    Find<TextBox>(L"MouseModifier").TextChanged([weak](auto&& sender, auto&&) {
+      if (auto self = weak.lock(); self && !self->loading_) {
+        self->draft_.SetText(
+            settings::kModKey,
+            std::wstring(sender.template as<TextBox>().Text()));
+        self->Find<TextBlock>(L"MouseError")
+            .Visibility(
+                settings::ValidTextOption(
+                    settings::kModKey, self->draft_.GetText(settings::kModKey))
+                    ? Visibility::Collapsed
+                    : Visibility::Visible);
+        self->ShowModifier();
+        self->UpdateApply();
+      }
+    });
+    const std::array names{L"HotclickMiddle", L"Hotclick4", L"Hotclick5"};
+    for (size_t i = 0; i < names.size(); ++i) {
+      const auto change = [weak, key = static_cast<unsigned>(i + 4)](
+                              auto&& sender, auto&&) {
+        if (auto self = weak.lock(); self && !self->loading_) {
+          auto text = self->draft_.GetText(settings::kHotclicks);
+          if (sender.template as<CheckBox>().IsChecked().Value())
+            text = AddKeyToList(std::move(text), key);
+          else
+            while (IsKeyInList(text, key))
+              text = RemoveKeyFromList(std::move(text), key);
+          self->draft_.SetText(settings::kHotclicks, std::move(text));
+          self->UpdateApply();
+        }
+      };
+      Find<CheckBox>(names[i]).Checked(change);
+      Find<CheckBox>(names[i]).Unchecked(change);
+    }
   }
   void Status(const wchar_t* title, const wchar_t* message,
               InfoBarSeverity severity) {
@@ -357,14 +545,50 @@ class Shell : public std::enable_shared_from_this<Shell> {
     }
   }
   bool ValidInput() const {
-    return std::none_of(invalid_.begin(), invalid_.end(),
+    return draft_.Changes().Valid() &&
+           std::none_of(invalid_.begin(), invalid_.end(),
                         [](bool value) { return value; });
   }
-  bool HasChanges() const { return draft_.Changes().changed || !ValidInput(); }
+  bool HasChanges() const { return draft_.Changes().Any() || !ValidInput(); }
   void SetControlsEnabled(bool enabled) {
     Find<Button>(L"TestWindow").IsEnabled(enabled && !HasChanges());
     for (size_t i = 0; i < settings::kOptionCount; ++i)
       Find<Control>(kControlNames[i]).IsEnabled(enabled);
+    Find<Control>(L"MouseContext").IsEnabled(enabled);
+    Find<Control>(L"MouseModifier").IsEnabled(enabled);
+    Find<Control>(L"ModifierPreset").IsEnabled(enabled);
+    for (const wchar_t* name : {L"HotclickMiddle", L"Hotclick4", L"Hotclick5"})
+      Find<Control>(name).IsEnabled(enabled);
+    const int context = Find<ComboBox>(L"MouseContext").SelectedIndex();
+    const bool available =
+        context == 1   ? !draft_.GetText(settings::kModKey).empty()
+        : context == 2 ? draft_.Get(Option::kTitlebarWithoutAlt) ||
+                             draft_.Get(Option::kTitlebarWithAlt)
+                       : true;
+    for (size_t i = 0; i < mouse_rows_.size(); ++i) {
+      mouse_rows_[i].Visibility(
+          static_cast<int>(settings::kBindings[i].context) == context
+              ? Visibility::Visible
+              : Visibility::Collapsed);
+      mouse_rows_[i].IsEnabled(enabled && available);
+    }
+    const wchar_t* help =
+        context == 1 ? (available ? L"Used while holding any alternate "
+                                    L"modifier. Other contexts can have "
+                                    L"additional modifier overrides in the INI."
+                                  : L"Add a modifier below to enable Alternate "
+                                    L"actions. Your mappings are retained.")
+        : context == 2
+            ? (available ? L"Used over the title bar under the activation "
+                           L"conditions selected below."
+                         : L"Enable a title-bar activation option below to "
+                           L"edit these mappings. Your mappings are retained.")
+        : context >= 3 ? L"Used when pressing another button or turning a "
+                         L"wheel during an AltSnap drag. Release actions are "
+                         L"configured in the first three contexts."
+                       : L"Used with your activation key (Alt by default), or "
+                         L"a hotclick button.";
+    Find<TextBlock>(L"MouseContextHelp").Text(help);
     // Dependent options keep their draft values while the parent is off.
     Find<Control>(L"SmartSizing")
         .IsEnabled(enabled && draft_.Get(Option::kAero));
@@ -406,13 +630,20 @@ class Shell : public std::enable_shared_from_this<Shell> {
           combo.SelectedIndex(static_cast<int>(value));
       }
     }
+    for (size_t i = 0; i < settings::kBindings.size(); ++i) ShowMouseBinding(i);
+    ShowModifier();
+    const std::array names{L"HotclickMiddle", L"Hotclick4", L"Hotclick5"};
+    for (size_t i = 0; i < names.size(); ++i)
+      Find<CheckBox>(names[i]).IsChecked(IsKeyInList(
+          draft_.GetText(settings::kHotclicks), static_cast<unsigned>(i + 4)));
+    Find<TextBlock>(L"MouseError").Visibility(Visibility::Collapsed);
     loading_ = false;
   }
   void UpdateApply() {
     const auto patch = draft_.Changes();
     Find<Button>(L"Okay").IsEnabled(connected_ && !busy_ && patch.Valid() &&
                                     ValidInput());
-    Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ && patch.changed &&
+    Find<Button>(L"Apply").IsEnabled(connected_ && !busy_ && patch.Any() &&
                                      patch.Valid() && ValidInput());
     Find<Button>(L"Cancel").IsEnabled(!busy_);
     Find<TextBlock>(L"DraftStatus")
@@ -540,6 +771,7 @@ class Shell : public std::enable_shared_from_this<Shell> {
   bool closed_ = false, busy_ = false, connected_ = false;
   bool loading_ = false, allow_close_ = false, dialog_open_ = false;
   std::array<bool, settings::kOptionCount> invalid_{};
+  std::vector<Control> mouse_rows_;
   settings::Draft draft_;
   settings::Snapshot snapshot_;
   std::shared_ptr<Handle> cancellation_;

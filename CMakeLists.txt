@@ -57,13 +57,13 @@ function(altsnap_add_rc target rcfile)
   set_source_files_properties(${rcfile} PROPERTIES OBJECT_DEPENDS "${ARG_EXTRA_DEPENDS}")
 endfunction()
 
+# Keep compiler-default stack probes for owning settings snapshots.
 set(ALTSNAP_CXX_FLAGS
     -DUNICODE -D_UNICODE -DNOMINMAX
     # Minimum supported OS: Windows 10 version 1607 (NTDDI_WIN10_RS1).
     -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000002
     -fno-rtti
     -fno-ident
-    -mno-stack-arg-probe
     -march=x86-64
     -mtune=generic
     -fshort-enums

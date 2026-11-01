@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "common/text_format.h"
 #include "settings/apply.h"
 #include "settings/repository.h"
 namespace {
@@ -305,6 +306,151 @@ int main() {
   CHECK(SignedNumber(restored.values[Index(Option::kSnapGap)].effective) ==
         -128);
   CHECK(restored.values[Index(Option::kAeroMaxSpeed)].effective == 1024);
+  // Mouse inventory and engine defaults: missing is Nothing, not template Move.
+  CHECK(kBindings.size() == 41);
+  CHECK(std::wstring(kBindings[38].key) == L"MB5R");
+  CHECK(std::wstring(kBindings[31].key) == L"MB5M");
+  for (size_t i = 0; i < kBindings.size(); ++i) {
+    for (size_t j = 0; j < i; ++j)
+      CHECK(std::wstring(kBindings[i].key) != kBindings[j].key);
+    CHECK(!repository.Read().values.text[i].present);
+    CHECK(repository.Read().values.text[i].effective == L"Nothing");
+  }
+  CHECK(!repository.Read().values.text[kModKey].present);
+  CHECK(BuildAction(L"SideSnap_R_12", 1, L"-32768") == L"SideSnap_L_-32768");
+  CHECK(BuildAction(L"Volume", 5, L"50") == L"Volume_S_50");
+  CHECK(BuildAction(L"Custom", 0, L"12") == L"Custom_0_12");
+  CHECK(BuildAction(L"Custom_R_12", 0, L"") == L"Custom");
+  CHECK(!BuildAction(L"", 0, L""));
+  CHECK(!BuildAction(L"Move", 7, L""));
+  for (const wchar_t* bad : {L"32768", L"-32769", L"1.5", L"-", L" 1", L"+1"})
+    CHECK(!BuildAction(L"Move", 0, bad));
+  CHECK(ValidModifier(L"") && ValidModifier(L"a2 A3") &&
+        ValidModifier(L"01 FF"));
+  for (const wchar_t* bad : {L"0", L"100", L"GG", L"Ctrl", L"A2,A3"})
+    CHECK(!ValidModifier(bad));
+  CHECK(!ValidTextOption(kModKey, L"Ctrl"));
+  CHECK(ValidTextOption(kHotclicks, L"AA custom FE"));
+  CHECK(ValidText(L"") && ValidText(L"Unknown_設定_12"));
+  CHECK(!ValidText(L"Move\nResize") && !ValidText(L" Move") &&
+        !ValidText(L"Move "));
+  CHECK(!ValidText(std::wstring(L"Move\0Resize", 11)));
+  CHECK(!ValidText(std::wstring(4096, L'x')));
+  CHECK(WritePrivateProfileStringW(L"Input", L"Hotclicks", L"AA 04 05 06 FE",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"ScrollUp", L"CustomWheel_U_9",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"LMBTB", L"Menu", path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"TTBActions", L"260",
+                                   path.c_str()));
+  initial = repository.Read();
+  Draft mouse, stale_mouse;
+  mouse.Load(initial.values);
+  stale_mouse.Load(initial.values);
+  CHECK(!mouse.Changes().Any());
+  mouse.SetText(0, L"Unknown_設定_-42");
+  mouse.SetText(0, L"Nothing");
+  CHECK(!mouse.Changes().Any());
+  mouse.SetText(0, L"Unknown_設定_-42");
+  mouse.SetText(38, L"SideSnap_L_123");
+  mouse.SetText(9, L"Resize_0_8");
+  mouse.SetText(kModKey, L"");
+  mouse.Set(Option::kTitlebarWithoutAlt, 0);
+  CHECK(mouse.GetText(9) == L"Resize_0_8");
+  mouse.SetText(kModKey, L"A2 A3");
+  auto hotclicks = altsnap::RemoveKeyFromList(mouse.GetText(kHotclicks), 5);
+  CHECK(hotclicks == L"AA 04 06 FE");
+  mouse.SetText(kHotclicks, hotclicks);
+  mouse.Set(Option::kTitlebarWithoutAlt, 1);
+  mouse.Set(Option::kTitlebarWithAlt, 1);
+  mouse.Set(Option::kLongClickMove, 1);
+  Request mouse_request{18, Operation::kApply, initial.revision,
+                        mouse.Changes()};
+  bytes = Encode(mouse_request);
+  CHECK(Decode(bytes, decoded));
+  CHECK(decoded.patch.text_changed == mouse_request.patch.text_changed);
+  CHECK(decoded.patch.text[0] == L"Unknown_設定_-42");
+  for (size_t length = 0; length < bytes.size(); ++length)
+    CHECK(!Decode(std::span(bytes.data(), length), decoded));
+  auto bad_text_mask = bytes;
+  bad_text_mask[32 + 4 * kOptionCount + 7] = 128;
+  CHECK(!Decode(bad_text_mask, decoded));
+  CHECK(repository.Write(initial.revision, mouse.Changes()) == Result::kOk);
+  current = repository.Read();
+  CHECK(current.values.text[0].raw == L"Unknown_設定_-42");
+  CHECK(current.values.text[38].raw == L"SideSnap_L_123");
+  CHECK(!current.values.text[31].present);
+  CHECK(current.values[Index(Option::kTitlebarWithoutAlt)].raw == L"263");
+  GetPrivateProfileStringW(L"Input", L"ScrollUp", L"", value, 64, path.c_str());
+  CHECK(std::wstring(value) == L"CustomWheel_U_9");
+  GetPrivateProfileStringW(L"Input", L"LMBTB", L"", value, 64, path.c_str());
+  CHECK(std::wstring(value) == L"Menu");
+  stale_mouse.SetText(0, L"Close");
+  CHECK(repository.Write(initial.revision, stale_mouse.Changes()) ==
+        Result::kConflict);
+  CHECK(repository.WriteIfUnchanged(initial, stale_mouse.Changes()) ==
+        Result::kConflict);
+  CHECK(stale_mouse.GetText(0) == L"Close");
+  mouse.Load(current.values);
+  mouse.SetText(1, L"Move\n[Other]");
+  CHECK(!mouse.Changes().Valid());
+  CHECK(repository.Write(current.revision, mouse.Changes()) ==
+        Result::kInvalid);
+  CHECK(repository.Read().revision == current.revision);
+  // Untouched raw values, including quoted/custom/empty values, survive other
+  // edits.
+  CHECK(WritePrivateProfileStringW(L"Input", L"MMB", L"\"Custom\"",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"Input", L"RMB", L"", path.c_str()));
+  current = repository.Read();
+  mouse.Load(current.values);
+  CHECK(current.values.text[1].raw == L"\"Custom\"");
+  CHECK(current.values.text[2].present &&
+        current.values.text[2].effective.empty());
+  mouse.SetText(3, L"Menu");
+  CHECK(mouse.Changes().Valid());
+  const int mouse_starts = runtime.starts, mouse_stops = runtime.stops;
+  runtime.enabled = true;
+  runtime.start_ok = true;
+  CHECK(ApplyPatch(repository, current.revision, mouse.Changes(), runtime) ==
+        Result::kOk);
+  CHECK(runtime.starts == mouse_starts + 1 && runtime.stops == mouse_stops + 1);
+  current = repository.Read();
+  CHECK(current.values.text[1].raw == L"\"Custom\"");
+  mouse.Load(current.values);
+  mouse.SetText(3, L"Close");
+  runtime.enabled = false;
+  CHECK(ApplyPatch(repository, current.revision, mouse.Changes(), runtime) ==
+        Result::kOk);
+  CHECK(!runtime.enabled && runtime.starts == mouse_starts + 1);
+  current = repository.Read();
+  CHECK(Decode(Encode(current, 555), 555, restored));
+  CHECK(restored.values.text[kHotclicks].raw == hotclicks);
+  CHECK(restored.values.text[1].raw == L"\"Custom\"");
+  // Every text binding uses its own allowlisted key; all contexts can apply
+  // together.
+  mouse.Load(current.values);
+  for (size_t i = 0; i < kBindings.size(); ++i)
+    mouse.SetText(i, L"Menu_0_" + std::to_wstring(i));
+  CHECK(repository.Write(current.revision, mouse.Changes()) == Result::kOk);
+  current = repository.Read();
+  for (size_t i = 0; i < kBindings.size(); ++i)
+    CHECK(current.values.text[i].raw == L"Menu_0_" + std::to_wstring(i));
+  Snapshot maximum;
+  maximum.path.assign(32767, L'p');
+  for (auto& v : maximum.values) v.raw.assign(4095, L'x');
+  for (auto& v : maximum.values.text) {
+    v.raw.assign(4095, L'x');
+    v.effective = v.raw;
+  }
+  bytes = Encode(maximum, 777);
+  CHECK(bytes.size() <= kMaxReply && Decode(bytes, 777, restored));
+  Request maximum_request{1, Operation::kApply};
+  maximum_request.patch.text_changed = (uint64_t{1} << kTextCount) - 1;
+  for (auto& text : maximum_request.patch.text) text.assign(4095, L'x');
+  maximum_request.patch.text[kModKey] = L"A2 A3";
+  bytes = Encode(maximum_request);
+  CHECK(bytes.size() <= kMaxRequest && Decode(bytes, decoded));
   // Every option can be written and read through its own declared section/key.
   for (size_t i = 0; i < kOptionCount; ++i) {
     const auto option = static_cast<Option>(i);

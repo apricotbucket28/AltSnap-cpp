@@ -10,6 +10,7 @@
     <NavigationView.MenuItems>
       <NavigationViewItem Content="General" Tag="General" Icon="Home" />
       <NavigationViewItem Content="Snapping" Tag="Snapping" Icon="DockLeft" />
+      <NavigationViewItem Content="Mouse" Tag="Mouse" Icon="TouchPointer" />
       <NavigationViewItem Content="Advanced" Tag="Advanced" Icon="Repair" />
       <NavigationViewItem Content="Appearance" Tag="Appearance" Icon="Setting" />
       <NavigationViewItem Content="About" Tag="About" Icon="Help" />
@@ -41,7 +42,7 @@
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
               <StackPanel Spacing="12">
                 <TextBlock Text="Everything else, right where you left it" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                <TextBlock Text="Mouse mappings, keyboard shortcuts, exclusions, startup, language, and zone layouts are available in the legacy settings window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Keyboard shortcuts, exclusions, startup, language, and zone layouts are available in the legacy settings window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Button x:Name="Legacy" Content="Open legacy settings" IsEnabled="False" />
               </StackPanel>
             </Border>
@@ -100,6 +101,45 @@
               </StackPanel>
             </Border>
             <TextBlock Text="Fine-tune geometry on the Advanced page. Custom zone layouts remain available in the native test windows and tray menu." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+          <StackPanel x:Name="MousePage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="Mouse" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Choose what each button and wheel does. Each context keeps its own changes until you Apply." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Action mappings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ComboBox x:Name="MouseContext" Header="When to use these actions" HorizontalAlignment="Stretch" SelectedIndex="0">
+                  <ComboBoxItem Content="Primary — activation key + mouse" />
+                  <ComboBoxItem Content="Alternate — also hold the modifier" />
+                  <ComboBoxItem Content="Title bar" />
+                  <ComboBoxItem Content="While moving a window" />
+                  <ComboBoxItem Content="While resizing a window" />
+                </ComboBox>
+                <TextBlock x:Name="MouseContextHelp" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <StackPanel x:Name="MouseMappings" Spacing="16" />
+                <TextBlock Text="Wheel mappings apply in both directions unless a direction-specific INI override exists. Nothing on release leaves the window unchanged. During a drag, Nothing keeps built-in button gestures: button 5 toggles snapping; other buttons toggle zones, or use the move/resize combination. Extra buttons and direction-specific overrides remain available in the INI." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Activation and modifiers" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ComboBox x:Name="ModifierPreset" Header="Alternate action modifier" HorizontalAlignment="Stretch">
+                  <ComboBoxItem Content="None" /><ComboBoxItem Content="Ctrl (either side)" /><ComboBoxItem Content="Shift (either side)" /><ComboBoxItem Content="Windows (either side)" /><ComboBoxItem Content="Custom key list" />
+                </ComboBox>
+                <TextBox x:Name="MouseModifier" Header="Alternate action modifier (hex virtual-key codes)" PlaceholderText="None — e.g. A2 A3 for either Ctrl key" />
+                <TextBlock Text="Hold any listed modifier with your activation key to use Alternate actions. A2 A3 = Ctrl, A0 A1 = Shift, 5B 5C = Windows keys. This is the shared Input/ModKey setting. Activation keys are configured in legacy Keyboard settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ToggleSwitch x:Name="TitlebarWithoutAlt" Header="Use title-bar actions without the activation key" OffContent="Off" OnContent="On" />
+                <ToggleSwitch x:Name="TitlebarWithAlt" Header="Use title-bar actions with the activation key" OffContent="Off" OnContent="On" />
+                <ToggleSwitch x:Name="LongClickMove" Header="Move by holding the left button" OffContent="Off" OnContent="On" />
+                <TextBlock Text="A long left click starts moving without the activation key. The delay uses the system double-click time unless Advanced/LongClickMoveDelay is set in the INI." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Hold a mouse button instead of the activation key" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                <CheckBox x:Name="HotclickMiddle" Content="Middle button" />
+                <CheckBox x:Name="Hotclick4" Content="Button 4 (back)" />
+                <CheckBox x:Name="Hotclick5" Content="Button 5 (forward)" />
+                <TextBlock Text="Hotclicks activate AltSnap while held. Other configured hotclick codes are retained." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="MouseError" Visibility="Collapsed" Text="Enter up to 15 nonzero hex virtual-key codes (01–FF), separated by spaces." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+              </StackPanel>
+            </Border>
           </StackPanel>
           <StackPanel x:Name="AdvancedPage" Visibility="Collapsed" Spacing="20">
             <TextBlock Text="Advanced" Style="{ThemeResource TitleTextBlockStyle}" />

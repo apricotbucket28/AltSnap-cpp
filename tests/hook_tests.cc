@@ -17,6 +17,7 @@
 #include "hooks/window/window_info.h"
 #include "hooks/window/window_move.h"
 #include "hooks/window/zones.h"
+#include "settings/mouse_model.h"
 
 namespace altsnap::hooks {
 LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wparam,
@@ -94,6 +95,70 @@ void TestBindings(const std::wstring& path) {
   CHECK(wheels.GetMouse(BT_WHEELU, ActionContext::kMoving, true).ac == AC_MOVE);
   CHECK(wheels.GetMouse(BT_HWHEELU, ActionContext::kResizing, true).ac ==
         AC_MENU);
+  for (const auto& action : altsnap::settings::kButtonActions)
+    CHECK(MapActionW(action.id).ac != AC_NONE ||
+          std::wstring_view(action.id) == L"Nothing");
+  for (const auto& action : altsnap::settings::kWheelActions)
+    CHECK(MapActionW(action.id).ac != AC_NONE ||
+          std::wstring_view(action.id) == L"Nothing");
+  // The companion's entire Mouse schema must address the engine's actual keys.
+  for (const auto& binding : altsnap::settings::kBindings)
+    CHECK(WritePrivateProfileStringW(L"MouseModel", binding.key,
+                                     L"SideSnap_L_321", path.c_str()));
+  const auto mouse_model =
+      ReadButtonActions(IniSection::Read(path.c_str(), L"MouseModel"));
+  for (const auto& binding : altsnap::settings::kBindings) {
+    using altsnap::settings::MouseContext;
+    using altsnap::settings::MouseInput;
+    const ActionContext context =
+        binding.context == MouseContext::kTitlebar   ? ActionContext::kTitlebar
+        : binding.context == MouseContext::kMoving   ? ActionContext::kMoving
+        : binding.context == MouseContext::kResizing ? ActionContext::kResizing
+                                                     : ActionContext::kNormal;
+    const bool secondary = binding.context == MouseContext::kAlternate;
+    action_t action{};
+    switch (binding.input) {
+      case MouseInput::kLeft:
+        action = mouse_model.GetMouse(BT_LMB, context, secondary);
+        break;
+      case MouseInput::kMiddle:
+        action = mouse_model.GetMouse(BT_MMB, context, secondary);
+        break;
+      case MouseInput::kRight:
+        action = mouse_model.GetMouse(BT_RMB, context, secondary);
+        break;
+      case MouseInput::kButton4:
+        action = mouse_model.GetMouse(BT_MB4, context, secondary);
+        break;
+      case MouseInput::kButton5:
+        action = mouse_model.GetMouse(BT_MB5, context, secondary);
+        break;
+      case MouseInput::kWheel:
+        action = mouse_model.GetMouse(BT_WHEELD, context, secondary);
+        break;
+      case MouseInput::kHorizontalWheel:
+        action = mouse_model.GetMouse(BT_HWHEELD, context, secondary);
+        break;
+      case MouseInput::kMoveUp:
+        action = mouse_model.move_up.Get(context, secondary);
+        break;
+      case MouseInput::kResizeUp:
+        action = mouse_model.resize_up.Get(context, secondary);
+        break;
+    }
+    CHECK(action.ac == AC_SIDESNAP && action.fl == ACFL_LEFT &&
+          action.wp == 321);
+  }
+  // Characterize the legacy dialog typo: MB5M cannot configure resizing.
+  CHECK(WritePrivateProfileStringW(L"MouseModel", L"MB5M", L"Close",
+                                   path.c_str()));
+  CHECK(WritePrivateProfileStringW(L"MouseModel", L"MB5R", L"Minimize",
+                                   path.c_str()));
+  const auto fifth =
+      ReadButtonActions(IniSection::Read(path.c_str(), L"MouseModel"));
+  CHECK(fifth.GetMouse(BT_MB5, ActionContext::kMoving, false).ac == AC_CLOSE);
+  CHECK(fifth.GetMouse(BT_MB5, ActionContext::kResizing, false).ac ==
+        AC_MINIMIZE);
   const auto empty = ReadButtonActions(IniSection{});
   CHECK(empty.GetMouse(BT_LMB, ActionContext::kNormal, false).ac == AC_NONE);
   CHECK(empty.resize_up.Get(ActionContext::kResizing, true).ac == AC_NONE);
@@ -287,7 +352,7 @@ void TestSnapGeometry() {
   move(-990, -790, 200, 100, -1000, -800);
   move(-210, -110, 200, 100, -200, -100);
   move(-980, -780, 200, 100, -1000, -800);  // Threshold is inclusive.
-  move(-979, -779, 200, 100, -979, -779);  // Outside threshold.
+  move(-979, -779, 200, 100, -979, -779);   // Outside threshold.
   state.snap = 0;
   move(-990, -790, 200, 100, -990, -790);
   state.snap = 1;

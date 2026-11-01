@@ -120,7 +120,7 @@ manual INI workflow; they are not new page requirements.
 | Page | Controls and behavior still requiring parity after this batch |
 | --- | --- |
 | General | InactiveScroll, MDI, ResizeAll, UseZones bit 0, PiercingClick, four ResizeCenter choices; language/Auto and translation refresh; autostart enabled/hidden/elevated registry state and Elevate now/UAC cancellation. AutoFocus and Snapping are already migrated. |
-| Mouse | Five contexts (primary, alternate, title bar, moving, resizing); five mouse buttons plus both wheels; MoveUp/ResizeUp in the first three contexts; custom action IDs and parameters, wheel fallback; TTBActions bits, LongClickMove, three hotclick checkboxes preserving hidden keys. Alternate/title-bar dependencies must retain drafts. Legacy MB5 resizing writes MB5M; engine reads MB5R: characterize before correction. |
+| Mouse | Implemented below: all 41 legacy-surface bindings, custom/parameterized actions, modifiers, title-bar flags, long-click move and hotclicks. Native visual/accessibility and gesture acceptance remains open. |
 | Keyboard | Six activation-key checkboxes preserving hidden keys; ModKey/custom lists, KeyCombo, two GrabWithAlt actions; ScrollLockState bits and host cache update, UniKeyHoldMenu; foreground/pointed-window shortcuts, modifier/virtual-key editing, capture/Clear, parameterized action editor and immediate Set/reload semantics. |
 | Blacklist | Processes, Windows, Scroll, MDIs, Pause editors with existing wildcard/whitelist syntax and conditional enablement; cancellable crosshair picker producing executable, title/class rule, styles, child/root hit tests, caption-button hit, rectangle and handles. |
 | Advanced | Implemented: ten new behavior switches, ten numeric fields and native test-window launch. SmartAero bit 2 (keep snapped sizes) remains on Snapping, with a note on Advanced. Native visual/accessibility and gesture acceptance remains open. |
@@ -164,9 +164,55 @@ claimed. Real drag gestures with the new settings, legacy dialog interaction,
 elevation, deployment and the earlier failure/race gates still require native
 acceptance. Legacy remains the default.
 
+### Mouse settings migration (2026-11-01)
+
+The inventory in [mouse_model.h](../src/settings/mouse_model.h) covers five contexts: primary
+(no suffix), alternate (B), title bar (T), moving (M), and resizing (R).
+Each has LMB/MMB/RMB/MB4/MB5/Scroll/HScroll; the first three also have
+MoveUp/ResizeUp. All are Input keys, with absent-key engine default Nothing.
+The page includes both TTBActions bits (default 0), LongClickMove (default 0),
+and middle/button-4/button-5 Hotclicks (default empty). ModKey is the shared
+alternate modifier list (default empty), with common presets and custom hex
+editing. Extra engine bindings, upward-wheel overrides and modifier overrides
+for title-bar/drag contexts remain untouched INI options. An unspecified,
+empty or Nothing upward-wheel action still inherits its downward binding.
+
+The native WinUI page presents one context at a time, named action choices,
+and expandable custom-ID/parameter editors with an explicit parameter builder.
+All contexts retain edits across navigation and disabled dependencies. Release
+and drag contexts omit Move/Resize/Restore from the suggested catalog, matching
+the legacy page; custom strings remain editable. Help explains wheel fallback,
+built-in drag combinations/zone/snapping toggles, title-bar activation and the
+system/default long-click delay. Hotclick changes retain hidden entries.
+The companion correctly writes **MB5R** for resizing: engine regression tests
+characterize MB5M and MB5R independently. The fallback dialog's old MB5M typo
+is unchanged; no hook behavior or INI default changed.
+
+Text settings extend the existing typed draft, repository and bounded protocol
+(**v4**; deploy host and companion together). Only changed keys are written;
+untouched absence, empty/custom/raw strings, unknown keys, and unedited bits
+survive. Whole-patch validation, checked writes, full-file revision conflicts,
+retained error drafts and one enabled-host reload use the existing flow.
+The MinGW build now retains default stack probes: disabling them crashed the
+expanded owning-snapshot tests before main. Transport buffers stay heap-owned.
+
+Verified: Release configured with ALTSNAP_BUILD_TESTS=ON; core build and all
+four CTest suites; MSVC shared-source tests; WinUI build and Publish. Tests cover
+all 41 mappings against the engine reader, serialization/truncation/size bounds,
+custom/empty/absent strings, parameter and modifier validation, unrelated keys,
+hidden hotclicks, title-bar bits, retained/stale drafts and reload behavior.
+The native host integration test passed outside the sandbox with Mouse pipe
+Apply/re-read, MB5R independence, conflicts, disabled Apply/re-enable and orderly
+shutdown. The published companion started with an AltSnap Preferences window
+and closed normally. Desktop automation refused the preview as Windows Settings
+(“Computer Use was not approved to use Settings”). Visual, keyboard-only,
+Narrator, theme/high-contrast/mixed-DPI and actual mouse-gesture acceptance remain
+open, along with the earlier deployment/elevation/failure gates. The preview
+remains opt-in and legacy remains the default.
+
 ### Next development handoff
 
-Next migrate complete Mouse and Keyboard pages with their specialized editors,
+Next migrate the complete Keyboard page with its specialized editors,
 then Blacklist and its picker, General host commands/localization, and About.
 Complete the remaining delivery/accessibility/runtime acceptance above before
 switching defaults. Continue cohesive page migrations using the explicit
@@ -495,8 +541,8 @@ installed dependency layout.
   atomic multi-key persistence/offline editing justify later writer work.
 - Resolve default/control mapping inconsistencies individually. For example,
   Mouse's resizing entry for MB5 names `MB5M` while the engine reads `MB5R`.
-  Preserve documented engine keys; characterize the old UI behavior before fixing
-  it. These findings were inspected, not runtime-reproduced in this analysis.
+  The Mouse migration now uses MB5R in the companion and regression-tests the
+  engine distinction; the fallback dialog retains the historical typo.
 
 The original recommendation used source/build/release/test inspection and
 Microsoft documentation review. First-slice implementation validation and its

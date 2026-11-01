@@ -8,6 +8,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+
+#include "settings/mouse_model.h"
 
 namespace altsnap::settings {
 enum class Option : size_t {
@@ -38,6 +41,9 @@ enum class Option : size_t {
   kAeroMaxSpeed,
   kAeroSpeedTau,
   kMoveTrans,
+  kTitlebarWithoutAlt,
+  kTitlebarWithAlt,
+  kLongClickMove,
   kCount
 };
 inline constexpr size_t kOptionCount = static_cast<size_t>(Option::kCount);
@@ -84,7 +90,10 @@ inline constexpr std::array<OptionDefinition, kOptionCount> kOptions{
      {ValueKind::kNumber, L"AeroMaxSpeed", 65535, 0, 65535, L"Advanced",
       Storage::kWord},
      {ValueKind::kNumber, L"AeroSpeedTau", 64, 0, 255, L"Advanced"},
-     {ValueKind::kNumber, L"MoveTrans", 255, 0, 255, L"General"}}};
+     {ValueKind::kNumber, L"MoveTrans", 255, 0, 255, L"General"},
+     {ValueKind::kToggle, L"TTBActions", 0, 1, 1, L"Input"},
+     {ValueKind::kToggle, L"TTBActions", 0, 2, 1, L"Input"},
+     {ValueKind::kToggle, L"LongClickMove", 0, 0, 1, L"Input"}}};
 inline constexpr size_t Index(Option option) {
   return static_cast<size_t>(option);
 }
@@ -121,11 +130,20 @@ struct Value {
   bool present = false;
   std::wstring raw;
 };
-using Values = std::array<Value, kOptionCount>;
+struct Values : std::array<Value, kOptionCount> {
+  TextValues text;
+};
 struct Patch {
   uint32_t changed = 0;
   std::array<uint32_t, kOptionCount> values{};
+  uint64_t text_changed = 0;
+  std::array<std::wstring, kTextCount> text{};
+  bool Any() const { return changed || text_changed; }
   bool Valid() const {
+    if (text_changed >> kTextCount) return false;
+    for (size_t i = 0; i < kTextCount; ++i)
+      if ((text_changed & (uint64_t{1} << i)) && !ValidTextOption(i, text[i]))
+        return false;
     if (changed >> kOptionCount) return false;
     for (size_t i = 0; i < kOptionCount; ++i)
       if ((changed & (1u << i)) && !ValidValue(i, values[i])) return false;
@@ -138,19 +156,32 @@ class Draft {
   void Load(const Values& values) {
     for (size_t i = 0; i < kOptionCount; ++i)
       base_[i] = edited_[i] = values[i].effective;
+    for (size_t i = 0; i < kTextCount; ++i)
+      text_base_[i] = text_edited_[i] = values.text[i].effective;
   }
   void Set(Option option, uint32_t value) { edited_[Index(option)] = value; }
   uint32_t Get(Option option) const { return edited_[Index(option)]; }
+  void SetText(size_t index, std::wstring value) {
+    text_edited_[index] = std::move(value);
+  }
+  const std::wstring& GetText(size_t index) const {
+    return text_edited_[index];
+  }
   Patch Changes() const {
     Patch patch;
     patch.values = edited_;
     for (size_t i = 0; i < kOptionCount; ++i)
       if (edited_[i] != base_[i]) patch.changed |= 1u << i;
+    patch.text = text_edited_;
+    for (size_t i = 0; i < kTextCount; ++i)
+      if (text_edited_[i] != text_base_[i])
+        patch.text_changed |= uint64_t{1} << i;
     return patch;
   }
 
  private:
   std::array<uint32_t, kOptionCount> base_{}, edited_{};
+  std::array<std::wstring, kTextCount> text_base_{}, text_edited_{};
 };
 inline Patch SingleChange(Option option, uint32_t value) {
   Patch patch;
