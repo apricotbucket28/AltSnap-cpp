@@ -227,6 +227,7 @@ LRESULT CALLBACK HooksWinProc(HWND hwnd, UINT msg, WPARAM wParam,
   if (g_phase != Phase::kActive &&
       (msg == WM_HOTKEY || msg == WM_STACKLIST || msg == WM_SETLAYOUTNUM))
     return 0;
+  if (msg == WM_GETSHORTCUTERRORS) return ShortcutRegistrationFailures();
   if (msg == WM_HOTKEY) {
     const auto request = DecodeHotkeyMessage(
         wParam, lParam, RegisteredHotkeys(), conf.UsePtWindow);

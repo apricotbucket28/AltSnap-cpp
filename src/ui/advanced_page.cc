@@ -9,8 +9,9 @@
 
 #include "app/altsnap.h"
 #include "app/languages.h"
+#include "app/settings_service.h"
 #include "app/tray.h"
-#include "common/ini_section.h"
+#include "common/winutil.h"
 #include "hooks/hooks.h"
 #include "resource.h"
 #include "ui/dialog_util.h"
@@ -20,37 +21,58 @@ namespace altsnap::app {
 
 INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                                         LPARAM lParam) {
-  static const DialogOption optlst[] = {
-      {IDC_AUTOREMAXIMIZE, T_BOL, 0, L"Advanced", "AutoRemaximize", 0},
-      {IDC_AEROTOPMAXIMIZES, T_BMK, 0, L"Advanced", "AeroTopMaximizes",
-       1},  // bit 0
-      {IDC_AERODBCLICKSHIFT, T_BMK, 1, L"Advanced", "AeroTopMaximizes",
-       1},  // bit 1
-      {IDC_MULTIPLEINSTANCES, T_BOL, 0, L"Advanced", "MultipleInstances", 0},
-      {IDC_FULLSCREEN, T_BOL, 0, L"Advanced", "FullScreen", 1},
-      {IDC_BLMAXIMIZED, T_BOL, 0, L"Advanced", "BLMaximized", 0},
-      {IDC_FANCYZONE, T_BOL, 0, L"Zones", "FancyZone", 0},
-      {IDC_NORESTORE, T_BMK, 2, L"General", "SmartAero", 0},        // bit 2
-      {IDC_MAXWITHLCLICK, T_BMK, 0, L"General", "MMMaximize", 1},   // bit 0
-      {IDC_RESTOREONCLICK, T_BMK, 1, L"General", "MMMaximize", 0},  // bit 1
-      {IDC_TOPMOSTINDICATOR, T_BOL, 0, L"Advanced", "TopmostIndicator", 0},
-
-      {IDC_CENTERFRACTION, T_STR, 0, L"General", "CenterFraction", L"24"},
-      {IDC_SIDESFRACTION, T_STR, 0, L"General", "SidesFraction", L"255"},
-      {IDC_AEROHOFFSET, T_STR, 0, L"General", "AeroHoffset", L"50"},
-      {IDC_AEROVOFFSET, T_STR, 0, L"General", "AeroVoffset", L"50"},
-      {IDC_SNAPTHRESHOLD, T_STR, 0, L"Advanced", "SnapThreshold", L"20"},
-      {IDC_AEROTHRESHOLD, T_STR, 0, L"Advanced", "AeroThreshold", L"5"},
-      {IDC_SNAPGAP, T_STR, 0, L"Advanced", "SnapGap", L"0"},
-      {IDC_AEROSPEED, T_STR, 0, L"Advanced", "AeroMaxSpeed", L""},
-      {IDC_AEROSPEEDTAU, T_STR, 0, L"Advanced", "AeroSpeedTau", L"32"},
-      {IDC_MOVETRANS, T_STR, 0, L"General", "MoveTrans", L""},
+  using namespace altsnap::settings;
+  struct Binding {
+    int control;
+    Option option;
   };
-
+  static constexpr std::array<Binding, 21> bindings{
+      {{IDC_AUTOREMAXIMIZE, Option::kAutoRemaximize},
+       {IDC_AEROTOPMAXIMIZES, Option::kAeroTopMaximizes},
+       {IDC_AERODBCLICKSHIFT, Option::kAeroDoubleClickShift},
+       {IDC_MULTIPLEINSTANCES, Option::kMultipleInstances},
+       {IDC_FULLSCREEN, Option::kFullScreen},
+       {IDC_BLMAXIMIZED, Option::kBLMaximized},
+       {IDC_FANCYZONE, Option::kFancyZone},
+       {IDC_NORESTORE, Option::kKeepSnapped},
+       {IDC_MAXWITHLCLICK, Option::kMaximizeOnClick},
+       {IDC_RESTOREONCLICK, Option::kRestoreOnClick},
+       {IDC_TOPMOSTINDICATOR, Option::kTopmostIndicator},
+       {IDC_CENTERFRACTION, Option::kCenterFraction},
+       {IDC_SIDESFRACTION, Option::kSidesFraction},
+       {IDC_AEROHOFFSET, Option::kAeroHoffset},
+       {IDC_AEROVOFFSET, Option::kAeroVoffset},
+       {IDC_SNAPTHRESHOLD, Option::kSnapThreshold},
+       {IDC_AEROTHRESHOLD, Option::kAeroThreshold},
+       {IDC_SNAPGAP, Option::kSnapGap},
+       {IDC_AEROSPEED, Option::kAeroMaxSpeed},
+       {IDC_AEROSPEEDTAU, Option::kAeroSpeedTau},
+       {IDC_MOVETRANS, Option::kMoveTrans}}};
+  static Snapshot snapshot;
+  static std::array<std::wstring, std::size(bindings)> original_text;
   //    static HWND testwnd=NULL;
   static int have_to_apply = 0;
   if (msg == WM_INITDIALOG) {
-    ReadDialogOptions(hwnd, optlst, std::size(optlst));
+    snapshot =
+        settings_service ? settings_service->ReadLegacySettings() : Snapshot{};
+    for (size_t i = 0; i < std::size(bindings); ++i) {
+      const auto& binding = bindings[i];
+      const size_t index = Index(binding.option);
+      const auto& value = snapshot.values[index];
+      if (kOptions[index].kind == ValueKind::kToggle)
+        CheckDlgButton(hwnd, binding.control,
+                       value.effective ? BST_CHECKED : BST_UNCHECKED);
+      else {
+        original_text[i] =
+            value.present
+                ? value.raw
+                : (kOptions[index].kind == ValueKind::kSignedNumber
+                       ? std::to_wstring(SignedNumber(value.effective))
+                       : std::to_wstring(value.effective));
+        SetDlgItemTextW(hwnd, binding.control, original_text[i].c_str());
+      }
+    }
+    have_to_apply = 0;
 #ifndef _WIN64
     EnableDlgItem(hwnd, IDC_FANCYZONE, 0);
 #endif
@@ -100,7 +122,52 @@ INT_PTR CALLBACK AdvancedPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
       // Apply or OK button was pressed.
       // Save settings
-      WriteDialogOptions(hwnd, optlst, std::size(optlst));
+      Patch patch;
+      for (size_t i = 0; i < std::size(bindings); ++i) {
+        const auto& binding = bindings[i];
+        const size_t index = Index(binding.option);
+        uint32_t value = 0;
+        if (kOptions[index].kind == ValueKind::kToggle) {
+          value = IsChecked(hwnd, binding.control);
+          if (value == snapshot.values[index].effective) continue;
+        } else {
+          const HWND control = GetDlgItem(hwnd, binding.control);
+          std::wstring text(GetWindowTextLengthW(control) + 1, L'\0');
+          text.resize(GetWindowTextW(control, text.data(),
+                                     static_cast<int>(text.size())));
+          if (text == original_text[i]) continue;
+          const auto parsed = ParseNumber(binding.option, text);
+          if (!parsed) {
+            MessageBoxW(hwnd, L"Enter a whole number in the supported range.",
+                        L"AltSnap", MB_OK | MB_ICONERROR);
+            SetFocus(control);
+            SetWindowLongPtrW(hwnd, DWLP_MSGRESULT,
+                              PSNRET_INVALID_NOCHANGEPAGE);
+            return TRUE;
+          }
+          value = *parsed;
+        }
+        patch.changed |= uint64_t{1} << index;
+        patch.values[index] = value;
+      }
+      if (patch.changed &&
+          (!settings_service ||
+           !settings_service->WriteLegacySettings(snapshot, patch))) {
+        MessageBoxW(hwnd,
+                    L"Could not save advanced settings. Reopen settings and "
+                    L"check configuration access.",
+                    L"AltSnap", MB_OK | MB_ICONERROR);
+        SetWindowLongPtrW(hwnd, DWLP_MSGRESULT, PSNRET_INVALID_NOCHANGEPAGE);
+        return TRUE;
+      }
+      if (settings_service) snapshot = settings_service->ReadLegacySettings();
+      for (size_t i = 0; i < std::size(bindings); ++i) {
+        const HWND control = GetDlgItem(hwnd, bindings[i].control);
+        std::wstring text(GetWindowTextLengthW(control) + 1, L'\0');
+        text.resize(GetWindowTextW(control, text.data(),
+                                   static_cast<int>(text.size())));
+        original_text[i] = std::move(text);
+      }
       UpdateSettings();
       // Update Test windows in if open.
       EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);

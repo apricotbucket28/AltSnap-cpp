@@ -12,6 +12,7 @@
 
 #include "app/hook_shutdown.h"
 #include "app/languages.h"
+#include "app/settings_service.h"
 #include "app/tray.h"
 #include "hooks/hooks.h"
 #include "ui/config.h"
@@ -333,7 +334,15 @@ static void ShowUnikeyMenu(HWND hwnd, LPARAM param) {
 
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam) {
+  if (msg == altsnap::settings::kWake) {
+    if (settings_service) settings_service->Dispatch(g_hooks_shutting_down);
+    return 0;
+  }
   if (DeferDuringHookShutdown(g_hooks_shutting_down, msg)) return 0;
+  if (msg == kLaunchSettingsMessage) {
+    if (!g_hooks_shutting_down) LaunchModernSettings();
+    return 0;
+  }
   if (!msg) {
     // In case some messages are not registered.
   } else if (wParam && msg == WM_ERASEBKGND) {
@@ -504,6 +513,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
         L"-q\tQuiet mode\n"
         L"-m\tMultiple instances allowed\n"
         L"-c\tOpen Config dialog\n"
+        L"-winui\tOpen the opt-in modern settings preview\n"
         L"-e\tElevate AltSnap\n"
         L"-r\tRelaod AltSnap settings\n"
         L"-lX\tSelect Snap Layout number X\n"
@@ -520,6 +530,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
   int elevate = !!FindSubstring(params, L"-e");
   int multi = !!FindSubstring(params, L"-m");
   int config = !!FindSubstring(params, L"-c");
+  const bool modern_settings = !!FindSubstring(params, L"-winui");
   int rlini = !!FindSubstring(params, L"-r");
 
   // Check whether the process is already elevated.
@@ -540,11 +551,22 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
       tray_hidden, quiet, elevate, multi, config);
 
   // Look for previous instance
+  if (modern_settings && !multi) {
+    const std::optional<HWND> target = FindModernSettingsHost();
+    if (!target) {
+      MessageBoxW(nullptr, L"Several hosts from this installation are running. Close extra instances before opening modern settings.", APP_NAME, MB_OK | MB_ICONWARNING);
+      return 1;
+    }
+    if (*target) {
+      PostMessageW(*target, kLaunchSettingsMessage, 0, 0);
+      return 0;
+    }
+  }
   if (!multi && !GetPrivateProfileInt(L"Advanced", L"MultipleInstances", 0,
                                       inipath.c_str())) {
     if (quiet) return 0;
 
-    HWND previnst = FindWindow(APP_NAME, L"");
+    HWND previnst = modern_settings ? nullptr : FindWindow(APP_NAME, L"");
     if (previnst) {
       // Ask old HotKey window to perform an action.
       const wchar_t* actionstr = FindSubstring(params, L"-a");
@@ -588,8 +610,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
       LOG("Elevation requested");
       wchar_t path[MAX_PATH];
       GetModuleFileName(nullptr, path, std::size(path));
+      const wchar_t* relaunch_args = modern_settings ? (tray_hidden ? L"-h -winui" : L"-winui")
+                                                    : (tray_hidden ? L"-h" : nullptr);
       HINSTANCE ret =
-          ShellExecute(nullptr, L"runas", path, (tray_hidden ? L"-h" : nullptr),
+          ShellExecute(nullptr, L"runas", path, relaunch_args,
                        nullptr, SW_SHOWNORMAL);
       if (reinterpret_cast<DorQWORD>(ret) > 32) {
         LOG("Elevation Faild => Not cool NORMAL EXIT");
@@ -620,6 +644,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
     for (i = WM_UPDATETRAY; i <= WM_HIDETRAY; i++)
       ChangeWindowMessageFilterEx(g_hwnd, i, /*MSGFLT_ALLOW*/ 1, nullptr);
   }
+  SettingsService service(g_hwnd, inipath);
+  settings_service = &service;
+  if (elevated) ChangeWindowMessageFilterEx(g_hwnd, kLaunchSettingsMessage, 1, nullptr);
+  if (modern_settings) PostMessage(g_hwnd, kLaunchSettingsMessage, 0, 0);
   // Tray icon
 
   InitTray();
@@ -654,6 +682,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInstance*/,
   DestroyWindow(g_hwnd);
   LOG("GOOD NORMAL EXIT");
   FreeAllLangRelated();
+  settings_service = nullptr;
 
   return static_cast<int>(msg.wParam);
 }

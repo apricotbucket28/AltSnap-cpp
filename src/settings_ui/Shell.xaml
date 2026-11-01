@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+  <NavigationView x:Name="Navigation" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" PaneDisplayMode="Auto" OpenPaneLength="244" AlwaysShowHeader="False" IsPaneToggleButtonVisible="True">
+    <NavigationView.PaneHeader>
+      <StackPanel Margin="16,12,16,20" Spacing="4">
+        <TextBlock Text="AltSnap" Style="{ThemeResource TitleTextBlockStyle}" />
+        <TextBlock Text="Make your windows move." Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      </StackPanel>
+    </NavigationView.PaneHeader>
+    <NavigationView.MenuItems>
+      <NavigationViewItem Content="General" Tag="General" Icon="Home" />
+      <NavigationViewItem Content="Snapping" Tag="Snapping" Icon="DockLeft" />
+      <NavigationViewItem Content="Mouse" Tag="Mouse" Icon="TouchPointer" />
+      <NavigationViewItem Content="Keyboard" Tag="Keyboard" Icon="Edit" />
+      <NavigationViewItem Content="Advanced" Tag="Advanced" Icon="Repair" />
+      <NavigationViewItem Content="Appearance" Tag="Appearance" Icon="Setting" />
+      <NavigationViewItem Content="About" Tag="About" Icon="Help" />
+    </NavigationView.MenuItems>
+    <Grid Padding="32,28,32,24" RowSpacing="20">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <StackPanel Spacing="8">
+        <TextBlock x:Name="DraftStatus" Text="Connecting…" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <InfoBar x:Name="Status" IsOpen="True" IsClosable="False" Severity="Informational" Title="Connecting to AltSnap" Message="Reading settings from the resident host." />
+      </StackPanel>
+      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="900" HorizontalAlignment="Stretch" Spacing="24">
+          <StackPanel x:Name="GeneralPage" Spacing="20">
+            <StackPanel Spacing="8">
+              <TextBlock Text="General" Style="{ThemeResource TitleTextBlockStyle}" />
+              <TextBlock Text="A little less friction. A little more control." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Window behavior" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ToggleSwitch x:Name="AutoFocus" Header="Focus windows when dragging" OffContent="Off" OnContent="On" IsEnabled="False" />
+                <TextBlock Text="Bring a window to the foreground when you drag it with AltSnap. You can also press Ctrl while dragging to focus a window." TextWrapping="Wrap" MaxWidth="620" HorizontalAlignment="Left" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Everything else, right where you left it" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                <TextBlock Text="Exclusions, startup, language, and zone layouts are available in the legacy settings window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button x:Name="Legacy" Content="Open legacy settings" IsEnabled="False" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel x:Name="SnappingPage" Visibility="Collapsed" Spacing="20">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Snapping" Style="{ThemeResource TitleTextBlockStyle}" />
+              <TextBlock Text="Arrange windows with less effort." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Screen edges and corners" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="Aero" Header="Snap to screen edges" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Drag a window to an edge or corner with AltSnap to tile or maximize it. Hold Ctrl to keep the pointer on the current monitor." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Smarter window sizing" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="SmartSizing" Header="Match neighboring snapped windows" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Adjust snap sizes to fit windows you have already arranged." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="SmartCandidates" Header="Consider more neighboring windows" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Include windows arranged outside AltSnap when finding a matching size." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="KeepSnapped" Header="Keep snapped window sizes" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Keep the snapped size when moving a window instead of restoring its previous size." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Moving and resizing" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <StackPanel Spacing="8">
+                  <ComboBox x:Name="AutoSnap" Header="Automatically snap to" HorizontalAlignment="Stretch" IsEnabled="False">
+                    <ComboBoxItem Content="Off" />
+                    <ComboBoxItem Content="Screen edges and taskbar" />
+                    <ComboBoxItem Content="Also outside edges of windows" />
+                    <ComboBoxItem Content="Also inside edges of windows" />
+                  </ComboBox>
+                  <TextBlock Text="Choose which boundaries attract windows as you move or resize them. Shift temporarily changes snapping during a drag." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="8">
+                  <ComboBox x:Name="StickyResize" Header="Resize neighboring windows together" HorizontalAlignment="Stretch" IsEnabled="False">
+                    <ComboBoxItem Content="Off" />
+                    <ComboBoxItem Content="While holding Shift" />
+                    <ComboBoxItem Content="Unless holding Shift" />
+                  </ComboBox>
+                  <TextBlock Text="Resize windows that share an edge with the window you are resizing." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="Fine-tune geometry on the Advanced page. Custom zone layouts remain available in the native test windows and tray menu." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          </StackPanel>
+          <StackPanel x:Name="MousePage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="Mouse" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Choose what each button and wheel does. Each context keeps its own changes until you Apply." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Action mappings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ComboBox x:Name="MouseContext" Header="When to use these actions" HorizontalAlignment="Stretch" SelectedIndex="0">
+                  <ComboBoxItem Content="Primary — activation key + mouse" />
+                  <ComboBoxItem Content="Alternate — also hold the modifier" />
+                  <ComboBoxItem Content="Title bar" />
+                  <ComboBoxItem Content="While moving a window" />
+                  <ComboBoxItem Content="While resizing a window" />
+                </ComboBox>
+                <TextBlock x:Name="MouseContextHelp" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <StackPanel x:Name="MouseMappings" Spacing="16" />
+                <TextBlock Text="Wheel mappings apply in both directions unless a direction-specific INI override exists. Nothing on release leaves the window unchanged. During a drag, Nothing keeps built-in button gestures: button 5 toggles snapping; other buttons toggle zones, or use the move/resize combination. Extra buttons and direction-specific overrides remain available in the INI." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Activation and modifiers" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ComboBox x:Name="ModifierPreset" Header="Alternate action modifier" HorizontalAlignment="Stretch">
+                  <ComboBoxItem Content="None" />
+                  <ComboBoxItem Content="Ctrl (either side)" />
+                  <ComboBoxItem Content="Shift (either side)" />
+                  <ComboBoxItem Content="Windows (either side)" />
+                  <ComboBoxItem Content="Custom key list" />
+                </ComboBox>
+                <TextBox x:Name="MouseModifier" Header="Alternate action modifier (hex virtual-key codes)" PlaceholderText="None — e.g. A2 A3 for either Ctrl key" />
+                <TextBlock Text="Hold any listed modifier with your activation key to use Alternate actions. A2 A3 = Ctrl, A0 A1 = Shift, 5B 5C = Windows keys. This is the shared Input/ModKey setting. Activation keys are configured in legacy Keyboard settings." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ToggleSwitch x:Name="TitlebarWithoutAlt" Header="Use title-bar actions without the activation key" OffContent="Off" OnContent="On" />
+                <ToggleSwitch x:Name="TitlebarWithAlt" Header="Use title-bar actions with the activation key" OffContent="Off" OnContent="On" />
+                <ToggleSwitch x:Name="LongClickMove" Header="Move by holding the left button" OffContent="Off" OnContent="On" />
+                <TextBlock Text="A long left click starts moving without the activation key. The delay uses the system double-click time unless Advanced/LongClickMoveDelay is set in the INI." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Hold a mouse button instead of the activation key" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                <CheckBox x:Name="HotclickMiddle" Content="Middle button" />
+                <CheckBox x:Name="Hotclick4" Content="Button 4 (back)" />
+                <CheckBox x:Name="Hotclick5" Content="Button 5 (forward)" />
+                <TextBlock Text="Hotclicks activate AltSnap while held. Other configured hotclick codes are retained." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="MouseError" Visibility="Collapsed" Text="Enter up to 15 nonzero hex virtual-key codes (01–FF), separated by spaces." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel x:Name="KeyboardPage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="Keyboard" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Activation keys and window shortcuts, with your custom mappings kept intact." TextWrapping="Wrap" />
+            <StackPanel x:Name="KeyboardEditors" Spacing="20">
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Activation" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftAlt" Content="Left Alt" />
+                    <CheckBox x:Name="KeyRightAlt" Content="Right Alt" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftWin" Content="Left Windows" />
+                    <CheckBox x:Name="KeyRightWin" Content="Right Windows" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="20">
+                    <CheckBox x:Name="KeyLeftCtrl" Content="Left Ctrl" />
+                    <CheckBox x:Name="KeyRightCtrl" Content="Right Ctrl" />
+                  </StackPanel>
+                  <TextBox x:Name="ActivationKeys" Header="Activation keys (hex virtual-key list)" />
+                  <TextBlock Text="Checkboxes preserve other keys in the list. The engine uses up to 15 keys. Default: A4 A5 (left and right Alt)." TextWrapping="Wrap" />
+                  <ToggleSwitch x:Name="KeyCombo" Header="Require two activation keys together" />
+                  <ComboBox x:Name="KeyboardModifierPreset" Header="Alternate modifier preset" HorizontalAlignment="Stretch" />
+                  <TextBox x:Name="KeyboardModifier" Header="Alternate modifiers (hex virtual-key list)" />
+                  <TextBlock Text="Shared with Mouse. These keys select the alternate action; they do not add shortcut modifiers." TextWrapping="Wrap" />
+                  <TextBlock x:Name="KeyboardError" Visibility="Collapsed" Text="Use up to 15 nonzero hex virtual keys, separated by spaces." TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Actions without a click" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <StackPanel x:Name="KeyboardActions" Spacing="16" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Typing and Scroll Lock" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <ToggleSwitch x:Name="ScrollLockEnabled" Header="Gate AltSnap with Scroll Lock" />
+                  <ToggleSwitch x:Name="ScrollLockInvert" Header="Disable when Scroll Lock is on" />
+                  <TextBlock Text="With the second switch off, AltSnap is disabled while Scroll Lock is off. Other ScrollLockState bits are preserved." TextWrapping="Wrap" />
+                  <ToggleSwitch x:Name="UniKeyHoldMenu" Header="Hold a letter for accented characters" />
+                  <TextBlock Text="The hold menu respects the existing full-screen and excluded-window rules." TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                <StackPanel Spacing="16">
+                  <TextBlock Text="Global window shortcuts" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                  <ToggleSwitch x:Name="UsePtWindow" Header="Act on the window under the pointer" />
+                  <TextBlock Text="Otherwise shortcuts target the foreground window. Choose an action to display its saved binding; edits and capture remain in this editor until Set. Set immediately saves all pending settings and reloads enabled hooks once." TextWrapping="Wrap" />
+                  <ComboBox x:Name="ShortcutAction" Header="Action ID" IsEditable="True" HorizontalAlignment="Stretch" />
+                  <Expander Header="Action parameters" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="10">
+                      <ComboBox x:Name="ShortcutFlag" Header="Direction / operation" SelectedIndex="0">
+                        <ComboBoxItem Content="Default" />
+                        <ComboBoxItem Content="Left" />
+                        <ComboBoxItem Content="Up" />
+                        <ComboBoxItem Content="Right" />
+                        <ComboBoxItem Content="Down" />
+                        <ComboBoxItem Content="Set" />
+                        <ComboBoxItem Content="Toggle" />
+                      </ComboBox>
+                      <TextBox x:Name="ShortcutAmount" Header="Number (optional, -32768 to 32767)" />
+                      <TextBlock Text="Roll: Up/Down. Transparency: Up/Down/Set/Toggle and number. Edge, zone and Focus actions: direction. Step: direction and number. Other actions ignore unused parameters. Custom IDs can be entered above." TextWrapping="Wrap" />
+                      <Button x:Name="ShortcutBuild" Content="Use action parameters" />
+                    </StackPanel>
+                  </Expander>
+                  <TextBlock x:Name="ShortcutSaved" TextWrapping="Wrap" />
+                  <TextBox x:Name="ShortcutKey" Header="Virtual key (hex, 00 to FF)" MaxLength="2" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <CheckBox x:Name="ShortcutCtrl" Content="Ctrl" />
+                    <CheckBox x:Name="ShortcutAlt" Content="Alt" />
+                    <CheckBox x:Name="ShortcutShift" Content="Shift" />
+                    <CheckBox x:Name="ShortcutWin" Content="Windows" />
+                  </StackPanel>
+                  <TextBlock x:Name="ShortcutFeedback" Text="Select an action, then edit or capture its shortcut." TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ShortcutCapture" Content="Capture shortcut…" />
+                    <Button x:Name="ShortcutClear" Content="Clear" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ShortcutDiscard" Content="Discard edit" />
+                    <Button x:Name="ShortcutSet" Content="Set and save" IsEnabled="False" />
+                  </StackPanel>
+                  <TextBlock Text="Use a modifier plus a key. Modifier-only input, F12, Escape and reserved system combinations cannot be assigned. Duplicate AltSnap bindings and unavailable global shortcuts are refused. Escape cancels capture; Tab can be captured with modifiers. Windows security shortcuts cannot be intercepted." TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+          <StackPanel x:Name="AdvancedPage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="Advanced" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Fine-tune window geometry and behavior. Changes take effect when applied unless indicated otherwise." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Window behavior" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="AutoRemaximize" Header="Re-maximize when changing monitors" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Re-maximize a previously maximized window when moving it between monitors." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="AeroTopMaximizes" Header="Maximize at the top edge" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Moving to the top edge maximizes instead of tiling." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="AeroDoubleClickShift" Header="Invert Shift for double-click snapping" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Invert Shift behavior when double-clicking with the resize action to snap a window." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="MultipleInstances" Header="Allow multiple AltSnap instances" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Applies on the next host launch. Editing remains unavailable while several hosts are running." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="FullScreen" Header="Enable on full-screen windows" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Allow AltSnap to move and resize full-screen windows." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="BLMaximized" Header="Exclude maximized windows" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Prevent AltSnap actions on maximized windows." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="FancyZone" Header="Integrate with FancyZones" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Restore the saved size of windows arranged by PowerToys FancyZones." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="MaximizeOnClick" Header="Toggle maximize with the resize button while moving" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Press the button mapped to Resize during a move to toggle the maximized state." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="RestoreOnClick" Header="Restore with a single click" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Restore a maximized or snapped window as soon as a move begins, without waiting for pointer movement." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <ToggleSwitch x:Name="TopmostIndicator" Header="Mark always-on-top windows" IsEnabled="False" OffContent="Off" OnContent="On" />
+                  <TextBlock Text="Display an indicator on windows pinned above other windows." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Geometry and sensitivity" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="CenterFraction" Header="Center region (%)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–100. Size of the center region used when choosing a resize direction." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="CenterFractionError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="SidesFraction" Header="Side regions (%)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–255. Use 255 to follow the center region; values above the center size have the same effect as the center size." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="SidesFractionError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="AeroHoffset" Header="Horizontal snap size (%)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–100. Width used when tiling at screen edges." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="AeroHoffsetError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="AeroVoffset" Header="Vertical snap size (%)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–100. Height used when tiling at screen edges." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="AeroVoffsetError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="SnapThreshold" Header="Window snap distance (px)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–255. Distance at which windows attract each other." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="SnapThresholdError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="AeroThreshold" Header="Screen edge distance (px)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–255. Distance from an edge that triggers tiling." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="AeroThresholdError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="SnapGap" Header="Gap between snapped windows (px)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="−128–127. Negative values overlap window borders." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="SnapGapError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="AeroMaxSpeed" Header="Maximum tiling speed (px / interval)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–65535. Faster movement skips screen-edge tiling; 65535 removes the limit." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="AeroMaxSpeedError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="AeroSpeedTau" Header="Speed sampling interval (ms)" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–255. Time between speed samples. Default: 64 ms." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="AeroSpeedTauError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                  <TextBox x:Name="MoveTrans" Header="Opacity while moving" IsEnabled="False" MaxLength="32" HorizontalAlignment="Stretch" />
+                  <TextBlock Text="0–255. 255 keeps windows opaque; lower values increase transparency." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock x:Name="MoveTransError" Text="Enter a whole number in the range above." Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="Try your settings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <TextBlock Text="Apply changes first to test saved settings. The native test window also supports the existing zone layout tools. Keep snapped window sizes is available on the Snapping page." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button x:Name="TestWindow" Content="Open test window" IsEnabled="False" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel x:Name="AppearancePage" Visibility="Collapsed" Spacing="20">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Appearance" Style="{ThemeResource TitleTextBlockStyle}" />
+              <TextBlock Text="Make this space feel like yours." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+              <StackPanel Spacing="16">
+                <TextBlock Text="App theme" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <ComboBox x:Name="Theme" Header="Choose a theme for this window" SelectedIndex="0" MinWidth="240">
+                  <ComboBoxItem Content="Use Windows setting" />
+                  <ComboBoxItem Content="Light" />
+                  <ComboBoxItem Content="Dark" />
+                </ComboBox>
+                <TextBlock Text="Windows contrast themes and text scaling are respected automatically. This preference applies to this session." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel x:Name="AboutPage" Visibility="Collapsed" Spacing="20">
+            <TextBlock Text="About AltSnap" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Move freely." FontSize="40" FontWeight="SemiBold" />
+            <TextBlock Text="Simple window management, built around the way you work." TextWrapping="Wrap" Style="{ThemeResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="WinUI 3 settings preview" />
+            <TextBlock Text="AltSnap by Raymond Gillibert, based on AltDrag by Stefan Sundin. Free software licensed under GNU GPL v3 or later." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="ConfigPath" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+      <Grid Grid.Row="2" ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="Reload" Content="Reload" ToolTipService.ToolTip="Read saved settings again. You will be asked before discarding changes." IsEnabled="False" />
+          <Button x:Name="StartHost" Content="Start AltSnap" Visibility="Collapsed" />
+          <Button x:Name="Cancel" Content="Cancel" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+          <Button x:Name="Apply" Content="Apply changes" IsEnabled="False" />
+          <Button x:Name="Okay" Content="OK" Style="{ThemeResource AccentButtonStyle}" IsEnabled="False" />
+        </StackPanel>
+      </Grid>
+    </Grid>
+  </NavigationView>
+</Grid>

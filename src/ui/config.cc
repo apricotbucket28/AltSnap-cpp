@@ -12,6 +12,7 @@
 
 #include "app/altsnap.h"
 #include "app/languages.h"
+#include "app/settings_service.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
 #include "hooks/hooks.h"
@@ -38,6 +39,10 @@ HWND g_cfgwnd = nullptr;
 
 // Entry point
 void OpenConfig(int startpage) {
+  if (settings_service && settings_service->FrontendActive()) {
+    settings_service->FocusFrontend();
+    return;
+  }
   ListAllTranslations();  // In case
   if (IsWindow(g_cfgwnd)) {
     PropSheet_SetCurSel(g_cfgwnd, 0, startpage);
@@ -82,6 +87,7 @@ void OpenConfig(int startpage) {
   // Open the property sheet
   InitCommonControls();
   PropertySheet(&psh);
+  g_cfgwnd = nullptr;
 }
 
 void CloseConfig() {

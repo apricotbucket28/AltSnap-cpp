@@ -9,6 +9,7 @@
 
 #include "app/altsnap.h"
 #include "app/languages.h"
+#include "app/settings_service.h"
 #include "app/tray.h"
 #include "common/ini_section.h"
 #include "hooks/hooks.h"
@@ -125,11 +126,6 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
   // Options to bead or written...
   static const DialogOption optlst[] = {
       // dialog id, type, bit number, section name, option name, def val.
-      {IDC_AUTOFOCUS, T_BOL, 0, L"General", "AutoFocus", 0},
-      {IDC_AERO, T_BOL, 0, L"General", "Aero", 1},
-      {IDC_SMARTAERO, T_BMK, 0, L"General", "SmartAero", 1},
-      {IDC_SMARTERAERO, T_BMK, 1, L"General", "SmartAero", 0},
-      {IDC_STICKYRESIZE, T_BOL, 0, L"General", "StickyResize", 1},
       {IDC_INACTIVESCROLL, T_BOL, 0, L"General", "InactiveScroll", 0},
       {IDC_MDI, T_BOL, 0, L"General", "MDI", 1},
       {IDC_RESIZEALL, T_BOL, 0, L"Advanced", "ResizeAll", 1},
@@ -163,10 +159,32 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
   int updatestrings = 0;
   static int have_to_apply = 0;
+  static altsnap::settings::Snapshot behavior_snapshot;
+  struct MigratedControl {
+    int id;
+    altsnap::settings::Option option;
+  };
+  static constexpr std::array<MigratedControl, 5> migrated_controls{
+      {{IDC_AUTOFOCUS, altsnap::settings::Option::kAutoFocus},
+       {IDC_AERO, altsnap::settings::Option::kAero},
+       {IDC_SMARTAERO, altsnap::settings::Option::kSmartSizing},
+       {IDC_SMARTERAERO, altsnap::settings::Option::kSmartCandidates},
+       {IDC_STICKYRESIZE, altsnap::settings::Option::kStickyResize}}};
   if (msg == WM_INITDIALOG) {
     MoveToCorner(g_cfgwnd);
     int ret = 0;
     ReadDialogOptions(hwnd, optlst, std::size(optlst));
+    behavior_snapshot = settings_service
+                            ? settings_service->ReadLegacySettings()
+                            : altsnap::settings::Snapshot{};
+    for (const auto& control : migrated_controls)
+      CheckDlgButton(
+          hwnd, control.id,
+          behavior_snapshot.values[altsnap::settings::Index(control.option)]
+                  .effective
+              ? BST_CHECKED
+              : BST_UNCHECKED);
+    have_to_apply = 0;
 
     ret = GetPrivateProfileInt(L"General", L"ResizeCenter", 1, inipath.c_str());
     ret = ret == 1   ? IDC_RZCENTER_NORM
@@ -237,17 +255,42 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       EnableDlgItem(hwnd, IDC_INACTIVESCROLL,
                     IsChecked(hwnd, IDC_INACTIVESCROLL));
     } else if (pnmh->code == PSN_APPLY && have_to_apply) {
+      altsnap::settings::Patch patch;
+      for (const auto& control : migrated_controls) {
+        const size_t option = altsnap::settings::Index(control.option);
+        const bool value = IsChecked(hwnd, control.id);
+        if (value != (behavior_snapshot.values[option].effective != 0)) {
+          patch.changed |= uint64_t{1} << option;
+          patch.values[option] = value;
+        }
+      }
+      const int snap = ComboBoxCurSel(hwnd, IDC_AUTOSNAP);
+      const size_t snap_option =
+          altsnap::settings::Index(altsnap::settings::Option::kAutoSnap);
+      if (snap >= 0 && snap <= 3 &&
+          static_cast<uint32_t>(snap) !=
+              behavior_snapshot.values[snap_option].effective) {
+        patch.changed |= uint64_t{1} << snap_option;
+        patch.values[snap_option] = static_cast<uint32_t>(snap);
+      }
+      if (patch.changed &&
+          (!settings_service ||
+           !settings_service->WriteLegacySettings(behavior_snapshot, patch))) {
+        MessageBoxW(
+            hwnd,
+            L"Could not save window behavior settings. Reopen settings, "
+            L"close other AltSnap instances, and check configuration access.",
+            L"AltSnap", MB_OK | MB_ICONERROR);
+        SetWindowLongPtrW(hwnd, DWLP_MSGRESULT, PSNRET_INVALID_NOCHANGEPAGE);
+        return TRUE;
+      }
       // all bool options (checkboxes).
       WriteDialogOptions(hwnd, optlst, std::size(optlst));
 
-      int val = ComboBoxCurSel(hwnd, IDC_AUTOSNAP);
-      WritePrivateProfileString(L"General", L"AutoSnap",
-                                std::to_wstring(val).c_str(), inipath.c_str());
-
-      val = IsChecked(hwnd, IDC_RZCENTER_NORM)    ? 1
-            : IsChecked(hwnd, IDC_RZCENTER_MOVE)  ? 2
-            : IsChecked(hwnd, IDC_RZCENTER_CLOSE) ? 3
-                                                  : 0;
+      int val = IsChecked(hwnd, IDC_RZCENTER_NORM)    ? 1
+                : IsChecked(hwnd, IDC_RZCENTER_MOVE)  ? 2
+                : IsChecked(hwnd, IDC_RZCENTER_CLOSE) ? 3
+                                                      : 0;
       WritePrivateProfileString(L"General", L"ResizeCenter",
                                 std::to_wstring(val).c_str(), inipath.c_str());
 
@@ -285,6 +328,9 @@ INT_PTR CALLBACK GeneralPageDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
       EnumThreadWindows(GetCurrentThreadId(), RefreshTestWin, 0);
 
       have_to_apply = 0;
+      if (settings_service) {
+        behavior_snapshot = settings_service->ReadLegacySettings();
+      }
     }
   }
   if (updatestrings) {

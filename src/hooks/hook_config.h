@@ -20,6 +20,7 @@ void RegisterAllHotkeys(const wchar_t* inipath);
 // teardown.
 std::span<const action_t> RegisteredHotkeys();
 void UnregisterAllHotkeys();
+unsigned ShortcutRegistrationFailures();
 
 // Releases the memory held by the blacklists and the input sequences.
 void FreeBlacklists();

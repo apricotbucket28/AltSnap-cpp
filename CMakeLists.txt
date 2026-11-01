@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(AltSnap CXX)
 
@@ -63,7 +63,6 @@ set(ALTSNAP_CXX_FLAGS
     -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000002
     -fno-rtti
     -fno-ident
-    -mno-stack-arg-probe
     -march=x86-64
     -mtune=generic
     -fshort-enums
@@ -173,6 +172,8 @@ target_link_libraries(hooks PRIVATE msvcrt kernel32 user32 gdi32 winmm dwmapi sh
 # below as HEADER_FILE_ONLY so edits still trigger a rebuild.
 add_executable(AltSnap
     src/app/altsnap.cc
+    src/app/settings_service.cc
+    src/settings/repository.cc
     src/ui/dialog_util.cc
     src/ui/general_page.cc
     src/ui/mouse_page.cc
@@ -226,7 +227,7 @@ target_link_options(AltSnap PRIVATE
     -Wl,--tsaware
     ${ALTSNAP_LINK_FLAGS}
 )
-target_link_libraries(AltSnap PRIVATE comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
+target_link_libraries(AltSnap PRIVATE uuid oleaut32 comctl32 advapi32 shell32 msvcrt kernel32 user32 gdi32 winmm dwmapi shcore ole32 dxva2)
 
 # hooks.dll must exist next to AltSnap.exe at runtime (it's loaded, not linked).
 add_dependencies(AltSnap hooks)
@@ -235,35 +236,12 @@ add_custom_command(TARGET AltSnap POST_BUILD
         $<TARGET_FILE:hooks> $<TARGET_FILE_DIR:AltSnap>
 )
 
-# --- Runtime staging -----------------------------------------------------
-# Mirrors what altsnap.nsi / ziprelease.bat actually ship. AltSnap.exe and
-# hooks.dll alone are NOT a working install: Lang/*.ini and translations
-# are read from disk at runtime (GetPrivateProfileSection), and the
-# erasmion theme icons are LoadImage'd from disk too, separate from the
-# default icons embedded via altsnap.rc. Running straight out of the raw
-# build dir with nothing else copied will "work" but silently run with
-# no translations and no alternate theme - an easy false negative.
-set(ALTSNAP_STAGE_DIR ${CMAKE_BINARY_DIR}/stage)
-
-add_custom_target(stage ALL
-    COMMENT "Assembling runtime layout in ${ALTSNAP_STAGE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:AltSnap> $<TARGET_FILE:hooks>
-        ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/AltSnap.txt
-        ${CMAKE_SOURCE_DIR}/AltSnap.xml
-        ${CMAKE_SOURCE_DIR}/License.txt
-        ${CMAKE_SOURCE_DIR}/sch_On.bat
-        ${CMAKE_SOURCE_DIR}/sch_Off.bat
-        ${ALTSNAP_STAGE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Lang ${ALTSNAP_STAGE_DIR}/Lang
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Themes ${ALTSNAP_STAGE_DIR}/Themes
-)
-add_dependencies(stage AltSnap hooks)
+# --- Runtime installation ------------------------------------------------
+# Ordinary builds never mutate a runnable installation.
+install(TARGETS AltSnap hooks RUNTIME DESTINATION . LIBRARY DESTINATION .)
+install(FILES AltSnap.txt AltSnap.dni AltSnap.xml License.txt sch_On.bat sch_Off.bat
+        DESTINATION .)
+install(DIRECTORY Lang Themes DESTINATION .)
 
 # --- Unit tests ---------------------------------------------------------------
 # cmake -DALTSNAP_BUILD_TESTS=ON ... && cmake --build build && ctest --test-dir build
@@ -272,6 +250,17 @@ add_dependencies(stage AltSnap hooks)
 option(ALTSNAP_BUILD_TESTS "Build the unit tests" OFF)
 if(ALTSNAP_BUILD_TESTS)
   enable_testing()
+  add_executable(settings_tests tests/settings_tests.cc src/settings/repository.cc)
+  target_include_directories(settings_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(settings_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(settings_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
+  add_test(NAME settings_tests COMMAND settings_tests)
+
+  # Explicit desktop acceptance: do not start hooks in unattended CTest runs.
+  add_executable(settings_host_tests tests/settings_host_tests.cc)
+  target_include_directories(settings_host_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_options(settings_host_tests PRIVATE ${ALTSNAP_CXX_FLAGS})
+  target_link_options(settings_host_tests PRIVATE ${ALTSNAP_LINK_FLAGS})
   add_executable(unit_tests tests/unit_tests.cc src/common/ini_section.cc src/hooks/blacklist.cc)
   target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(unit_tests PRIVATE ${ALTSNAP_CXX_FLAGS})

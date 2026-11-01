@@ -1,0 +1,54 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- A command-line /p:PublishDir remains authoritative (MSBuild global property). -->
+    <PublishDir>$(AltSnapRoot)build\stage\release\Settings\</PublishDir>
+    <ResourceInputDir>$(IntDir)ResourceInput\</ResourceInputDir>
+    <MakePriExe>$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\makepri.exe</MakePriExe>
+  </PropertyGroup>
+
+  <Target Name="CheckSettingsPackages" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(PackagesRoot)Microsoft.WindowsAppSDK.1.8.260921001\build\native\Microsoft.WindowsAppSDK.targets')"
+           Text="Restore native packages first: msbuild Settings.sln /restore /p:RestorePackagesConfig=true /p:Configuration=Release /p:Platform=x64" />
+  </Target>
+
+  <!-- The SDK owns its self-contained runtime file set. Merge the PRIs it
+       actually deployed; never maintain a parallel list of runtime packages. -->
+  <Target Name="PrepareSettingsRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <RuntimePri Include="$(OutDir)*.pri" Exclude="$(OutDir)resources.pri" />
+      <LocalCRT Include="$(VCToolsRedistInstallDir)x64\Microsoft.VC*.CRT\*.dll" />
+    </ItemGroup>
+    <Error Condition="'@(RuntimePri)' == ''" Text="Windows App SDK did not deploy its runtime resource indexes." />
+    <Error Condition="!Exists('$(MakePriExe)')" Text="The selected Windows SDK must include makepri.exe." />
+    <Error Condition="'@(LocalCRT)' == ''" Text="Install the selected MSVC x64 CRT redistributable for app-local deployment." />
+    <RemoveDir Directories="$(ResourceInputDir)" />
+    <MakeDir Directories="$(ResourceInputDir)" />
+    <Copy SourceFiles="@(RuntimePri)" DestinationFolder="$(ResourceInputDir)" />
+    <Exec StandardOutputImportance="Low" Command="&quot;$(MakePriExe)&quot; new /pr &quot;$(ResourceInputDir).&quot; /cf &quot;$(AltSnapRoot)settings-priconfig.xml&quot; /of &quot;$(OutDir)resources.pri&quot; /o" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Shell.xaml" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(AltSnapRoot)media\icon.ico" DestinationFiles="$(OutDir)AltSnap.ico" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LocalCRT)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CleanSettingsRuntime" AfterTargets="Clean">
+    <ItemGroup>
+      <CleanCRT Include="$(VCToolsRedistInstallDir)x64\Microsoft.VC*.CRT\*.dll" />
+    </ItemGroup>
+    <Delete Files="$(OutDir)resources.pri;$(OutDir)Shell.xaml;$(OutDir)AltSnap.ico;@(CleanCRT->'$(OutDir)%(Filename)%(Extension)')" />
+    <RemoveDir Directories="$(ResourceInputDir)" />
+  </Target>
+
+  <!-- Publish the complete SDK-produced layout, including nested assets.
+       Use an empty publish directory when assembling a new release. -->
+  <Target Name="Publish" DependsOnTargets="Build">
+    <PropertyGroup>
+      <_SettingsPublishPath>$([MSBuild]::NormalizeDirectory('$(PublishDir)').ToUpperInvariant())</_SettingsPublishPath>
+      <_SettingsOutputPath>$([MSBuild]::NormalizeDirectory('$(OutDir)').ToUpperInvariant())</_SettingsOutputPath>
+    </PropertyGroup>
+    <Error Condition="$(_SettingsPublishPath.StartsWith('$(_SettingsOutputPath)'))" Text="PublishDir must be outside OutDir to avoid recursive publishing." />
+    <ItemGroup>
+      <SettingsPayload Include="$(OutDir)**\*" Exclude="$(OutDir)**\*.pdb;$(OutDir)**\*.lib;$(OutDir)**\*.exp;$(OutDir)**\*.ilk" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SettingsPayload)" DestinationFiles="@(SettingsPayload->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
